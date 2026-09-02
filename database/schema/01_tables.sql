@@ -201,3 +201,37 @@ CREATE TABLE IF NOT EXISTS compliance.aocs_sybil_risk_assessments (
 );
 
 SELECT 'compliance tables created' AS status;
+
+-- ── compliance.platform_signing_keys ─────────────────────────────────────────
+-- S2 Fix (Palantir Gap): Persistent Ed25519 keypair for evidence vault signing.
+-- Fixes: NewZKPVerifier previously called ed25519.GenerateKey() as a fallback,
+-- generating a new ephemeral key on every pod restart — breaking chain of custody.
+-- Private key is AES-256-GCM encrypted with PLATFORM_MASTER_KEY env var.
+-- Key rotation via POST /admin/rotate-signing-key.
+CREATE TABLE IF NOT EXISTS compliance.platform_signing_keys (
+    key_id      TEXT        PRIMARY KEY DEFAULT public.gen_id('sk'),
+    key_type    TEXT        NOT NULL DEFAULT 'ed25519',
+    public_key  TEXT        NOT NULL,
+    private_key TEXT        NOT NULL,
+    is_active   BOOLEAN     NOT NULL DEFAULT TRUE,
+    rotated_at  TIMESTAMPTZ,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uidx_platform_signing_keys_active
+    ON compliance.platform_signing_keys (key_type)
+    WHERE is_active = TRUE;
+
+-- ── compliance.aocs_collusion_ip_agents ───────────────────────────────────────
+-- S3 Fix (Palantir Gap): Cross-pod sybil collusion tracking.
+-- CollusionStore.RecordAgentOnIP() upserts here for cross-pod shared state.
+CREATE TABLE IF NOT EXISTS compliance.aocs_collusion_ip_agents (
+    tenant_id   TEXT        NOT NULL REFERENCES public.aocs_tenants(tenant_id) ON DELETE CASCADE,
+    ip_address  TEXT        NOT NULL,
+    agent_ids   JSONB       NOT NULL DEFAULT '[]',
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (tenant_id, ip_address)
+);
+
+CREATE INDEX IF NOT EXISTS idx_collusion_ip_tenant
+    ON compliance.aocs_collusion_ip_agents (tenant_id);
