@@ -1,0 +1,81 @@
+# =============================================================================
+# docker-compose.yml — aocs-compliance-svc (Ring 0-adjacent)
+# =============================================================================
+# Ring dependency:
+#   REQUIRES Ring 0 (aocs-system-svc :8082) — for tenant validation + billing
+#   REQUIRES Ring 1 (ocx-core-svc :8083/:8085) — for agent/HITL/enforcement data
+#   Start AFTER: docker compose up -d in aocs-system-svc AND ocx-core-svc
+#
+# Usage:
+#   docker compose up -d        → start compliance service (:8089)
+#   docker compose logs -f      → tail logs
+#   docker compose down         → stop
+# =============================================================================
+
+x-common-env: &common-env
+  OCX_ENV: ${OCX_ENV:-development}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+services:
+
+  # ── aocs-compliance ──────────────────────────────────────────────────────────
+  aocs-compliance:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ocx-aocs-compliance-local
+    restart: unless-stopped
+    ports:
+      - "8089:8089"
+    environment:
+      <<: *common-env
+      PORT: "8089"
+      SERVICE_NAME: "aocs-compliance"
+
+      # ── Supabase ──────────────────────────────────────────────────────────
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_JWT_ISSUER: ${SUPABASE_JWT_ISSUER:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+
+      # ── Database (compliance schema) ──────────────────────────────────────
+      DATABASE_URL: ${DATABASE_URL}
+      POSTGRES_HOST: ${POSTGRES_HOST:-}
+      POSTGRES_PORT: ${POSTGRES_PORT:-6543}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:-}
+      POSTGRES_SCHEMA: "compliance"
+
+      # ── Ring 0: aocs-system-svc ───────────────────────────────────────────
+      INTERNAL_API_URL: ${INTERNAL_API_URL:-http://host.docker.internal:8082}
+
+      # ── Ring 1: ocx-core-svc ─────────────────────────────────────────────
+      # Compliance needs Ring 1 to read agent executions, HITL decisions,
+      # enforcement actions. Without Ring 1, report handlers return 503.
+      CORE_INTERNAL_API_URL: ${CORE_INTERNAL_API_URL:-http://host.docker.internal:8083}
+      HUB_INTERNAL_API_URL: ${HUB_INTERNAL_API_URL:-http://host.docker.internal:8085}
+
+      # ── Security ──────────────────────────────────────────────────────────
+      SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:-}
+      PLATFORM_MASTER_KEY: ${PLATFORM_MASTER_KEY:-}
+
+      # ── GCP Pub/Sub ───────────────────────────────────────────────────────
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID:-}
+      PUBSUB_EMULATOR_HOST: ${PUBSUB_EMULATOR_HOST:-}
+      LEDGER_PUBSUB_TOPIC: ${LEDGER_PUBSUB_TOPIC:-aocs-compliance-ledger}
+
+      # ── Feature control ───────────────────────────────────────────────────
+      ZKP_ENABLED: ${ZKP_ENABLED:-true}
+      DLP_ENABLED: ${DLP_ENABLED:-true}
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    labels:
+      com.aocs.ring: "0-adjacent"
+      com.aocs.service: "compliance"
+      com.aocs.description: "ZKP, DLP, compliance cases, evidence vault, SOC2/EU AI Act reports"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8089/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
