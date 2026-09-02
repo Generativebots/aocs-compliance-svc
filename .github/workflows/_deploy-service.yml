@@ -1,0 +1,167 @@
+# =============================================================================
+# Reusable: Build + Deploy aocs-compliance-svc to Cloud Run
+# =============================================================================
+# Ring 3 PAID service — independent from extension-svc.
+# Image built in GitHub Actions (free) → pushed to Artifact Registry → Cloud Run.
+# All secrets injected from GCP Secret Manager via Cloud Run YAML spec.
+# =============================================================================
+name: Deploy aocs-compliance-svc
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        description: 'Service name (aocs-compliance)'
+        required: true
+        type: string
+        default: 'aocs-compliance'
+      region:
+        description: 'GCP region'
+        required: true
+        type: string
+        default: 'us-central1'
+      env:
+        description: 'Environment (dev | test | prod)'
+        required: true
+        type: string
+    secrets:
+      GCP_SA_KEY:
+        required: true
+      GCP_PROJECT_ID:
+        required: true
+      REPO_ACCESS_TOKEN:
+        required: true
+
+jobs:
+  deploy:
+    name: Build & Deploy ${{ inputs.service }} (${{ inputs.env }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.env }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Checkout private dependency ──────────────────────────────────────
+      - name: Checkout ocx-shared-go
+        uses: actions/checkout@v4
+        with:
+          repository: Generativebots/ocx-shared-go
+          token: ${{ secrets.REPO_ACCESS_TOKEN }}
+          path: ../ocx-shared-go
+
+      # ── GCP Auth ─────────────────────────────────────────────────────────
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Configure Docker → Artifact Registry
+        run: gcloud auth configure-docker ${{ inputs.region }}-docker.pkg.dev --quiet
+
+      # ── Image tag (SHA + timestamp) ───────────────────────────────────────
+      - name: Set image tag
+        id: tag
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          TS=$(date -u +%Y%m%d%H%M)
+          AR_BASE="${{ inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/aocs-services"
+          echo "sha=${SHA}"                                          >> "$GITHUB_OUTPUT"
+          echo "image=${AR_BASE}/${{ inputs.service }}:${SHA}-${TS}" >> "$GITHUB_OUTPUT"
+          echo "image_latest=${AR_BASE}/${{ inputs.service }}:latest" >> "$GITHUB_OUTPUT"
+
+      # ── Build image (GitHub Actions — free, not Cloud Build) ─────────────
+      # Dockerfile uses go.mod replace: ../ocx-shared-go → we check it out above.
+      - name: Build ${{ inputs.service }}
+        run: |
+          cd ..
+          DOCKER_BUILDKIT=1 docker build \
+            --cache-from ${{ steps.tag.outputs.image_latest }} \
+            -t ${{ steps.tag.outputs.image }} \
+            -t ${{ steps.tag.outputs.image_latest }} \
+            -f aocs-compliance-svc/Dockerfile \
+            --build-arg TARGETOS=linux \
+            --build-arg TARGETARCH=amd64 \
+            .
+          echo "✅ Built ${{ inputs.service }}"
+
+      # ── Push to Artifact Registry ─────────────────────────────────────────
+      - name: Push ${{ inputs.service }}
+        run: |
+          docker push ${{ steps.tag.outputs.image }}
+          docker push ${{ steps.tag.outputs.image_latest }}
+          echo "✅ Pushed ${{ inputs.service }}"
+
+      # ── Trivy CVE scan (blocks on HIGH/CRITICAL) ─────────────────────────
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@v0.28.0
+        with:
+          image-ref: ${{ steps.tag.outputs.image }}
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+
+      # ── Prepare Cloud Run spec ────────────────────────────────────────────
+      - name: Prepare Cloud Run spec
+        run: |
+          ENV="${{ inputs.env }}"
+          SVC="${{ inputs.service }}"
+          SPEC="deployments/cloudrun/${SVC}.yaml"
+
+          if [[ ! -f "$SPEC" ]]; then
+            echo "❌ Missing Cloud Run spec: $SPEC"
+            exit 1
+          fi
+
+          # Inject exact SHA-tagged image
+          AR_BASE="${{ inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/aocs-services"
+          sed -i "s|${AR_BASE}/${SVC}:latest|${{ steps.tag.outputs.image }}|g" "$SPEC"
+
+          # Staging: rename service
+          if [[ "$ENV" == "test" ]]; then
+            sed -i "s|^  name: ${SVC}$|  name: ${SVC}-stag|g" "$SPEC"
+          fi
+
+          # Inject GCP project ID
+          sed -i "s|\${GCP_PROJECT_ID}|${{ secrets.GCP_PROJECT_ID }}|g" "$SPEC"
+
+          echo "✅ Spec ready: ${SVC} (env=${ENV})"
+          echo "   Image: ${{ steps.tag.outputs.image }}"
+
+      # ── Deploy using full spec YAML ───────────────────────────────────────
+      - name: Deploy ${{ inputs.service }} to Cloud Run
+        run: |
+          SVC="${{ inputs.service }}"
+          [[ "${{ inputs.env }}" == "test" ]] && SVC="${SVC}-stag"
+          gcloud run services replace "deployments/cloudrun/${{ inputs.service }}.yaml" \
+            --region=${{ inputs.region }} \
+            --project=${{ secrets.GCP_PROJECT_ID }}
+          echo "✅ Deployed ${SVC} (region=${{ inputs.region }})"
+
+      # ── Health verify ─────────────────────────────────────────────────────
+      - name: Verify ${{ inputs.service }}
+        run: |
+          SVC="${{ inputs.service }}"
+          [[ "${{ inputs.env }}" == "test" ]] && SVC="${SVC}-stag"
+          for i in $(seq 1 12); do
+            STATUS=$(gcloud run services describe "${SVC}" \
+              --region=${{ inputs.region }} \
+              --project=${{ secrets.GCP_PROJECT_ID }} \
+              --format='value(status.conditions[0].status)' 2>/dev/null || echo "UNKNOWN")
+            if [[ "$STATUS" == "True" ]]; then
+              URL=$(gcloud run services describe "${SVC}" \
+                --region=${{ inputs.region }} \
+                --project=${{ secrets.GCP_PROJECT_ID }} \
+                --format='value(status.url)')
+              echo "✅ ${SVC} ready: ${URL}"
+              exit 0
+            fi
+            echo "⏳ ${SVC} status=${STATUS} (attempt ${i}/12)"
+            sleep 10
+          done
+          echo "⚠️  ${SVC} did not reach Ready within 120s"
+          exit 1

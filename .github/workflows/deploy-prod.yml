@@ -1,0 +1,33 @@
+# =============================================================================
+# aocs-compliance-svc — Production Deploy
+# =============================================================================
+# Trigger: push to main + changes to service code or deployment spec.
+# Build: GitHub Actions (free). Deploy: Cloud Run via Artifact Registry.
+# Ring 3 PAID — independently purchasable, requires Ring 2 (core) at runtime.
+# =============================================================================
+name: Deploy Production — aocs-compliance-svc
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cmd/**'
+      - 'internal/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Dockerfile'
+      - 'deployments/cloudrun/aocs-compliance.yaml'
+      - '.github/workflows/_deploy-service.yml'
+
+jobs:
+  deploy-compliance:
+    name: Deploy aocs-compliance
+    uses: ./.github/workflows/_deploy-service.yml
+    with:
+      service: aocs-compliance
+      region: us-central1
+      env: prod
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      REPO_ACCESS_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}

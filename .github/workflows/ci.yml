@@ -1,0 +1,114 @@
+# =============================================================================
+# aocs-compliance-svc — CI (Lint, Build, Test)
+# =============================================================================
+# Ring 3 PAID service — ZKP, DLP, evidence vault, SOC2/EU AI Act reports.
+# Depends on ocx-shared-go (replace directive in go.mod).
+#
+# Jobs:
+#   lint-build  — go vet + go build (every push + PR)
+#   test        — go test -race (every push + PR)
+#   trivy       — container CVE scan (main branch only)
+# =============================================================================
+name: CI — aocs-compliance-svc
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  GO_VERSION: '1.23'
+  SERVICE: aocs-compliance
+
+jobs:
+  lint-build:
+    name: Lint & Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout ocx-shared-go
+        uses: actions/checkout@v4
+        with:
+          repository: Generativebots/ocx-shared-go
+          token: ${{ secrets.REPO_ACCESS_TOKEN }}
+          path: ../ocx-shared-go
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build (all packages)
+        run: go build ./...
+
+      - name: Build service binary
+        run: |
+          CGO_ENABLED=0 go build -ldflags="-w -s" -o /dev/null ./cmd/aocs-compliance/...
+          echo "✅ aocs-compliance binary builds clean"
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout ocx-shared-go
+        uses: actions/checkout@v4
+        with:
+          repository: Generativebots/ocx-shared-go
+          token: ${{ secrets.REPO_ACCESS_TOKEN }}
+          path: ../ocx-shared-go
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: go test -race
+        run: go test -race -timeout=120s ./...
+        env:
+          OCX_ENV: development
+          CORS_ALLOWED_ORIGINS: 'http://localhost:3000'
+          OCX_REDIS_ENABLED: 'false'
+          # S2: dummy master key for test (32 bytes = 64 hex chars)
+          PLATFORM_MASTER_KEY: '0000000000000000000000000000000000000000000000000000000000000000'
+
+  trivy:
+    name: Trivy CVE Scan
+    runs-on: ubuntu-latest
+    needs: [lint-build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout ocx-shared-go
+        uses: actions/checkout@v4
+        with:
+          repository: Generativebots/ocx-shared-go
+          token: ${{ secrets.REPO_ACCESS_TOKEN }}
+          path: ../ocx-shared-go
+
+      - name: Build image for scan
+        run: |
+          cd ..
+          docker build \
+            -f aocs-compliance-svc/Dockerfile \
+            -t aocs-compliance:scan \
+            --build-arg TARGETOS=linux --build-arg TARGETARCH=amd64 \
+            .
+
+      - name: Trivy image scan (HIGH + CRITICAL — fail on unfixed)
+        uses: aquasecurity/trivy-action@v0.28.0
+        with:
+          image-ref: aocs-compliance:scan
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL

@@ -1,0 +1,151 @@
+# =============================================================================
+# aocs-compliance — Cloud Run Service Definition
+# =============================================================================
+# Ring 3 PAID — independently purchasable, always-on observability layer.
+# Ingress: internal — never publicly accessible. API Gateway routes to this via
+#          internal VPC (callers: ocx-core-svc aocs-gate, aocs-hub).
+#
+# S2 Fix: PLATFORM_MASTER_KEY required for Ed25519 persistent signing key.
+#         Absent → service fails-fast at startup (by design — no silent fallback).
+# S3 Fix: OCX_REDIS_ADDR required for cross-pod CollusionStore.
+#
+# Image: replaced by _deploy-service.yml with SHA-tagged version.
+# Secrets: all from GCP Secret Manager (aocs-compliance-secrets).
+# =============================================================================
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: aocs-compliance
+  labels:
+    app: aocs-compliance
+    ring: "3"
+    team: ocx-compliance
+    environment: production
+  annotations:
+    # Internal only — compliance is never directly internet-accessible.
+    # API Gateway (ocx-gateway) → aocs-gate → aocs-compliance via VPC.
+    run.googleapis.com/ingress: internal
+    run.googleapis.com/description: "AOCS Compliance — Ring 3 PAID — ZKP, DLP, evidence vault, SOC2/EU AI Act"
+
+spec:
+  template:
+    metadata:
+      annotations:
+        # min=1: always-warm — HITL, violations, audit-log are user-facing.
+        # Cold starts cause 200-800ms first-request latency on governance screens.
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "5"
+        run.googleapis.com/startup-cpu-boost: "true"
+        run.googleapis.com/execution-environment: gen2
+        # VPC: private egress to Cloud Memorystore (Redis) and Supabase
+        run.googleapis.com/vpc-access-connector: projects/${GCP_PROJECT_ID}/locations/us-central1/connectors/ocx-connector
+        run.googleapis.com/vpc-access-egress: private-ranges-only
+    spec:
+      # ZKP batch + PDF generation are CPU-heavy single-threaded operations.
+      containerConcurrency: 5
+      timeoutSeconds: 300
+      serviceAccountName: aocs-compliance@${GCP_PROJECT_ID}.iam.gserviceaccount.com
+      containers:
+      - name: app
+        image: us-central1-docker.pkg.dev/${GCP_PROJECT_ID}/aocs-services/aocs-compliance:latest
+        ports:
+        - containerPort: 8080
+          name: http1
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: "1"
+            memory: 512Mi
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          failureThreshold: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          periodSeconds: 30
+          failureThreshold: 3
+        env:
+        - name: PORT
+          value: "8080"
+        - name: OCX_ENV
+          value: "production"
+        - name: AOCS_EGRESS_MODE
+          value: "block"
+
+        # ── Supabase ──────────────────────────────────────────────────────
+        - name: SUPABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: aocs-compliance-secrets
+              key: SUPABASE_URL
+        - name: SUPABASE_SERVICE_ROLE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: aocs-compliance-secrets
+              key: SUPABASE_SERVICE_ROLE_KEY
+        - name: SUPABASE_JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: aocs-compliance-secrets
+              key: SUPABASE_JWT_SECRET
+        - name: SUPABASE_JWT_ISSUER
+          valueFrom:
+            secretKeyRef:
+              name: aocs-compliance-secrets
+              key: SUPABASE_JWT_ISSUER
+
+        # ── S2 Fix: Persistent Ed25519 signing key ────────────────────────
+        # REQUIRED — service fails-fast at startup if absent (no ephemeral fallback).
+        # Create: gcloud secrets create PLATFORM_MASTER_KEY --data-file=<(openssl rand -hex 32)
+        - name: PLATFORM_MASTER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: aocs-compliance-secrets
+              key: PLATFORM_MASTER_KEY
+
+        # ── S3 Fix: Cross-pod Redis CollusionStore ────────────────────────
+        - name: OCX_REDIS_ADDR
+          valueFrom:
+            secretKeyRef:
+              name: aocs-compliance-secrets
+              key: OCX_REDIS_ADDR
+        - name: OCX_REDIS_ENABLED
+          value: "true"
+
+        # ── CORS + Encryption ─────────────────────────────────────────────
+        - name: CORS_ALLOWED_ORIGINS
+          valueFrom:
+            secretKeyRef:
+              name: aocs-compliance-secrets
+              key: CORS_ALLOWED_ORIGINS
+              optional: true
+        - name: OCX_ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: aocs-compliance-secrets
+              key: OCX_ENCRYPTION_KEY
+
+        # ── GCP Pub/Sub ───────────────────────────────────────────────────
+        - name: GOOGLE_CLOUD_PROJECT
+          valueFrom:
+            secretKeyRef:
+              name: aocs-compliance-secrets
+              key: GOOGLE_CLOUD_PROJECT
+        - name: PUBSUB_ENABLED
+          value: "true"
+
+        # ── Distributed tracing ───────────────────────────────────────────
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          valueFrom:
+            secretKeyRef:
+              name: aocs-compliance-secrets
+              key: OTEL_EXPORTER_OTLP_ENDPOINT
+              optional: true
