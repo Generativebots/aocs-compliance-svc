@@ -1,7 +1,7 @@
 // Package handlers — Resource Graph API for the JARVIS Mind-Map Dashboard.
 //
 // Integration-first architecture:
-//   import_sources (KB/BPM/SOP refs) → aocs_tenant_documents → intent_mappings → resource_relationships
+//   import_sources (KB/BPM/SOP refs) → core_tenant_docs → intent_mappings → resource_relationships
 //   GRA trust_attestations govern intents and agt.
 
 package reports
@@ -70,7 +70,7 @@ func HandleGetResourceGraph(db database.DB) http.HandlerFunc {
 			}()
 			defer wg.Done()
 			var imports []map[string]any
-			// aocs_tenant_documents actual cols (verified 2026-05-27): document_id, source_id, source_type,
+			// core_tenant_docs actual cols (verified 2026-05-27): document_id, source_id, source_type,
 			// name (NOT title), document_type (NOT doc_type), status, description, created_at
 			if err := db.QueryRowsCtx(r.Context(), database.TblTenantDocuments, "document_id,source_id,source_type,name,status,document_type,description", "tenant_id", tenantID, &imports); err != nil {
 				slog.Error("HandleGetResourceGraph: QueryRows import_sources failed", "error", err)
@@ -101,10 +101,10 @@ func HandleGetResourceGraph(db database.DB) http.HandlerFunc {
 			}()
 			defer wg.Done()
 			var docs []map[string]any
-			// aocs_tenant_documents actual cols (verified 2026-05-27): name (NOT file_name),
+			// core_tenant_docs actual cols (verified 2026-05-27): name (NOT file_name),
 			// document_type (NOT file_type), status — parse_status, extracted_intents, ai_model_used do NOT exist
 			if err := db.QueryRowsCtx(r.Context(), database.TblTenantDocuments, "document_id,name,document_type,status,mime_type,file_size,source_type", "tenant_id", tenantID, &docs); err != nil {
-				slog.Error("HandleGetResourceGraph: QueryRows aocs_tenant_documents failed", "error", err)
+				slog.Error("HandleGetResourceGraph: QueryRows core_tenant_docs failed", "error", err)
 				errCh <- err
 				return
 			}
@@ -132,7 +132,7 @@ func HandleGetResourceGraph(db database.DB) http.HandlerFunc {
 			}()
 			defer wg.Done()
 			var intents []map[string]any
-			// T.IAProcessIntents maps to aocs_ia_process_intents (junction table, no name col).
+			// T.IAProcessIntents maps to core_process_intents (junction table, no name col).
 			if err := db.QueryRowsCtx(r.Context(), database.TblIntents, "intent_id,name,description,status,bound_rules,created_at", "tenant_id", tenantID, &intents); err != nil {
 				slog.Error("HandleGetResourceGraph: QueryRows ia_intents failed (non-fatal)", "error", err)
 				// Non-fatal: continue without intent nodes

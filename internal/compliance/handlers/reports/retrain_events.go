@@ -8,7 +8,7 @@
 //
 //   PATCH /analytics/retrain-events/{id}/complete
 //     Called by the Python Vertex AI worker when a training job finishes.
-//     Writes completed_at + model_version to the aocs_platform_events row.
+//     Writes completed_at + model_version to the core_events row.
 //     This fixes the always-NULL completed_at field on retrain records.
 //
 // Previously: completed_at was always NULL because no endpoint existed for
@@ -30,7 +30,7 @@ import (
 	"github.com/ocx/shared/validate"
 )
 
-// HandleListRetrainEvents lists RLHC retrain events from aocs_platform_events.
+// HandleListRetrainEvents lists RLHC retrain events from core_events.
 // GET /analytics/retrain-events
 func HandleListRetrainEvents(db database.DB, coreClients ...*serviceclient.Client) http.HandlerFunc {
 	var coreClient *serviceclient.Client
@@ -91,7 +91,7 @@ func HandleListRetrainEvents(db database.DB, coreClients ...*serviceclient.Clien
 			return
 		}
 		// CQ-05 FIX: Previously loaded ALL platform events for the tenant then filtered
-		// in Go — OOM at scale (aocs_platform_events is written for every gate call).
+		// in Go — OOM at scale (core_events is written for every gate call).
 		// Now uses QueryRowsCompound to push trigger_source filter to the DB.
 		var events []RetrainEvent
 		cols := "id,tenant_id,case_id,trigger_source,verdict,reason_hash,model_version,status,created_at,completed_at"

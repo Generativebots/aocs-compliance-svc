@@ -86,7 +86,7 @@ func HandleDLPScan(store *DLPStore) http.HandlerFunc {
 		for _, d := range result.CodeDetections {
 			codeTypes = append(codeTypes, d.CodeType)
 		}
-		// Persist scan result via aocs_enforcement_actions (action_type='dlp_scan')
+		// Persist scan result via core_enforcement_actions (action_type='dlp_scan')
 		scanMeta, _ := json.Marshal(map[string]any{
 			"direction":        req.Direction,
 			"classification":   result.Classification,
@@ -134,7 +134,7 @@ func HandleDLPScan(store *DLPStore) http.HandlerFunc {
 		)
 
 		// CIP-4 FIX: DLP → Sentinel bridge.
-		// Was: DLP scan only wrote to aocs_enforcement_actions (audit only). No Sentinel alert raised.
+		// Was: DLP scan only wrote to core_enforcement_actions (audit only). No Sentinel alert raised.
 		// The DLP ↔ SIEM integration loop was broken — threats detected but never surfaced.
 		// Now: RESTRICTED or CONFIDENTIAL content fires a senti_alerts row, surfacing in the
 		// Sentinel dashboard and triggering SSE fan-out for real-time operator notification.
@@ -298,7 +298,7 @@ func HandleDLPMonitorPID(store *DLPStore) http.HandlerFunc {
 		}
 		req.TenantID = tenantID
 
-		// Persist PID monitor via aocs_enforcement_actions (action_type='dlp_pid_monitor')
+		// Persist PID monitor via core_enforcement_actions (action_type='dlp_pid_monitor')
 		pidMeta, _ := json.Marshal(map[string]any{
 			"pid":   req.PID,
 			"label": req.Label,

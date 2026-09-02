@@ -19,7 +19,7 @@ import (
 	"github.com/ocx/shared/infra/database"
 )
 
-// upsertDriveDocument inserts or updates a synced document in aocs_tenant_documents.
+// upsertDriveDocument inserts or updates a synced document in core_tenant_docs.
 // Conflict key is (tenant_id, source_id) — source_id is the file ID from the external drive.
 // Note: InsertRowIdempotent and UpdateRowCompound do not accept context yet;
 // HTTP-level context is handled upstream by the per-drive sync functions.

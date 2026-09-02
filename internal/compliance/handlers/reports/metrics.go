@@ -26,7 +26,7 @@ import (
 //	  "version":    "1.0",
 //	}]
 //
-// Computed from aocs_agents using successful/failed_interactions as a proxy for error rate
+// Computed from core_agents using successful/failed_interactions as a proxy for error rate
 // and behavioral_drift as a proxy for health degradation.
 func HandleGetServiceMetrics(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -44,8 +44,8 @@ func HandleGetServiceMetrics(db database.DB) http.HandlerFunc {
 		}
 
 		// M40: telemetry cols (total/successful/failed_interactions) + model_name live in
-		// satellite tables. Must read vw_agent_full which JOINs aocs_agents +
-		// aocs_agent_config + aocs_agent_telemetry — not TblAgents directly.
+		// satellite tables. Must read vw_agent_full which JOINs core_agents +
+		// core_agent_config + core_agent_telemetry — not TblAgents directly.
 		var agents []map[string]any
 		if err := db.QueryRowsCtx(r.Context(), database.TblAgentFullView,
 			"agent_id,tenant_id,name,status,is_frozen,blacklisted,behavioral_drift,total_interactions,successful_interactions,failed_interactions,risk_tier,tier,model_name,created_at",

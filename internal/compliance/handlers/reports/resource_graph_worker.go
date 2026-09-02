@@ -2,11 +2,11 @@ package reports
 
 // resource_graph_worker.go — Resource relationship graph population worker.
 //
-// Aocs_resource_graph_nodes and aocs_resource_graph_edges were permanently
+// Aocs_resource_graph_nodes and core_resource_graph_edges were permanently
 // empty — the Sankey/Ograph views had no data to render. This worker scans:
-//   - aocs_agents (nodes: agent type)
+//   - core_agents (nodes: agent type)
 //   - qcore_policy_bindings (edges: agent→policy)
-//   - aocs_ia_intents (edges: agent→intent)
+//   - core_intents (edges: agent→intent)
 // and materializes the graph into the resource graph tables.
 //
 // Triggered by: POST /api/v1/resource-graph/scan (on-demand) + 15-min background tick.
@@ -148,7 +148,7 @@ func runResourceGraphScan(ctx context.Context, db database.DB) {
 	edges := 0
 
 	// 1. Agent nodes
-	// M40: agent_type moved to aocs_agent_config — must read vw_agent_full (JOIN view).
+	// M40: agent_type moved to core_agent_config — must read vw_agent_full (JOIN view).
 	// Reading TblAgents directly returns NULL agent_type → broken graph topology.
 	var agents []struct {
 		AgentID   string `json:"agent_id"`
@@ -183,11 +183,11 @@ func runResourceGraphScan(ctx context.Context, db database.DB) {
 		nodes++
 	}
 
-	// 2. Policy nodes from aocs_policies (post-consolidation: no dedicated binding table)
-	// Pre-consolidation aocs_policy_agent_bindings was merged into aocs_policies.
-	// aocs_policies has no agent_id column — policy-agent associations are inferred
-	// from aocs_hitl_decisions (policy_id + agent_id). For graph building, we create
-	// policy nodes from aocs_policies and derive edges from hitl_decisions.
+	// 2. Policy nodes from core_policies (post-consolidation: no dedicated binding table)
+	// Pre-consolidation aocs_policy_agent_bindings was merged into core_policies.
+	// core_policies has no agent_id column — policy-agent associations are inferred
+	// from core_hitl (policy_id + agent_id). For graph building, we create
+	// policy nodes from core_policies and derive edges from hitl_decisions.
 	tenantSet := make(map[string]struct{}, len(agents))
 	for _, agt := range agents {
 		tenantSet[agt.TenantID] = struct{}{}
@@ -222,7 +222,7 @@ func runResourceGraphScan(ctx context.Context, db database.DB) {
 			}
 			nodes++
 		}
-		// Derive agent→policy edges from aocs_hitl_decisions (has both agent_id and policy_id)
+		// Derive agent→policy edges from core_hitl (has both agent_id and policy_id)
 		var decisions []struct {
 			AgentID  string `json:"agent_id"`
 			PolicyID string `json:"policy_id"`

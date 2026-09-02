@@ -1,7 +1,7 @@
 package reports
 
 // compliance_report: table nexus_compliance_reports, PK: compliance_report_id
-// export_job: table aocs_export_jobs (check if exists; fall back to nexus_export_jobs)
+// export_job: table core_jobs (check if exists; fall back to nexus_export_jobs)
 
 import (
 

@@ -15,7 +15,7 @@ SELECT
   ctrl.name,
   ctrl.description,
   'NOT_STARTED'
-FROM public.aocs_tenants t
+FROM public.syst_tenants t
 CROSS JOIN (VALUES
   ('CC1.1',  'Control Environment — Commitment to Integrity',  'COSO principle: demonstrates commitment to integrity and ethical values'),
   ('CC2.1',  'Communication and Information',                  'Obtains or generates relevant information to support internal control'),
@@ -39,7 +39,7 @@ SELECT
   ctrl.name,
   ctrl.description,
   'NOT_STARTED'
-FROM public.aocs_tenants t
+FROM public.syst_tenants t
 CROSS JOIN (VALUES
   ('Art.9',  'Risk Management System',                         'Establish, implement, document and maintain a risk management system'),
   ('Art.10', 'Data and Data Governance',                       'Training, validation, and testing data sets meet quality criteria'),

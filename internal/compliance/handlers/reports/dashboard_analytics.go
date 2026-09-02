@@ -253,7 +253,7 @@ func HandleGetTrifactorClaims(db database.DB) http.HandlerFunc {
 
 		respond.JSON(w, http.StatusOK, map[string]any{
 			"history":             orEmpty(history),
-			"aocs_hitl_decisions": orEmpty(decisions),
+			"core_hitl": orEmpty(decisions),
 			"stats": map[string]any{
 				"held":      held,
 				"released":  released,
@@ -286,7 +286,7 @@ func orEmpty(s []map[string]any) []map[string]any {
 // that the Cognitive Auditor is issuing enforceable outcomes.
 
 // HandleGetSanctionSummary returns a summary of enforcement sanctions for the tenant.
-// Queries aocs_enforcement_actions for sanction-type entries.
+// Queries core_enforcement_actions for sanction-type entries.
 func HandleGetSanctionSummary(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if respond.RequireDB(w, db) {
@@ -368,7 +368,7 @@ func HandleGetSanctionSummary(db database.DB) http.HandlerFunc {
 // for the entire jury/HITL governance loop.
 
 // HandleGetViolationSummary returns a summary of violations triggering jury workflow.
-// Queries aocs_enforcement_actions (compliance_violation type) + gra_cases.
+// Queries core_enforcement_actions (compliance_violation type) + gra_cases.
 func HandleGetViolationSummary(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if respond.RequireDB(w, db) {
@@ -380,7 +380,7 @@ func HandleGetViolationSummary(db database.DB) http.HandlerFunc {
 			return
 		}
 
-		// aocs_enforcement_actions: compliance_violation entries
+		// core_enforcement_actions: compliance_violation entries
 		var actions []struct {
 			ID         string  `json:"id"`
 			TenantID   string  `json:"tenant_id"`

@@ -174,7 +174,7 @@ func HandleComplianceDeliveryStatus(pgx *database.PGXPool) http.HandlerFunc {
 //
 // Flow:
 //  1. Load the compliance report + schedule_config (recipients, format)
-//  2. Load the tenant's SMTP config from aocs_tenant_smtp_configs
+//  2. Load the tenant's SMTP config from core_tenant_smtp
 //  3. Send the report JSON/summary to each recipient via SMTP
 //  4. Write last_sent_at back to the report row
 //
@@ -240,7 +240,7 @@ func HandleDeliverComplianceReport(db database.DB) http.HandlerFunc {
 			return
 		}
 
-		// 3. Load tenant SMTP config from aocs_tenant_smtp_configs
+		// 3. Load tenant SMTP config from core_tenant_smtp
 		smtpCfg, smtpErr := loadTenantSMTPForDelivery(r.Context(), db, tenantID)
 		if smtpErr != nil {
 			slog.Error("HandleDeliverComplianceReport: no SMTP config",
@@ -338,7 +338,7 @@ type smtpDeliveryConfig struct {
 	FromName  string
 }
 
-// loadTenantSMTPForDelivery loads SMTP config from aocs_tenant_smtp_configs and
+// loadTenantSMTPForDelivery loads SMTP config from core_tenant_smtp and
 // decrypts the stored API key / password before returning.
 //
 // CQ-04 FIX: Previously passed r.APIKeyEnc (AES-GCM ciphertext) directly as the

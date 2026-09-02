@@ -4,18 +4,18 @@
 -- =============================================================================
 -- Run AFTER: 00_compliance_schema.sql
 -- Schema: compliance (all tables prefixed with compliance schema)
--- FK to Ring 0 tables: public.aocs_tenants (cross-schema FK, same Supabase DB)
+-- FK to Ring 0 tables: public.syst_tenants (cross-schema FK, same Supabase DB)
 -- FK to Ring 1 tables: TEXT-only (cross-schema, DEFERRABLE, app-level enforced)
 -- =============================================================================
 
--- ── compliance.aocs_compliance_cases ─────────────────────────────────────────
+-- ── compliance.core_compliance ─────────────────────────────────────────
 -- Primary compliance case tracking table.
 -- Links to Ring 1 via TEXT IDs (agent_id, hitl_decision_id, policy_id).
 -- These are TEXT-only — no hard FK to Ring 1 tables (different schema boundary).
-CREATE TABLE IF NOT EXISTS compliance.aocs_compliance_cases (
+CREATE TABLE IF NOT EXISTS compliance.core_compliance (
     case_id             TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT        NOT NULL
-                            REFERENCES public.aocs_tenants(tenant_id) ON DELETE CASCADE,
+                            REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     -- Ring 1 references — TEXT only, enforced at app layer
     agent_id            TEXT,
     hitl_decision_id    TEXT,
@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS compliance.aocs_compliance_cases (
 CREATE TABLE IF NOT EXISTS compliance.aocs_compliance_controls (
     control_id          TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT        NOT NULL
-                            REFERENCES public.aocs_tenants(tenant_id) ON DELETE CASCADE,
+                            REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     framework           TEXT        NOT NULL,  -- SOC2, EU_AI_ACT, ISO27001, GDPR, HIPAA
     control_ref         TEXT        NOT NULL,
     name                TEXT        NOT NULL,
@@ -73,8 +73,8 @@ CREATE TABLE IF NOT EXISTS compliance.aocs_compliance_controls (
 CREATE TABLE IF NOT EXISTS compliance.aocs_evidence (
     evidence_id         TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT        NOT NULL
-                            REFERENCES public.aocs_tenants(tenant_id) ON DELETE CASCADE,
-    case_id             TEXT        REFERENCES compliance.aocs_compliance_cases(case_id) ON DELETE SET NULL,
+                            REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
+    case_id             TEXT        REFERENCES compliance.core_compliance(case_id) ON DELETE SET NULL,
     control_id          TEXT        REFERENCES compliance.aocs_compliance_controls(control_id) ON DELETE SET NULL,
     -- Ring 1 TEXT references
     agent_id            TEXT,
@@ -105,9 +105,9 @@ CREATE TABLE IF NOT EXISTS compliance.aocs_evidence (
 CREATE TABLE IF NOT EXISTS compliance.aocs_zkp_proofs (
     proof_id            TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT        NOT NULL
-                            REFERENCES public.aocs_tenants(tenant_id) ON DELETE CASCADE,
+                            REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     evidence_id         TEXT        REFERENCES compliance.aocs_evidence(evidence_id),
-    case_id             TEXT        REFERENCES compliance.aocs_compliance_cases(case_id),
+    case_id             TEXT        REFERENCES compliance.core_compliance(case_id),
     -- Ring 1 TEXT references
     agent_id            TEXT,
     execution_id        TEXT,
@@ -131,8 +131,8 @@ CREATE TABLE IF NOT EXISTS compliance.aocs_zkp_proofs (
 CREATE TABLE IF NOT EXISTS compliance.aocs_dlp_findings (
     finding_id          TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT        NOT NULL
-                            REFERENCES public.aocs_tenants(tenant_id) ON DELETE CASCADE,
-    case_id             TEXT        REFERENCES compliance.aocs_compliance_cases(case_id) ON DELETE SET NULL,
+                            REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
+    case_id             TEXT        REFERENCES compliance.core_compliance(case_id) ON DELETE SET NULL,
     -- Ring 1 TEXT references
     agent_id            TEXT,
     execution_id        TEXT,
@@ -156,7 +156,7 @@ CREATE TABLE IF NOT EXISTS compliance.aocs_dlp_findings (
 CREATE TABLE IF NOT EXISTS compliance.nexus_compliance_reports (
     report_id           TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT        NOT NULL
-                            REFERENCES public.aocs_tenants(tenant_id) ON DELETE CASCADE,
+                            REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     report_type         TEXT        NOT NULL
                             CHECK (report_type IN ('SOC2','EU_AI_ACT','ISO27001','GDPR','HIPAA','GRC_SUMMARY','DAILY','WEEKLY','MONTHLY')),
     period_start        TIMESTAMPTZ NOT NULL,
@@ -176,22 +176,22 @@ CREATE TABLE IF NOT EXISTS compliance.nexus_compliance_reports (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ── compliance.aocs_case_comments ────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS compliance.aocs_case_comments (
+-- ── compliance.core_compliance_comments ────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS compliance.core_compliance_comments (
     comment_id      TEXT        PRIMARY KEY DEFAULT public.gen_id(),
-    case_id         TEXT        NOT NULL REFERENCES compliance.aocs_compliance_cases(case_id) ON DELETE CASCADE,
-    tenant_id       TEXT        NOT NULL REFERENCES public.aocs_tenants(tenant_id) ON DELETE CASCADE,
+    case_id         TEXT        NOT NULL REFERENCES compliance.core_compliance(case_id) ON DELETE CASCADE,
+    tenant_id       TEXT        NOT NULL REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     author_id       TEXT        NOT NULL,
     content         TEXT        NOT NULL,
     is_internal     BOOLEAN     NOT NULL DEFAULT FALSE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ── compliance.aocs_sybil_risk_assessments ───────────────────────────────────
+-- ── compliance.shar_trust ───────────────────────────────────
 -- P-16: Daily sybil detection results per tenant.
-CREATE TABLE IF NOT EXISTS compliance.aocs_sybil_risk_assessments (
+CREATE TABLE IF NOT EXISTS compliance.shar_trust (
     assessment_id   TEXT        PRIMARY KEY DEFAULT public.gen_id(),
-    tenant_id       TEXT        NOT NULL REFERENCES public.aocs_tenants(tenant_id) ON DELETE CASCADE,
+    tenant_id       TEXT        NOT NULL REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     agent_id        TEXT,
     risk_score      DOUBLE PRECISION NOT NULL DEFAULT 0.0,
     risk_level      TEXT        NOT NULL DEFAULT 'LOW' CHECK (risk_level IN ('LOW','MEDIUM','HIGH','CRITICAL')),
@@ -226,7 +226,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uidx_platform_signing_keys_active
 -- S3 Fix (Palantir Gap): Cross-pod sybil collusion tracking.
 -- CollusionStore.RecordAgentOnIP() upserts here for cross-pod shared state.
 CREATE TABLE IF NOT EXISTS compliance.aocs_collusion_ip_agents (
-    tenant_id   TEXT        NOT NULL REFERENCES public.aocs_tenants(tenant_id) ON DELETE CASCADE,
+    tenant_id   TEXT        NOT NULL REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     ip_address  TEXT        NOT NULL,
     agent_ids   JSONB       NOT NULL DEFAULT '[]',
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -238,15 +238,15 @@ CREATE INDEX IF NOT EXISTS idx_collusion_ip_tenant
 
 -- ── DBA Audit Fixes (2026-09-02) ──────────────────────────────────────────────
 -- M2: Add default values to prevent null compliance fields
-ALTER TABLE public.aocs_tenants
+ALTER TABLE public.syst_tenants
     ALTER COLUMN data_residency_region SET DEFAULT 'us-central1',
     ALTER COLUMN last_config_changed_by SET DEFAULT 'SYSTEM';
 
 -- H5: Add updated_at to compliance tables missing it (required for incremental sync + ETL)
 -- Palantir standard: every mutable table must have an updated_at column with auto-trigger.
-ALTER TABLE compliance.aocs_case_comments    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE compliance.core_compliance_comments    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE compliance.aocs_dlp_findings     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-ALTER TABLE compliance.aocs_sybil_risk_assessments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE compliance.shar_trust ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE compliance.aocs_zkp_proofs       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE compliance.platform_signing_keys ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
@@ -260,7 +260,7 @@ END;
 $$;
 
 CREATE OR REPLACE TRIGGER trg_case_comments_updated_at
-    BEFORE UPDATE ON compliance.aocs_case_comments
+    BEFORE UPDATE ON compliance.core_compliance_comments
     FOR EACH ROW EXECUTE FUNCTION compliance.set_updated_at();
 
 CREATE OR REPLACE TRIGGER trg_dlp_findings_updated_at
@@ -268,7 +268,7 @@ CREATE OR REPLACE TRIGGER trg_dlp_findings_updated_at
     FOR EACH ROW EXECUTE FUNCTION compliance.set_updated_at();
 
 CREATE OR REPLACE TRIGGER trg_sybil_assessments_updated_at
-    BEFORE UPDATE ON compliance.aocs_sybil_risk_assessments
+    BEFORE UPDATE ON compliance.shar_trust
     FOR EACH ROW EXECUTE FUNCTION compliance.set_updated_at();
 
 CREATE OR REPLACE TRIGGER trg_zkp_proofs_updated_at
@@ -288,12 +288,12 @@ ALTER TABLE compliance.platform_signing_keys
         REFERENCES compliance.platform_signing_keys (key_id)
         ON DELETE SET NULL;
 
--- H6 (system): aocs_platform_departments.parent_id
-ALTER TABLE public.aocs_platform_departments
+-- H6 (system): syst_departments.parent_id
+ALTER TABLE public.syst_departments
     DROP CONSTRAINT IF EXISTS aocs_platform_departments_parent_id_fkey,
     ADD CONSTRAINT aocs_platform_departments_parent_id_fkey
         FOREIGN KEY (parent_id)
-        REFERENCES public.aocs_platform_departments (department_id)
+        REFERENCES public.syst_departments (department_id)
         ON DELETE SET NULL;
 
 -- aocs_audit_log: NOT NULL on tenant_id (data isolation)
@@ -303,10 +303,10 @@ ALTER TABLE public.aocs_audit_log ALTER COLUMN tenant_id SET NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_aocs_audit_log_tenant_time
     ON public.aocs_audit_log (tenant_id, created_at DESC);
 
--- aocs_notification_rules + aocs_tenant_config indexes
+-- aocs_notification_rules + syst_tenants indexes
 CREATE INDEX IF NOT EXISTS idx_notification_rules_tenant ON public.aocs_notification_rules (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_tenant_config_tenant      ON public.aocs_tenant_config (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_platform_depts_parent     ON public.aocs_platform_departments (parent_id);
+CREATE INDEX IF NOT EXISTS idx_tenant_config_tenant      ON public.syst_tenants (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_platform_depts_parent     ON public.syst_departments (parent_id);
 
 -- M5: pg_stat_statements for slow query identification (Google/Palantir monitoring standard)
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;

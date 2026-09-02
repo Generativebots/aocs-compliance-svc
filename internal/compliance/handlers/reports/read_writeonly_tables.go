@@ -88,7 +88,7 @@ func HandleGetAdaptiveThreshold(db database.DB) http.HandlerFunc {
 			return
 		}
 		var rows []map[string]any
-		// aocs_adaptive_thresholds PK is id (not threshold_id or adaptive_threshold_id).
+		// core_adaptive_thresholds PK is id (not threshold_id or adaptive_threshold_id).
 		if err := db.QueryRowsCompound(database.TblAdaptiveThresholds,
 			"id,tenant_id,agent_id,metric_name,current_threshold,baseline_threshold,"+
 				"adjustment_factor,adaptation_factor,max_financial_action_usd,reason,"+
@@ -185,7 +185,7 @@ func HandleListGuardianVerdicts(db database.DB) http.HandlerFunc {
 		if deptID != "" && agentID == "" {
 			var agentRows []database.Agt
 			agentDept := make(map[string]string)
-			// M40: department_id moved to aocs_agent_config — use vw_agent_full, not TblAgents.
+			// M40: department_id moved to core_agent_config — use vw_agent_full, not TblAgents.
 			if dbErr := db.QueryRowsCtx(r.Context(), database.TblAgentFullView, "agent_id,department_id",
 				"tenant_id", tenantID, &agentRows); dbErr == nil {
 				for _, a := range agentRows {

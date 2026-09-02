@@ -9,8 +9,8 @@
 // This handler:
 //  1. Verifies source department owns the case.
 //  2. Verifies target department has HITL enabled (enabled_features.hitl=true).
-//  3. Recomputes SLA deadline from aocs_hitl_sla_config for the target dept.
-//  4. Updates aocs_hitl_decisions: department_id, sla_deadline, reassigned_from.
+//  3. Recomputes SLA deadline from core_hitl_sla for the target dept.
+//  4. Updates core_hitl: department_id, sla_deadline, reassigned_from.
 //  5. Emits case.dept_handover platform event (EU AI Act Art.13 traceability).
 package compliance
 

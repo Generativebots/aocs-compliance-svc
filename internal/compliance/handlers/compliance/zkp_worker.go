@@ -1,8 +1,8 @@
 // Package compliance — WORKER-08: ZKP Batch Processor.
 //
-// Picks up pending aocs_zkp_batch_jobs every 5 minutes,
+// Picks up pending core_evidence every 5 minutes,
 // generates a deterministic ZKP chain root per batch, writes to
-// aocs_zkp_chain_roots, and marks jobs COMPLETED.
+// core_evidence, and marks jobs COMPLETED.
 //
 // Wire from cmd/aocs-intel/main.go:
 //
@@ -25,8 +25,8 @@ import (
 var zkpPollInterval = consts.ZKPPollInterval
 
 // StartBatchProcessor starts the ZKP batch job processor.
-// It polls aocs_zkp_batch_jobs every 5 minutes, processes PENDING jobs,
-// writes aocs_zkp_chain_roots, and marks jobs COMPLETED.
+// It polls core_evidence every 5 minutes, processes PENDING jobs,
+// writes core_evidence, and marks jobs COMPLETED.
 func StartBatchProcessor(ctx context.Context, db database.DB) {
 	if db == nil {
 		slog.Warn("db is nil — worker not started")
@@ -77,8 +77,8 @@ func processZKPBatch(ctx context.Context, db database.DB) {
 		JobID    string `json:"job_id"`            // was batch_job_id
 		RootHash string `json:"root_hash"`         // used as idempotency key
 	}
-	// aocs_zkp_batch_jobs → aocs_zkp_chain_roots (TblZKPBatchJobs consolidation).
-	// aocs_zkp_chain_roots columns: zkp_chain_root_id, tenant_id, job_id, root_hash,
+	// core_evidence → core_evidence (TblZKPBatchJobs consolidation).
+	// core_evidence columns: zkp_chain_root_id, tenant_id, job_id, root_hash,
 	//   block_height, anchored_at, created_at, updated_at, created_by.
 	// "PENDING" = block_height IS NULL (rows not yet block-confirmed).
 	// for timestamp/int columns. Use QueryRawCtx (interface method) for IS NULL filter.
@@ -104,12 +104,12 @@ func processZKPBatch(ctx context.Context, db database.DB) {
 		chainRootID := generatePlatformID()
 
 		// Generate deterministic ZKP root: sha256(chainRootID + tenantID + job_id)
-		// (payload no longer available in aocs_zkp_chain_roots; use job_id as input)
+		// (payload no longer available in core_evidence; use job_id as input)
 		hashInput := chainRootID + job.TenantID + job.JobID
 		hashBytes := sha256.Sum256([]byte(hashInput))
 		rootHash := hex.EncodeToString(hashBytes[:])
 
-		// Write chain root — aocs_zkp_chain_roots columns: zkp_chain_root_id, tenant_id, job_id,
+		// Write chain root — core_evidence columns: zkp_chain_root_id, tenant_id, job_id,
 		// root_hash, anchored_at. block_height defaults to 0 if not provided.
 		chainRootErr := db.InsertRow(database.TblZKPChainRoots, map[string]any{
 			"zkp_chain_root_id": chainRootID, // was "id"
@@ -121,7 +121,7 @@ func processZKPBatch(ctx context.Context, db database.DB) {
 		})
 
 		// Mark this chain root as anchored (update anchored_at, no separate status column).
-		// The UPDATE target is the same aocs_zkp_chain_roots table.
+		// The UPDATE target is the same core_evidence table.
 		if chainRootErr == nil {
 			// The INSERT already sets anchored_at; nothing to update separately.
 			slog.Info("chain root anchored", "chain_root_id", chainRootID, "job_id", job.JobID)

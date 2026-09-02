@@ -87,7 +87,7 @@ func generateDailyReports(ctx context.Context, db database.DB, coreClient *servi
 		return
 	}
 
-	// Load all active tenants via ocx-core-svc API (boundary enforcement: no direct aocs_tenants read).
+	// Load all active tenants via ocx-core-svc API (boundary enforcement: no direct syst_tenants read).
 	var tenantIDs []string
 	if coreClient != nil {
 		tenants, err := coreClient.ListTenants(ctx)
@@ -189,7 +189,7 @@ func generateTenantReport(ctx context.Context, db database.DB, coreClient *servi
 
 	// 2. Enforcement actions (last 24h) — read from Ring2-owned compliance cases (local).
 	var enfRows []map[string]any
-	// FIX: Column name aligned with actual aocs_compliance_cases schema.
+	// FIX: Column name aligned with actual core_compliance schema.
 	// Previous code referenced phantom column enforcement_action_id (SQLSTATE 42703).
 	if _dbErr := db.QueryRowsCursor(database.TblComplianceCases, "case_id,case_type,created_at",
 		"tenant_id", tenantID, database.CursorPage{Limit: 200}, &enfRows); _dbErr != nil {

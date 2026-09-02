@@ -11,7 +11,7 @@
 //
 // The handler:
 //  1. Calls the IntentClassifier (→ ENT AI service or local TF-IDF fallback).
-//  2. Validates suggested departments against aocs_platform_departments.
+//  2. Validates suggested departments against syst_departments.
 //  3. Checks current capacity per department (DEPT_MAX_HITL_CASES).
 //  4. Returns a ranked routing recommendation with metadata for the caller.
 package compliance
@@ -93,8 +93,8 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 		)
 
 		var knownDepts []map[string]any
-		// nolint:tenant_filter — aocs_platform_departments is GLOBAL by design.
-		// Same model as global roles/permissions. Member ↔ dept association is in aocs_tenant_user_roles.
+		// nolint:tenant_filter — syst_departments is GLOBAL by design.
+		// Same model as global roles/permissions. Member ↔ dept association is in syst_user_roles.
 		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblPlatformDepartments, "slug,name,enabled_features", "", "", &knownDepts); _dbErr != nil {
 			slog.Error("db.QueryRows failed (best-effort)", "error", _dbErr)
 		}
@@ -127,7 +127,7 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 				"tenant_id", tenantID, "intent", result.Intent, "routing_source", result.RoutingSource)
 			if _, exists := deptMap["dept_compliance"]; exists {
 				validDepts = []string{"dept_compliance"}
-				// Post audit event via ocx-core-svc API (boundary enforcement: no direct aocs_platform_events write).
+				// Post audit event via ocx-core-svc API (boundary enforcement: no direct core_events write).
 				if coreClient != nil {
 					concurrent.Go("hitl-routing-fallback-event", func() {
 						_ = coreClient.PostEvent(context.Background(), map[string]any{

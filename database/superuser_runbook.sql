@@ -9,7 +9,7 @@
 -- RING DEPENDENCY:
 --   DB Schema:  Same Supabase project as Ring 0, Ring 1, and Ring 2.
 --               Tables live in compliance schema (not public).
---               FK to public.aocs_tenants (Ring 0) — hard FK.
+--               FK to public.syst_tenants (Ring 0) — hard FK.
 --               FK to Ring 2 tables (core: agents, HITL) — TEXT only (app-level enforced).
 --
 --   Runtime:    Calls Ring 0 (aocs-system) for tenant validation.
@@ -19,7 +19,7 @@
 --               until Ring 2 (ocx-core-svc) is available.
 --
 -- STARTUP ORDER:
---   1. Run Ring 0 schema (aocs-system-svc) → aocs_tenants must exist
+--   1. Run Ring 0 schema (aocs-system-svc) → syst_tenants must exist
 --   2. Run this file (compliance schema + tables)
 --   3. Optionally run Ring 2 schema (ocx-core-svc) — compliance reads Ring 2 at runtime
 --   4. Start Ring 0 docker compose
@@ -55,13 +55,13 @@ BEGIN
     RAISE EXCEPTION 'gen_id() not found. Run 00_gen_id_function.sql first.';
   END IF;
 
-  -- Ring 0: aocs_tenants must exist
+  -- Ring 0: syst_tenants must exist
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.tables
-    WHERE table_schema = 'public' AND table_name = 'aocs_tenants'
+    WHERE table_schema = 'public' AND table_name = 'syst_tenants'
   ) THEN
     RAISE EXCEPTION
-      'public.aocs_tenants not found. Run aocs-system-svc Ring 0 schema first.';
+      'public.syst_tenants not found. Run aocs-system-svc Ring 0 schema first.';
   END IF;
 
   RAISE NOTICE 'Prerequisites met — Ring 0 tables exist, gen_id() available';
@@ -93,7 +93,7 @@ DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.tables
-    WHERE table_schema = 'compliance' AND table_name = 'aocs_compliance_cases'
+    WHERE table_schema = 'compliance' AND table_name = 'core_compliance'
   ) THEN
     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA compliance TO svc_compliance;
     GRANT SELECT ON ALL TABLES IN SCHEMA compliance TO svc_platform;

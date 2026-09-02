@@ -91,8 +91,8 @@ func HandleListCases(db database.DB) http.HandlerFunc {
 					-- JOINed enrichment
 					COALESCE(a.name, '')         AS agent_name,
 					COALESCE(p.name, '')         AS policy_name
-				FROM aocs_hitl_decisions h
-				LEFT JOIN aocs_agents         a ON a.agent_id  = h.agent_id  AND a.tenant_id = h.tenant_id
+				FROM core_hitl h
+				LEFT JOIN core_agents         a ON a.agent_id  = h.agent_id  AND a.tenant_id = h.tenant_id
 				LEFT JOIN qcore_policies      p ON p.policy_id = h.policy_id AND p.tenant_id = h.tenant_id
 				ORDER BY h.created_at DESC
 				LIMIT 500`
@@ -117,8 +117,8 @@ func HandleListCases(db database.DB) http.HandlerFunc {
 					-- JOINed enrichment: agent display name + policy name in one round-trip
 					COALESCE(a.name, '')         AS agent_name,
 					COALESCE(p.name, '')         AS policy_name
-				FROM aocs_hitl_decisions h
-				LEFT JOIN aocs_agents         a ON a.agent_id  = h.agent_id  AND a.tenant_id = h.tenant_id
+				FROM core_hitl h
+				LEFT JOIN core_agents         a ON a.agent_id  = h.agent_id  AND a.tenant_id = h.tenant_id
 				LEFT JOIN qcore_policies      p ON p.policy_id = h.policy_id AND p.tenant_id = h.tenant_id
 				WHERE h.tenant_id = $1
 				ORDER BY h.created_at DESC
@@ -260,7 +260,7 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 		}
 		now := time.Now().UTC().Format(time.RFC3339)
 
-		// Build clean update — only schema-valid aocs_hitl_decisions columns.
+		// Build clean update — only schema-valid core_hitl columns.
 		// decision_data JSONB stores the full arbitration record (rationale, reviewer, timestamp).
 		ddBytes, _ := json.Marshal(map[string]any{
 			"decision":   verdict,
@@ -452,10 +452,10 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 		// Skipped for AI-routed depts (classifier is responsible for its own slug validity).
 		if len(deptIDs) > 0 {
 			var knownDepts []map[string]any
-			// nolint:tenant_filter — aocs_platform_departments is GLOBAL by design.
+			// nolint:tenant_filter — syst_departments is GLOBAL by design.
 			// Standard departments (Engineering, Compliance, Finance, Legal…) are shared
 			// across ALL tenants — same model as global roles/permissions.
-			// Only member association (aocs_tenant_user_roles) is tenant-scoped.
+			// Only member association (syst_user_roles) is tenant-scoped.
 			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblPlatformDepartments, "slug,enabled_features", "", "", &knownDepts); _dbErr != nil {
 				slog.Error("db.QueryRows failed (best-effort)", "error", _dbErr)
 			}
@@ -473,7 +473,7 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 			}
 			if len(invalid) > 0 {
 				respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest,
-					fmt.Sprintf("department(s) not found in aocs_platform_departments: %v", invalid))
+					fmt.Sprintf("department(s) not found in syst_departments: %v", invalid))
 				return
 			}
 

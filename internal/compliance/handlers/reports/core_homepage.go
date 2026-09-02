@@ -41,7 +41,7 @@ func HandleGetAnalyticsCoreHomepage(db database.DB) http.HandlerFunc {
 			return
 		}
 
-		// Count aocs_agents
+		// Count core_agents
 		var agents []map[string]any
 		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblAgents, "agent_id,status", "tenant_id", tenantID, &agents); _dbErr != nil {
 			slog.Error("db operation failed", "method", "QueryRows", "error", _dbErr)

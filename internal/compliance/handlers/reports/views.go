@@ -11,7 +11,7 @@ package reports
 //   vw_compliance_kpis   — compliance summary metrics per tenant
 //
 // Circular flow:
-//   Agent gate calls → aocs_platform_events / qcore_verdicts
+//   Agent gate calls → core_events / qcore_verdicts
 //   DB views → vw_agent_dashboard, vw_compliance_kpis (live aggregation)
 //   These handlers → read views → UI dashboards
 

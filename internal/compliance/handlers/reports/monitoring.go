@@ -67,7 +67,7 @@ SELECT
   COUNT(*) FILTER (WHERE created_at >= $2)                          AS events_24h,
   COUNT(*) FILTER (WHERE created_at >= $2 AND severity IN ('ERROR','CRITICAL')) AS violations_24h,
   COUNT(*) FILTER (WHERE created_at >= $2 AND severity = 'WARNING') AS warnings_24h
-FROM aocs_ia_audit_logs
+FROM core_audit
 WHERE tenant_id = $1 AND created_at >= $3`
 
 		var rows []countRow
@@ -109,7 +109,7 @@ func HandleGetSystemOverview(db database.DB, internalAPIURL string) http.Handler
 		ov := systemOverview{GeneratedAt: time.Now().UTC().Format(time.RFC3339)}
 		cutoff24h := time.Now().UTC().Add(-24 * time.Hour).Format(time.RFC3339)
 
-		// V-06 FIX: Agent counts via Ring 1 internal API (was: direct FROM aocs_agents SQL)
+		// V-06 FIX: Agent counts via Ring 1 internal API (was: direct FROM core_agents SQL)
 		// Ring 4 (compliance) must call Ring 1's API — never touch Ring 1 tables directly.
 		if internalAPIURL != "" {
 			apiURL := fmt.Sprintf("%s/internal/v1/agents/counts?tenant_id=%s", internalAPIURL, tenantID)
@@ -149,7 +149,7 @@ func HandleGetSystemOverview(db database.DB, internalAPIURL string) http.Handler
 SELECT
   COUNT(*)                                                                  AS gate_calls_24h,
   COUNT(*) FILTER (WHERE severity IN ('ERROR','CRITICAL'))                  AS violations_24h
-FROM aocs_ia_audit_logs
+FROM core_audit
 WHERE tenant_id = $1 AND created_at >= $2`
 
 		var gs []gateStats

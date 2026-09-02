@@ -32,7 +32,7 @@ import (
 
 // HandleRouteDeptOverflow — POST /api/v1/departments/{slug}/overflow-route
 //
-// Checks the current dept capacity against aocs_hitl_sla_config.max_cases.
+// Checks the current dept capacity against core_hitl_sla.max_cases.
 // If over capacity, moves the oldest PENDING cases to the configured overflow dept.
 // Body: { max_cases_to_move?: int }   (default: 10)
 //
@@ -93,7 +93,7 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 		// ── Count open cases ───────────────────────────────────────────────────
 		var pendingRows []map[string]any
 		if coreClient != nil {
-			// SVC-BOUNDARY: read aocs_hitl_decisions via ocx-core-svc API
+			// SVC-BOUNDARY: read core_hitl via ocx-core-svc API
 			hitlRows, _rErr := coreClient.ListHITLCases(r.Context(), tenantID,
 				map[string]string{"department_id": slug, "status": "PENDING"}, 500)
 			if _rErr != nil {
@@ -182,7 +182,7 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 				"overflow_reason": fmt.Sprintf("dept %s at capacity, rerouting", slug),
 			})
 			if coreClient != nil {
-				// SVC-BOUNDARY: update aocs_hitl_decisions via ocx-core-svc API
+				// SVC-BOUNDARY: update core_hitl via ocx-core-svc API
 				if _rErr := coreClient.PatchHITLCase(r.Context(), tenantID, caseID, map[string]any{
 					"department_id": targetDept,
 					"sla_deadline":  newDeadline,
@@ -282,7 +282,7 @@ func HandleGuardDeptDeletion(db database.DB, coreClients ...*serviceclient.Clien
 		}
 		var pendingRows []map[string]any
 		if len(coreClients) > 0 && coreClients[0] != nil {
-			// SVC-BOUNDARY: read aocs_hitl_decisions via ocx-core-svc API
+			// SVC-BOUNDARY: read core_hitl via ocx-core-svc API
 			hitlRows, _rErr := coreClients[0].ListHITLCases(r.Context(), tenantID,
 				map[string]string{"department_id": slug, "status": "PENDING"}, 500)
 			if _rErr != nil {
@@ -333,7 +333,7 @@ func HandleGuardDeptDeletion(db database.DB, coreClients ...*serviceclient.Clien
 				"migration_reason": fmt.Sprintf("dept %s pre-deletion migration", slug),
 			})
 			if len(coreClients) > 0 && coreClients[0] != nil {
-				// SVC-BOUNDARY: update aocs_hitl_decisions via ocx-core-svc API
+				// SVC-BOUNDARY: update core_hitl via ocx-core-svc API
 				if _rErr := coreClients[0].PatchHITLCase(r.Context(), tenantID, caseID, map[string]any{
 					"department_id": req.TargetDept,
 					"context_data":  string(ctxUpdate),

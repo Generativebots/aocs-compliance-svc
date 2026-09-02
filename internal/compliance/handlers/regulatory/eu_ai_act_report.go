@@ -106,7 +106,7 @@ type submitRequest struct {
 // Generates a formal Article 13 regulatory filing report by:
 //  1. Calling compliance.BuildEUAIActTransparencyCard to get the live card (single source of truth)
 //  2. Wrapping it in a RegulatoryReport with a SHA-256 hash
-//  3. Persisting it as a DRAFT in aocs_compliance_cases (case_type='EU_AI_ACT_REGULATORY_REPORT')
+//  3. Persisting it as a DRAFT in core_compliance (case_type='EU_AI_ACT_REGULATORY_REPORT')
 //
 // The DRAFT can then be reviewed and submitted via the /submit route.
 func HandleGenerateEUAIActReport(db database.DB, coreClient *serviceclient.Client) http.HandlerFunc {
@@ -148,7 +148,7 @@ func HandleGenerateEUAIActReport(db database.DB, coreClient *serviceclient.Clien
 			TransparencyCard: card,
 		}
 
-		// ── Step 3: Persist as DRAFT in aocs_compliance_cases ────────────
+		// ── Step 3: Persist as DRAFT in core_compliance ────────────
 		reportBytes, _ := json.Marshal(report)
 		userID := auth.GetUserID(ctx)
 		if err := db.InsertRow(database.TblComplianceCases, map[string]any{

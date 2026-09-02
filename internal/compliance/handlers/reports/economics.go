@@ -34,7 +34,7 @@ func HandleDeleteDashboard(db database.DB) http.HandlerFunc {
 			return
 		}
 		// Was returning {"status":"deleted"} without touching the DB.
-		// Dashboards are stored in aocs_platform_config keyed by (category, key).
+		// Dashboards are stored in core_gov_config keyed by (category, key).
 		// category = "dashboard_<tenantID>", key = dashID (UUID set on create).
 		if err := db.UpdateRowCompound(database.TblPlatformConfig,
 			"category", "dashboard_"+tenantID,
@@ -103,7 +103,7 @@ func HandleGetEscrowHistory(db database.DB) http.HandlerFunc {
 }
 
 // HandleEscrowStats DELETED — architectural anti-pattern.
-// Was: fetches aocs_escrow_transactions → counts pending/released/blocked in Go.
+// Was: fetches core_escrow_txns → counts pending/released/blocked in Go.
 // Frontend derives these from GET /esc/history which it already fetches.
 
 // HandleValidateEscrow — POST /api/v1/esc/validate
@@ -165,7 +165,7 @@ func HandleValidateEscrow(db database.DB) http.HandlerFunc {
 
 // ─── Admin Economics Overview ─────────────────────────────────────────────────
 // GET /admin/economics/overview
-// Cross-table platform-wide summary from nexus_staking_ledger + aocs_escrow_transactions.
+// Cross-table platform-wide summary from nexus_staking_ledger + core_escrow_txns.
 // nolint:tenant_filter — SuperAdmin cross-tenant view; no tenant_id filter applied.
 func HandleGetEconomicsOverview(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

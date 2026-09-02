@@ -1,7 +1,7 @@
 // Package adm — Compliance handlers
 //
 // Phase M additions (2026-04-09):
-//   - Unified aocs_enforcement_actions table (action_type discriminator)
+//   - Unified core_enforcement_actions table (action_type discriminator)
 //   - Violations, Sanctions, Blocklist, Credentials, Disputes, Submissions
 //   - Each domain has List/Get/Create/Update/Delete + domain-specific actions
 //
@@ -25,7 +25,7 @@ import (
 	"github.com/ocx/shared/validate"
 )
 
-// Action-type values written to aocs_enforcement_actions.action_type.
+// Action-type values written to core_enforcement_actions.action_type.
 // Must match the CHECK constraint extended in bugfix3 Batch 12A.
 const (
 	complianceTypeViolation  = "violation"
@@ -175,7 +175,7 @@ func complianceUpdate(db database.DB) http.HandlerFunc {
 			return
 		}
 		respond.LimitBody(r)
-		// Previously any JSON key was forwarded directly to aocs_enforcement_actions — column
+		// Previously any JSON key was forwarded directly to core_enforcement_actions — column
 		// injection on compliance enforcement records (could overwrite action_type, tenant_id).
 		var req struct {
 			Status     string         `json:"status"     validate:"omitempty,oneof=ACTIVE INACTIVE PENDING RESOLVED EXPIRED"`
@@ -321,8 +321,8 @@ func complianceAddComment(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "comment or body field required")
 			return
 		}
-		// Write comment into aocs_case_comments (Batch 8).
-		// case_id maps enforcement_action.id → aocs_case_comments.case_id (logical FK).
+		// Write comment into core_compliance_comments (Batch 8).
+		// case_id maps enforcement_action.id → core_compliance_comments.case_id (logical FK).
 		comment := map[string]any{
 			"case_id":    id,
 			"tenant_id":  tenantID,
@@ -392,7 +392,7 @@ func HandleListViolations(db database.DB) http.HandlerFunc {
 			// Build agent→dept map once
 			var agentRows []database.Agt
 			agentDept := make(map[string]string)
-			// M40: department_id moved to aocs_agent_config — use vw_agent_full, not TblAgents.
+			// M40: department_id moved to core_agent_config — use vw_agent_full, not TblAgents.
 			if err := db.QueryRowsCtx(r.Context(), database.TblAgentFullView, "agent_id,department_id",
 				"tenant_id", tenantID, &agentRows); err == nil {
 				for _, a := range agentRows {
@@ -436,14 +436,14 @@ func HandleResolveViolation(db database.DB) http.HandlerFunc {
 	return complianceSetStatus(db, "RESOLVED")
 }
 
-// HandleIsolateViolation sets aocs_enforcement_actions.status = "QUARANTINED".
+// HandleIsolateViolation sets core_enforcement_actions.status = "QUARANTINED".
 // POST /api/v1/violation/{id}/quarantine
 // Patent §H: Quarantine barrier — isolates the violating agent without full kill-switch.
 func HandleIsolateViolation(db database.DB) http.HandlerFunc {
 	return complianceSetStatus(db, "QUARANTINED")
 }
 
-// HandleRestoreViolation sets aocs_enforcement_actions.status = "RELEASED".
+// HandleRestoreViolation sets core_enforcement_actions.status = "RELEASED".
 // POST /api/v1/violation/{id}/release
 // Patent §H: Releases a previously quarantined agent after manual HITL review.
 func HandleRestoreViolation(db database.DB) http.HandlerFunc {

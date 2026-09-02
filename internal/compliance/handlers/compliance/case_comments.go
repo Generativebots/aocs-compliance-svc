@@ -135,7 +135,7 @@ func HandleGetCase(db database.DB, coreClients ...*serviceclient.Client) http.Ha
 
 		var row map[string]any
 		if coreClient != nil {
-			// SVC-BOUNDARY: read aocs_hitl_decisions via ocx-core-svc API
+			// SVC-BOUNDARY: read core_hitl via ocx-core-svc API
 			hitlRow, _rErr := coreClient.GetHITLCase(r.Context(), tenantID, caseID, database.ColsHITLDecision)
 			if _rErr != nil || hitlRow == nil {
 				respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "case not found")

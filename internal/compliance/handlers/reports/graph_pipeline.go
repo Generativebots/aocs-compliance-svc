@@ -3,14 +3,14 @@
 // Resolves FA-27 SEV-1 issues:
 //
 //	S1-47: Sankey data aggregated without tenant_id filter
-//	S1-48: aocs_ograph_flows not populated by gate events
+//	S1-48: core_ograph_flows not populated by gate events
 //	S1-49: Ograph stats response key mismatch
 //
-// All queries derive live from aocs_platform_events (the canonical gate event log),
-// avoiding the need for a separate aocs_ograph_flows ETL pipeline.
+// All queries derive live from core_events (the canonical gate event log),
+// avoiding the need for a separate core_ograph_flows ETL pipeline.
 // Tenant isolation is enforced on every query.
 //
-// NOTE: aocs_platform_events stores verdict/action data inside the `payload` JSON
+// NOTE: core_events stores verdict/action data inside the `payload` JSON
 // column — not as top-level columns. All analytics handlers extract from payload.
 package reports
 
@@ -28,7 +28,7 @@ import (
 	"github.com/ocx/shared/validate"
 )
 
-// platformEvent is the minimal projection of aocs_platform_events we need.
+// platformEvent is the minimal projection of core_events we need.
 // final_verdict and action_class are extracted from the payload JSON, not top-level columns.
 type platformEvent struct {
 	EventID   string          `json:"event_id"`
@@ -77,7 +77,7 @@ func HandleGetOgraphStats(db database.DB) http.HandlerFunc {
 			return
 		}
 
-		// aocs_platform_events: final_verdict lives inside payload JSON, not a top-level column.
+		// core_events: final_verdict lives inside payload JSON, not a top-level column.
 		var events []platformEvent
 		if _dbErr := db.QueryRowsWithin90DaysCompound(database.TblPlatformEvents,
 			"event_id,agent_id,tool_name,payload,created_at",
@@ -136,7 +136,7 @@ func HandleGetOgraphTimeline(db database.DB) http.HandlerFunc {
 			return
 		}
 
-		// aocs_platform_events: verdict/action data lives in payload JSON.
+		// core_events: verdict/action data lives in payload JSON.
 		// log_id, final_verdict, action_class are NOT top-level columns.
 		var raw []platformEvent
 		if _dbErr := db.QueryRowsWithin90DaysCompound(database.TblPlatformEvents,
@@ -182,7 +182,7 @@ func HandleGetOgraphTimeline(db database.DB) http.HandlerFunc {
 }
 
 // SANKEY FLOW DATA — GET /api/v1/analytics/ograph/sankey
-// aocs_platform_events. No ETL pipeline or aocs_ograph_flows table required.
+// core_events. No ETL pipeline or core_ograph_flows table required.
 //
 // Flow model: each gate event is a directed edge from (agent → verdict) via tool.
 // The Sankey nodes are: agentID → toolName → verdict.
@@ -217,7 +217,7 @@ func HandleGetOgraphSankey(db database.DB) http.HandlerFunc {
 			return
 		}
 
-		// aocs_platform_events: final_verdict and action_class live in payload JSON.
+		// core_events: final_verdict and action_class live in payload JSON.
 		var raw []platformEvent
 		if _dbErr := db.QueryRowsWithin90DaysCompound(database.TblPlatformEvents,
 			"event_id,agent_id,tool_name,payload,created_at",
@@ -301,10 +301,10 @@ func HandleGetOgraphSankey(db database.DB) http.HandlerFunc {
 
 // OGRAPH FLOW UPSERT — POST /api/v1/analytics/ograph/flows
 // Internal endpoint: allows operators to manually insert/update individual
-// flow metrics in aocs_ograph_flows for custom Sankey overlays.
+// flow metrics in core_ograph_flows for custom Sankey overlays.
 // Tenant-scoped: can only write flows for your own tenant.
 
-// HandleUpsertOgraphFlow upserts a single flow metric into aocs_ograph_flows.
+// HandleUpsertOgraphFlow upserts a single flow metric into core_ograph_flows.
 // POST /api/v1/analytics/ograph/flows
 func HandleUpsertOgraphFlow(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

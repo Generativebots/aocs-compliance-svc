@@ -1,7 +1,7 @@
 package compliance
 
 // dlp_findings.go — BUG-FE-ROUTE-009
-// Full CRUD for DLP findings backed by aocs_ia_audit_logs (action_type='dlp.finding').
+// Full CRUD for DLP findings backed by core_audit (action_type='dlp.finding').
 //
 // Business scenarios for creation:
 //   SCAN   — automated DLP workflow scan detects a policy violation
@@ -162,12 +162,12 @@ func HandleGetDLPFinding(db database.DB) http.HandlerFunc {
 		findingID := mux.Vars(r)["id"]
 
 		// (dlp_policy_id, name, policy_type...) which don't exist in that table.
-		// aocs_ia_audit_logs has: audit_log_id, action_type, severity, entity_type,
+		// core_audit has: audit_log_id, action_type, severity, entity_type,
 		// entity_id, actor_id, details, created_at, updated_at.
 		const colsIAAuditLog = "audit_log_id,tenant_id,action_type,severity,entity_type,entity_id,actor_id,details,created_at,updated_at"
 		var rows []map[string]any
 		if err := db.QueryRowsCompound(
-			"aocs_ia_audit_logs", colsIAAuditLog,
+			"core_audit", colsIAAuditLog,
 			"audit_log_id", findingID,
 			"tenant_id", tenantID,
 			&rows,
@@ -255,7 +255,7 @@ func HandleUpdateDLPFinding(db database.DB) http.HandlerFunc {
 
 // HandleDeleteDLPFinding — DELETE /dlp/findings/{id}
 //
-// COMPLIANCE MANDATE: aocs_ia_audit_logs is an immutable audit log.
+// COMPLIANCE MANDATE: core_audit is an immutable audit log.
 // Rows MUST NEVER be physically deleted — this is a compliance violation.
 // "Delete" transitions the finding to status=RESOLVED with archived_at timestamp.
 // The row is excluded from active list queries but retained permanently for audit.

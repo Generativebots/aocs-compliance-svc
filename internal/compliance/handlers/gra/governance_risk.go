@@ -10,7 +10,7 @@
 //   - APE Read-Side Go handlers (ia_authority_gaps, ia_parsed_documents,
 //     ia_authority_contracts) — removed Python proxy dependency
 //   - Ops Fleet Deployments CRUD (aocs_ops_fleet_deployments)
-//   - Marketplace Installations CRUD (aocs_mkt_installs)
+//   - Marketplace Installations CRUD (extc_installs)
 //   - Agent App Bindings corrected → ia_agent_application_bindings
 package gra
 
@@ -291,7 +291,7 @@ func HandleListAllAuditLog(db database.DB) http.HandlerFunc {
 //   gra_tenant_status.tenant_id = X   → always tenant-scoped
 //
 // Frameworks are returned filtered by:
-//   1. jurisdiction matching tenant's country_of_operation (from aocs_tenants)
+//   1. jurisdiction matching tenant's country_of_operation (from syst_tenants)
 //   2. OR jurisdiction is empty (global, applies everywhere)
 
 func HandleListGRARegulatoryFrameworks(db database.DB, coreClient *serviceclient.Client) http.HandlerFunc {
@@ -549,7 +549,7 @@ func HandleGetJuryPoolModel(db database.DB) http.HandlerFunc {
 // Body: { "reason": "suspicious activity", "flag": true }
 //
 // Stores the flag as a metadata update in the details JSONB column of
-// aocs_ia_audit_logs. This is a non-destructive soft-flag — the record
+// core_audit. This is a non-destructive soft-flag — the record
 // is never deleted or altered, only annotated.
 //
 // SuperAdmin only — flagging audit records is a platform governance action.
@@ -578,7 +578,7 @@ func HandleFlagAuditLogEntry(db database.DB, pgxPool *database.PGXPool) http.Han
 
 		// Merge flag metadata into details JSONB — non-destructive update
 		updateSQL := `
-			UPDATE aocs_ia_audit_logs
+			UPDATE core_audit
 			   SET details    = details || jsonb_build_object(
 			                       'flagged',     $1::boolean,
 			                       'flagged_at',  NOW()::text,

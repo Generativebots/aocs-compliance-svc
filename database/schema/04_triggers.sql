@@ -12,7 +12,7 @@ $$;
 -- Apply updated_at trigger to all compliance tables with updated_at column
 DO $$ DECLARE t TEXT; BEGIN
   FOREACH t IN ARRAY ARRAY[
-    'aocs_compliance_cases',
+    'core_compliance',
     'aocs_compliance_controls',
     'aocs_evidence',
     'nexus_compliance_reports'

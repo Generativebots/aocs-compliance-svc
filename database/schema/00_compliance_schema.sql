@@ -9,7 +9,7 @@
 --   - Clean separation: compliance tables never pollute the Ring 0 public schema
 --   - Supabase RLS policies are schema-scoped
 --   - The Go DATABASE_URL includes search_path=compliance,public so both schemas
---     are visible: compliance.* for own tables, public.aocs_tenants for Ring 0 FKs
+--     are visible: compliance.* for own tables, public.syst_tenants for Ring 0 FKs
 -- =============================================================================
 
 -- Create compliance schema

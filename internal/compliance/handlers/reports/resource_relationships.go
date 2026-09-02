@@ -1,7 +1,7 @@
 // Package handlers — Resource Graph API for the JARVIS Mind-Map Dashboard.
 //
 // Integration-first architecture:
-//   import_sources (KB/BPM/SOP refs) → aocs_tenant_documents → intent_mappings → resource_relationships
+//   import_sources (KB/BPM/SOP refs) → core_tenant_docs → intent_mappings → resource_relationships
 //   GRA trust_attestations govern intents and agt.
 
 package reports
@@ -390,7 +390,7 @@ func HandleImportSourceExtract(db database.DB) http.HandlerFunc {
 
 			// Fallback: metadata-only policy extraction (when OCX_APE_HTTP_URL not configured).
 			// Satisfies CIP patent requirement: APE extraction → qcore_policies (DRAFT)
-			// → aocs_selfheal_proposals (PENDING) for operator review before anything goes live.
+			// → core_selfheal (PENDING) for operator review before anything goes live.
 			setStatus("SYNCED", "")
 
 			policyName := title

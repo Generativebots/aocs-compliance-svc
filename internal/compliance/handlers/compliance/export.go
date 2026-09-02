@@ -100,10 +100,10 @@ func HandleMergeCase(db database.DB) http.HandlerFunc {
 //     This prevents abstention from artificially inflating majority ratios.
 //
 // Dual-write strategy (Batch 8):
-//  1. INSERT normalised row into aocs_hitl_votes (durable, GROUP BY tally).
-//  2. UPDATE aocs_hitl_decisions.decision_data JSONB for fast reads / quorum check.
+//  1. INSERT normalised row into core_hitl_votes (durable, GROUP BY tally).
+//  2. UPDATE core_hitl.decision_data JSONB for fast reads / quorum check.
 //
-// UNIQUE (case_id, voter_id) on aocs_hitl_votes prevents double-voting;
+// UNIQUE (case_id, voter_id) on core_hitl_votes prevents double-voting;
 // returns 409 Conflict on duplicate.
 func HandleCasesSubmitJuryVote(db database.DB, coreClient *serviceclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -168,7 +168,7 @@ func HandleCasesSubmitJuryVote(db database.DB, coreClient *serviceclient.Client)
 			return
 		}
 
-		// 1. INSERT into aocs_hitl_votes (UNIQUE case_id+voter_id → 409 on duplicate)
+		// 1. INSERT into core_hitl_votes (UNIQUE case_id+voter_id → 409 on duplicate)
 		vote := database.HITLVote{
 			CaseID:     caseID,
 			TenantID:   tenantID,
@@ -387,7 +387,7 @@ func HandleCasesSubmitJuryVote(db database.DB, coreClient *serviceclient.Client)
 // HandleListHITLVotes returns all per-reviewer votes for a case.
 // GET /hitl/cases/{id}/votes
 //
-// Reads from aocs_hitl_votes (Batch 8). Frontend uses this for the
+// Reads from core_hitl_votes (Batch 8). Frontend uses this for the
 // quorum tally panel (GROUP BY decision done client-side or via SQL VIEW).
 func HandleListHITLVotes(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -408,8 +408,8 @@ func HandleListHITLVotes(db database.DB) http.HandlerFunc {
 			return
 		}
 		var rows []map[string]any
-		// SCHEMA FIX: votes are in aocs_hitl_votes (TblHITLVotes), not aocs_hitl_decisions.
-		// aocs_hitl_votes columns: vote_id, case_id, tenant_id, voter_id, decision, voted_at.
+		// SCHEMA FIX: votes are in core_hitl_votes (TblHITLVotes), not core_hitl.
+		// core_hitl_votes columns: vote_id, case_id, tenant_id, voter_id, decision, voted_at.
 		if err := db.QueryRowsCompound(database.TblHITLVotes, database.ColsHitlVote, "case_id", caseID, "tenant_id", tenantID, &rows); err != nil {
 			slog.Error("ListHITLVotes failed", "case_id", caseID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "list votes", err)

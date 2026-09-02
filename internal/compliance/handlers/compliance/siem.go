@@ -1,9 +1,9 @@
 package compliance
 
-// Table: aocs_siem_configs (PK: tenant_id — one config per tenant)
+// Table: core_gov_config (PK: tenant_id — one config per tenant)
 // Delete is a soft-delete: sets enabled=false and clears the endpoint to prevent
 // data leakage if the config is accidentally re-read. A hard delete would orphan
-// audit references in aocs_platform_events.
+// audit references in core_events.
 
 import (
 	"net/http"

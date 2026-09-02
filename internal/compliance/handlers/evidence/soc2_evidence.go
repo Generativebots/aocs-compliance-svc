@@ -216,7 +216,7 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 				Description: "Risk identification, analysis, and response processes.",
 				ControlStatus: "EFFECTIVE",
 				Evidence: []SOC2EvidenceItem{
-					{Type: "SYSTEM_GENERATED", Description: "GRA (Governance Risk Assessment) cases in period", Source: "aocs_compliance_cases (case_type=RISK_ASSESSMENT)", Count: graCount, Period: req.PeriodStart + " to " + req.PeriodEnd},
+					{Type: "SYSTEM_GENERATED", Description: "GRA (Governance Risk Assessment) cases in period", Source: "core_compliance (case_type=RISK_ASSESSMENT)", Count: graCount, Period: req.PeriodStart + " to " + req.PeriodEnd},
 					{Type: "SYSTEM_GENERATED", Description: "CVIC trust scoring — continuous agent risk evaluation", Source: "ocx-services-py-svc/aocs_env"},
 					{Type: "SYSTEM_GENERATED", Description: "Reputation scoring and trust decay monitoring", Source: "aocs-gate/handlers/gate"},
 				},
@@ -227,7 +227,7 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 				Description: "Ongoing monitoring and evaluation of system controls.",
 				ControlStatus: "EFFECTIVE",
 				Evidence: []SOC2EvidenceItem{
-					{Type: "SYSTEM_GENERATED", Description: "HITL (Human-in-the-Loop) oversight decisions in period", Source: "aocs_compliance_cases (case_type=HITL)", Count: hitlCount, Period: req.PeriodStart + " to " + req.PeriodEnd},
+					{Type: "SYSTEM_GENERATED", Description: "HITL (Human-in-the-Loop) oversight decisions in period", Source: "core_compliance (case_type=HITL)", Count: hitlCount, Period: req.PeriodStart + " to " + req.PeriodEnd},
 					{Type: "SYSTEM_GENERATED", Description: "Agent heartbeat monitor — real-time health checks", Source: "aocs-gate/handlers/workers/agent_heartbeat_monitor.go"},
 					{Type: "SYSTEM_GENERATED", Description: "7-year audit log retention with BigQuery archival", Source: "ocx-services-py-svc/shared/archival"},
 				},
@@ -238,7 +238,7 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 				Description: "Policies, procedures, and controls that address risk responses.",
 				ControlStatus: "EFFECTIVE",
 				Evidence: []SOC2EvidenceItem{
-					{Type: "SYSTEM_GENERATED", Description: "Active enforcement policies in period", Source: "aocs_policies (status=ACTIVE)", Count: policyCount, Period: req.PeriodStart + " to " + req.PeriodEnd},
+					{Type: "SYSTEM_GENERATED", Description: "Active enforcement policies in period", Source: "core_policies (status=ACTIVE)", Count: policyCount, Period: req.PeriodStart + " to " + req.PeriodEnd},
 					{Type: "SYSTEM_GENERATED", Description: "Policy lifecycle: DRAFT→REVIEW→APPROVED→PUBLISHED (aocs-studio-svc)", Source: "aocs-studio-svc/handlers_workflow.go"},
 					{Type: "SYSTEM_GENERATED", Description: "25-stage gate enforcement pipeline — every agent action evaluated", Source: "aocs-gate/handlers/gate"},
 				},
@@ -249,7 +249,7 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 				Description: "Authentication, authorisation, and access control mechanisms.",
 				ControlStatus: "EFFECTIVE",
 				Evidence: []SOC2EvidenceItem{
-					{Type: "SYSTEM_GENERATED", Description: "Active AI agents — each with scoped authority profile", Source: "aocs_agents (status=ACTIVE)", Count: agentCount, Period: req.PeriodStart + " to " + req.PeriodEnd},
+					{Type: "SYSTEM_GENERATED", Description: "Active AI agents — each with scoped authority profile", Source: "core_agents (status=ACTIVE)", Count: agentCount, Period: req.PeriodStart + " to " + req.PeriodEnd},
 					{Type: "SYSTEM_GENERATED", Description: "AES-256-GCM credential encryption for all connector credentials", Source: "aocs-system-svc/handlers/platform/connector_registry.go"},
 					{Type: "SYSTEM_GENERATED", Description: "OAuth PKCE flow for all ML provider connections", Source: "aocs-system-svc/handlers/agents/provider_oauth.go"},
 					{Type: "SYSTEM_GENERATED", Description: "JWT + RBAC enforcement on all API routes", Source: "ocx-shared-go/infra/auth"},
@@ -261,7 +261,7 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 				Description: "Detection of and response to security events and incidents.",
 				ControlStatus: "EFFECTIVE",
 				Evidence: []SOC2EvidenceItem{
-					{Type: "SYSTEM_GENERATED", Description: "Compliance violations (incidents) in period", Source: "aocs_compliance_cases (case_type=VIOLATION)", Count: violationCount, Period: req.PeriodStart + " to " + req.PeriodEnd},
+					{Type: "SYSTEM_GENERATED", Description: "Compliance violations (incidents) in period", Source: "core_compliance (case_type=VIOLATION)", Count: violationCount, Period: req.PeriodStart + " to " + req.PeriodEnd},
 					{Type: "SYSTEM_GENERATED", Description: "DLP scanning and real-time data loss detection", Source: "aocs-compliance/handlers/security"},
 					{Type: "SYSTEM_GENERATED", Description: "ZKP (Zero-Knowledge Proof) audit chain — tamper-evident evidence trail", Source: "aocs-compliance/handlers/zkp"},
 					{Type: "SYSTEM_GENERATED", Description: "Ghost state / kill switch — instant agent termination capability", Source: "aocs-gate (ghost state mechanism)"},

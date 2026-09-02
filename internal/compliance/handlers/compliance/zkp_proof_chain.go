@@ -247,7 +247,7 @@ func HandleExportVerifiableCredential(db database.DB) http.HandlerFunc {
 		if !validate.Bind(w, r, &body) {
 			return
 		}
-		// aocs_zkp_chain_roots schema: zkp_chain_root_id, tenant_id, job_id, root_hash, block_height, anchored_at.
+		// core_evidence schema: zkp_chain_root_id, tenant_id, job_id, root_hash, block_height, anchored_at.
 		// No agent_id, period, chain_root, or proof_count columns.
 		// Query by tenant_id; filter by job_id if provided via agent_id field (backwards compat).
 		var chains []map[string]any

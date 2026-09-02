@@ -87,7 +87,7 @@ func main() {
 
 	// P-16 FIX: Start daily Sybil detection worker.
 	// Was implemented in sybil_resistance_worker.go but never started — patent test P-16
-	// requires aocs_sybil_risk_assessments to have rows created at daily 03:00 UTC.
+	// requires shar_trust to have rows created at daily 03:00 UTC.
 	hsecurity.StartSybilDetectionWorker(svc.BgCtx, db)
 	slog.Info("P-16: SybilDetectionWorker started — daily 03:00 UTC sybil scan")
 

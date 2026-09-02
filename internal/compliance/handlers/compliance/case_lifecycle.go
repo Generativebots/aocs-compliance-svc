@@ -176,7 +176,7 @@ func CreateCase(
 	}
 	ctxBytes, _ := json.Marshal(ctxData)
 
-	// The UNIQUE constraint on dedup_key in aocs_hitl_decisions means duplicate inserts
+	// The UNIQUE constraint on dedup_key in core_hitl means duplicate inserts
 	// for the same root cause within a short window are rejected by the DB (idempotent).
 	// The hash is truncated to 16 hex chars to keep it compact while still collision-safe
 	// for this use case (2^64 space vs at most millions of cases per tenant).
@@ -435,7 +435,7 @@ func writeLifecycleEvent(
 	if db == nil {
 		return
 	}
-	// aocs_platform_events schema: event_id, entity_id, entity_type, tenant_id, event_type, payload
+	// core_events schema: event_id, entity_id, entity_type, tenant_id, event_type, payload
 	// caseID maps to entity_id (FK) — all case-specific fields go into payload JSONB
 	// so they are fully preserved and queryable via payload->>'case_id', payload->>'from_status' etc.
 	row := map[string]any{

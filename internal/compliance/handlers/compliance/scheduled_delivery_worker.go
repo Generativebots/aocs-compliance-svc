@@ -81,7 +81,7 @@ func runScheduledDeliveryCycle(ctx context.Context, db database.DB, coreClient *
 		NextDeliveryAt *string         `json:"next_delivery_at"`
 	}
 
-	// Load active tenants via ocx-core-svc API (boundary enforcement: no direct aocs_tenants read).
+	// Load active tenants via ocx-core-svc API (boundary enforcement: no direct syst_tenants read).
 	var tenantIDs []string
 	if coreClient != nil {
 		tenants, err := coreClient.ListTenants(ctx)
@@ -189,7 +189,7 @@ func runScheduledDeliveryCycle(ctx context.Context, db database.DB, coreClient *
 }
 
 // deliverScheduledReport sends the compliance report email via tenant SMTP.
-// SMTP config is fetched via ocx-core-svc API (boundary enforcement: no direct aocs_tenant_smtp_configs read).
+// SMTP config is fetched via ocx-core-svc API (boundary enforcement: no direct core_tenant_smtp read).
 func deliverScheduledReport(ctx context.Context, db database.DB, coreClient *serviceclient.Client, reportID, tenantID string, recipients []string) error {
 	type localSMTP struct {
 		Host        string

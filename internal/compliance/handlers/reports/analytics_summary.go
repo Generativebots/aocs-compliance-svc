@@ -124,7 +124,7 @@ SELECT
   COUNT(*) FILTER (WHERE outcome = 'ALLOW')                                  AS allow_24h,
   COUNT(*) FILTER (WHERE outcome = 'DENY')                                   AS deny_24h,
   COUNT(*) FILTER (WHERE outcome = 'ESCALATE')                               AS escalate_24h
-FROM aocs_ia_audit_logs
+FROM core_audit
 WHERE tenant_id = $1 AND created_at >= $2`
 
 		var gs []gateStats
@@ -143,7 +143,7 @@ WHERE tenant_id = $1 AND created_at >= $2`
 		}
 		const complianceSQL = `
 SELECT COALESCE(AVG(score), 0)::float8 AS score
-FROM aocs_compliance_frameworks
+FROM core_compliance
 WHERE tenant_id = $1`
 
 		var cr []complianceRow

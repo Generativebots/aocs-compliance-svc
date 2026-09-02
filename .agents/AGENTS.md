@@ -39,7 +39,7 @@ Compliance **will 403** every request if the tenant's JWT does not include `"com
 - **Same Supabase project** as Ring 0, Ring 1, and Ring 2
 - **Schema**: `compliance` (NOT `public`)
 - **DATABASE_URL** must include `search_path=compliance,public`
-- **FK to Ring 0**: Hard FK to `public.aocs_tenants(tenant_id)` — Ring 0 must exist first
+- **FK to Ring 0**: Hard FK to `public.syst_tenants(tenant_id)` — Ring 0 must exist first
 - **FK to Ring 2**: TEXT-only references (no hard FK) — enforced at application layer
 
 ## Startup Order (local dev)

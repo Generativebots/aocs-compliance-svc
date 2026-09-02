@@ -5,7 +5,7 @@ package security
 // Records a quarantine enforcement action against an entity (agent, document,
 // or data asset) suspected of policy violation.
 //
-// The quarantine is persisted in aocs_enforcement_actions with
+// The quarantine is persisted in core_enforcement_actions with
 // action_type = 'dlp_quarantine' and creates a corresponding DLP finding
 // for audit trail purposes.
 //

@@ -380,8 +380,8 @@ func HandleGetDLPClaims(db database.DB) http.HandlerFunc {
 				return db.QueryRowsCtx(r.Context(), database.TblSentiDLPIntegrations, database.ColsSentiDlpIntegrations, "tenant_id", tenantID, &integrations)
 			}},
 			{fn: func() error {
-				// B-D2 FIX: was querying aocs_ia_ebcl_contracts (EBCL contracts ≠ marketplace).
-				// Marketplace slot must use aocs_marketplace_listings.
+				// B-D2 FIX: was querying core_ebcl (EBCL contracts ≠ marketplace).
+				// Marketplace slot must use extc_marketplace_listings.
 				return db.QueryRowsCtx(r.Context(), database.TblMCPCatalog, "catalog_id AS connector_id,name,tool_type AS connector_type,status,name AS slug", "status", "ACTIVE", &marketplace)
 			}},
 		})
@@ -490,7 +490,7 @@ func HandleGetAnalyticsClaims(db database.DB) http.HandlerFunc {
 			{fn: func() error {
 				return db.QueryRowsWithin90Days(database.TblPlatformEvents, database.ColsPlatformEvents, tenantID, &interactions)
 			}},
-			// B-NEW FIX: was a duplicate aocs_platform_events query (same table, same filter as interactions).
+			// B-NEW FIX: was a duplicate core_events query (same table, same filter as interactions).
 			// Replaced with qcore_evidence_records to give distinct metrics data for the analytics dashboard.
 			{fn: func() error {
 				return db.QueryRowsCtx(r.Context(), database.TblQCoreEvidenceRecords, "evidence_id,status,compliance_score,tenant_id,created_at", "tenant_id", tenantID, &metrics)
@@ -585,7 +585,7 @@ func HandleGetFederationClaims(db database.DB) http.HandlerFunc {
 // 14. FED GOV DASHBOARD — GET /api/v1/fed/gov/dashboard
 //     Replaces: /gov/proposals + /gov/committee  (2 → 1)
 
-// HandleGetFedGovClaims — proposals from governance ledger, members from aocs_hitl_decisions jury pool
+// HandleGetFedGovClaims — proposals from governance ledger, members from core_hitl jury pool
 func HandleGetFedGovClaims(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if respond.RequireDB(w, db) {
@@ -604,7 +604,7 @@ func HandleGetFedGovClaims(db database.DB) http.HandlerFunc {
 			{fn: func() error {
 				return db.QueryRowsCompound(database.TblGovernanceLedger, database.ColsNexusGovernanceLedger, "tenant_id", tenantID, "", "", &proposals)
 			}},
-			// jury/committee members are stored as distinct reviewer entries in aocs_hitl_decisions
+			// jury/committee members are stored as distinct reviewer entries in core_hitl
 			{fn: func() error {
 				return db.QueryRowsCompound(database.TblHITLDecisions, database.ColsHitlDecisions, "decision_type", "JURY", "tenant_id", tenantID, &members)
 			}},

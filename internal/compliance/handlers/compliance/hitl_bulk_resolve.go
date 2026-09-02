@@ -4,7 +4,7 @@
 //
 // Bulk-resolves HITL decisions. Accepts an array of decision IDs + verdict.
 // Used by the HITL Operations panel to approve/reject multiple cases at once.
-// Updates aocs_hitl_decisions status and records the reviewer's verdict.
+// Updates core_hitl status and records the reviewer's verdict.
 package compliance
 
 import (
@@ -28,7 +28,7 @@ type bulkHITLResolveRequest struct {
 }
 
 // HandleResolveBulkHITL handles POST /api/v1/hitl/ops/resolve
-// Accepts up to 50 decision IDs and a verdict, updates each row in aocs_hitl_decisions.
+// Accepts up to 50 decision IDs and a verdict, updates each row in core_hitl.
 // Returns per-decision success/failure breakdown in the response.
 func HandleResolveBulkHITL(db database.DB, coreClients ...*serviceclient.Client) http.HandlerFunc {
 	var coreClient *serviceclient.Client
@@ -75,7 +75,7 @@ func HandleResolveBulkHITL(db database.DB, coreClients ...*serviceclient.Client)
 		for _, decisionID := range req.DecisionIDs {
 			result := map[string]any{"decision_id": decisionID, "verdict": req.Verdict}
 			if coreClient != nil {
-				// SVC-BOUNDARY: update aocs_hitl_decisions via ocx-core-svc API
+				// SVC-BOUNDARY: update core_hitl via ocx-core-svc API
 				if _rErr := coreClient.PatchHITLCase(r.Context(), tenantID, decisionID, map[string]any{
 					"status":            req.Verdict,
 					"reviewer_id":       reviewerID,

@@ -7,7 +7,7 @@
 // When aocs-platform raises a HOLD verdict from the Tri-Factor Gate, it publishes
 // to this topic.  The consumer picks it up and calls EscalateCase on the Python
 // Jury service, which assigns the case to the next available juror and persists
-// it in the aocs_escalation_cases table.
+// it in the core_compliance table.
 //
 // Resilience:
 //   - Circuit breaker wraps every EscalateCase gRPC call.

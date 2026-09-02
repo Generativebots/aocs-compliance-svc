@@ -3,9 +3,9 @@ package reports
 // token_usage_dept_handler.go — GET /tokens/usage/by-department
 //
 // Aggregates token consumption per department for the tenant.
-// Queries aocs_gate_stages to bucket token_usage by department.
+// Queries core_gate_stages to bucket token_usage by department.
 // Budget limits come from aocs_tenant_department_budgets (tenant-scoped),
-// NOT from aocs_platform_departments (which is the platform-wide catalog).
+// NOT from syst_departments (which is the platform-wide catalog).
 //
 // Response shape:
 //
@@ -51,7 +51,7 @@ type deptBudgetInfo struct {
 // HandleGetTokenUsageByDepartment — GET /tokens/usage/by-department
 //
 // Returns token consumption bucketed by department for the current month.
-// Department names come from aocs_platform_departments (catalog).
+// Department names come from syst_departments (catalog).
 // Budget limits come from aocs_tenant_department_budgets (tenant-scoped).
 func HandleGetTokenUsageByDepartment(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

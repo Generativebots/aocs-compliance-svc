@@ -1,6 +1,6 @@
 // sybil_detection_worker.go — Part 24 Worker #9: SybilDetectionWorker
-// Runs daily at 03:00 UTC; scans aocs_agents for correlated IP clusters
-// and writes aocs_sybil_risk_assessments + senti_ids_events for flagged agents.
+// Runs daily at 03:00 UTC; scans core_agents for correlated IP clusters
+// and writes shar_trust + senti_ids_events for flagged agents.
 package security
 
 import (
@@ -64,7 +64,7 @@ func runSybilScan(ctx context.Context, db database.DB) {
 		IPAddress string `json:"ip_address"`
 	}
 	if _dbErr := db.QueryRowsCtx(ctx, 
-		"aocs_ia_audit_logs",
+		"core_audit",
 		"tenant_id,agent_id,ip_address",
 		"action_type", "GATE_REQUEST",
 		&ipGroups,

@@ -54,7 +54,7 @@ func (s *DLPStore) LoadFromDB() {
 	var rows []struct {
 		Metadata []byte `json:"metadata"`
 	}
-	// Fetch via ocx-core-svc internal API (boundary enforcement: no direct aocs_enforcement_actions access)
+	// Fetch via ocx-core-svc internal API (boundary enforcement: no direct core_enforcement_actions access)
 	if s.coreClient != nil {
 		actions, err := s.coreClient.ListEnforcementActionsByType(context.Background(), "dlp_pid_monitor")
 		if err != nil {

@@ -1,6 +1,6 @@
 // Package compliance — Disputes CRUD + Cases namespace aliases.
 //
-// Disputes (aocs_disputes): Tenant-initiated formal objections against
+// Disputes (core_disputes): Tenant-initiated formal objections against
 // enforcement decisions, HITL verdicts, or trust-tax assessments.
 //
 // Business context (CIP-1 / Patent Claim 3):
@@ -13,16 +13,16 @@
 //
 // CRITICAL DESIGN RULE — Enforcement-Driven Record Creation:
 //
-//	aocs_hitl_decisions and aocs_enforcement_actions rows are NEVER created
+//	core_hitl and core_enforcement_actions rows are NEVER created
 //	by REST handlers directly. They are created by:
 //	  1. workflow/enforcement.go::PoliceExecution() — called on every agent
 //	     activity execution; creates HITL cases + enforcement actions on
 //	     VIOLATION / ESCALATE verdicts. (Claims 4, 6, 8)
-//	  2. governance/gate.go — QCore Gate creates aocs_platform_events audit
+//	  2. governance/gate.go — QCore Gate creates core_events audit
 //	     rows on every verdict and publishes to Pub/Sub aocs.cases.escalated.
 //	     The Python jury subscriber creates HITL decisions downstream.
 //	  3. operations/human_review.go::HandleHITLDecide — human reviewer
-//	     submitting a verdict creates the final aocs_hitl_decisions record.
+//	     submitting a verdict creates the final core_hitl record.
 //
 //	REST lifecycle actions (close, appeal, assign, comment) are in:
 //	  operations/human_review_actions.go (HandleCloseCase, HandleAppealDecision,
@@ -31,8 +31,8 @@
 //
 // Tables owned by this file:
 //
-//	aocs_disputes  (PK: dispute_id)  — full CRUD
-//	aocs_hitl_decisions              — READ-ONLY aliases for the cases/* namespace
+//	core_disputes  (PK: dispute_id)  — full CRUD
+//	core_hitl              — READ-ONLY aliases for the cases/* namespace
 //	aocs_jury_pools                  — READ-ONLY leaderboard
 package compliance
 
@@ -104,7 +104,7 @@ func HandleGetDispute(db database.DB) http.HandlerFunc {
 // HandleCreateDispute opens a new dispute against an enforcement decision.
 // POST /api/v1/disputes
 //
-// CIP-1: Each dispute is linked to a case_id (aocs_hitl_decisions.decision_id).
+// CIP-1: Each dispute is linked to a case_id (core_hitl.decision_id).
 // The case is created upstream by the enforcement engine (workflow/enforcement.go)
 // or the QCore Gate (governance/gate.go) — never by this handler.
 // Sustained dispute volume (>15% of decisions) triggers the self-heal advisor
@@ -246,9 +246,9 @@ func HandleDeleteDispute(db database.DB) http.HandlerFunc {
 }
 
 // ─── Cases Namespace Aliases ──────────────────────────────────────────────────
-// These handlers are READ-ONLY views over aocs_hitl_decisions. They provide
+// These handlers are READ-ONLY views over core_hitl. They provide
 // the /cases/* namespace for the JARVIS HUD frontend. Record creation in
-// aocs_hitl_decisions is exclusively owned by the enforcement engine
+// core_hitl is exclusively owned by the enforcement engine
 // (workflow/enforcement.go) and the gate (governance/gate.go).
 
 // HandleGetCaseLeaderboard returns jury reviewer performance metrics.

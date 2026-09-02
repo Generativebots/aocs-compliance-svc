@@ -64,13 +64,13 @@ func HandleAdminListGovernanceAuditLogs(db database.DB) http.HandlerFunc {
 		// Try QueryRawCtx first (pgxPool — pushes LIMIT/OFFSET to DB)
 		if caseID != "" {
 			err = db.QueryRawCtx(r.Context(),
-				`SELECT `+cols+` FROM aocs_platform_events
+				`SELECT `+cols+` FROM core_events
 				WHERE tenant_id=$1 AND entity_id=$2
 				ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
 				&result, tenantID, caseID, limit, offset)
 		} else {
 			err = db.QueryRawCtx(r.Context(),
-				`SELECT `+cols+` FROM aocs_platform_events
+				`SELECT `+cols+` FROM core_events
 				WHERE tenant_id=$1
 				ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
 				&result, tenantID, limit, offset)

@@ -13,8 +13,8 @@ import (
 //
 // GET /api/v1/intelligence/observations
 //
-// Returns intelligence observations from aocs_observations (which is seeded by the
-// ObservationEngine from aocs_platform_events). Supports optional query params:
+// Returns intelligence observations from core_observations (which is seeded by the
+// ObservationEngine from core_events). Supports optional query params:
 //   - status   : OPEN | ACKNOWLEDGED | RESOLVED | DISMISSED (default: all)
 //   - severity : INFO | LOW | MEDIUM | HIGH | CRITICAL (default: all)
 //   - agent_id : filter to a specific agent (default: all)
@@ -53,7 +53,7 @@ func HandleListIntelligenceObservations(db database.DB) http.HandlerFunc {
 			return
 		}
 
-		// Query aocs_observations — the canonical table for this endpoint.
+		// Query core_observations — the canonical table for this endpoint.
 		// Falls back gracefully if the table is empty or newly created.
 		type obsRow struct {
 			ObservationID  string `json:"observation_id"`

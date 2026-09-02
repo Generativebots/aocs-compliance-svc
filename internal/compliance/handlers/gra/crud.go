@@ -10,7 +10,7 @@
 //   - APE Read-Side Go handlers (ia_authority_gaps, ia_parsed_documents,
 //     ia_authority_contracts) — removed Python proxy dependency
 //   - Ops Fleet Deployments CRUD (aocs_ops_fleet_deployments)
-//   - Marketplace Installations CRUD (aocs_mkt_installs)
+//   - Marketplace Installations CRUD (extc_installs)
 //   - Agent App Bindings corrected → ia_agent_application_bindings
 package gra
 
@@ -65,7 +65,7 @@ func HandleAdminCreateFederationPeer(db database.DB) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		// Typed struct — prevents arbitrary column injection into aocs_a2a_connections.
+		// Typed struct — prevents arbitrary column injection into core_a2a_connections.
 		var req struct {
 			PartnerTenantID string `json:"partner_tenant_id" validate:"required"`
 			AgentID         string `json:"agent_id"`
@@ -79,7 +79,7 @@ func HandleAdminCreateFederationPeer(db database.DB) http.HandlerFunc {
 		}
 		row := map[string]any{
 			"tenant_id":         tenantID,
-			// partner_tenant_id/instance_id/description don't exist in aocs_a2a_connections.
+			// partner_tenant_id/instance_id/description don't exist in core_a2a_connections.
 			// Use remote_tenant_id for the partner, store extras in metadata.
 			"remote_tenant_id": req.PartnerTenantID,
 			"connection_type":  req.ConnectionType,
@@ -91,12 +91,12 @@ func HandleAdminCreateFederationPeer(db database.DB) http.HandlerFunc {
 			},
 		}
 		if err := db.InsertRow(database.TblA2AConnections, row); err != nil {
-			slog.Error("InsertRow aocs_a2a_connections", "error", err)
+			slog.Error("InsertRow core_a2a_connections", "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "insert failed", nil)
 			return
 		}
 
-		// Write aocs_fed_consents — peer activation consent record.
+		// Write core_legal — peer activation consent record.
 		// CONC-1: anonymous goroutine — ensure this is lifecycle-managed via svcboot.BgCtx
 	concurrent.Go("admin/crud", func() {
 			peerTenantID := req.PartnerTenantID
@@ -225,7 +225,7 @@ func HandleCreateGovernanceProposal(db database.DB) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		// Typed struct — prevents arbitrary column injection into aocs_governance_proposals.
+		// Typed struct — prevents arbitrary column injection into core_proposals.
 		var req struct {
 			Title        string `json:"title"         validate:"required"`
 			ProposalType string `json:"proposal_type" validate:"required"`
@@ -298,7 +298,7 @@ func HandleUpdateGovernanceProposal(db database.DB) http.HandlerFunc {
 			respond.InternalError(w, http.StatusInternalServerError, "failed to update governance proposal", nil)
 			return
 		}
-		// When status transitions to VOTING, insert an aocs_gov_rounds record
+		// When status transitions to VOTING, insert an core_gov_rounds record
 		// so the governance round is tracked for voting quorum calculations.
 		if req.Status == "VOTING" {
 			// CONC-1: anonymous goroutine — ensure this is lifecycle-managed via svcboot.BgCtx
@@ -352,7 +352,7 @@ func HandleCastGovernanceVote(db database.DB) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		// Typed struct — prevents arbitrary column injection into aocs_gov_rounds.
+		// Typed struct — prevents arbitrary column injection into core_gov_rounds.
 		var req struct {
 			ProposalID string `json:"proposal_id" validate:"required"`
 			VoterID    string `json:"voter_id"`
@@ -462,8 +462,8 @@ func HandleListRules(db database.DB) http.HandlerFunc {
 			return
 		}
 
-		// qcore_rules does not exist. /ops/rate-limits uses aocs_tenant_rate_limits.
-		// aocs_tenant_rate_limits PK is tenant_id (one row per tenant).
+		// qcore_rules does not exist. /ops/rate-limits uses core_quota.
+		// core_quota PK is tenant_id (one row per tenant).
 		var rows []map[string]any
 		if err := db.QueryRowsCtx(r.Context(), database.TblTenantRateLimits, "tenant_id,tier,requests_per_minute,burst_size,updated_at",
 			"tenant_id", tenantID, &rows); err != nil {
@@ -479,7 +479,7 @@ func HandleListRules(db database.DB) http.HandlerFunc {
 }
 
 func HandleGetRule(db database.DB) http.HandlerFunc {
-	// qcore_rules does not exist. Rate-limit config is stored in aocs_tenant_rate_limits.
+	// qcore_rules does not exist. Rate-limit config is stored in core_quota.
 	return crudGetHandler(db, database.TblTenantRateLimits, "tenant_id")
 }
 func HandleUpdateRule(db database.DB) http.HandlerFunc {

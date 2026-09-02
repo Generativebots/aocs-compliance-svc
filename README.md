@@ -17,13 +17,13 @@ Ring 0: aocs-system-svc  ← tenants, users, billing (PAID — requires FeatureC
 
 | Domain | Tables |
 |--------|--------|
-| Compliance cases | `compliance.aocs_compliance_cases` |
+| Compliance cases | `compliance.core_compliance` |
 | Evidence vault | `compliance.aocs_evidence` |
 | ZKP proofs | `compliance.aocs_zkp_proofs` |
 | DLP findings | `compliance.aocs_dlp_findings` |
 | Controls | `compliance.aocs_compliance_controls` |
 | Reports | `compliance.nexus_compliance_reports` |
-| Sybil detection | `compliance.aocs_sybil_risk_assessments` |
+| Sybil detection | `compliance.shar_trust` |
 
 ## Startup
 

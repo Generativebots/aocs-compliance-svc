@@ -15,7 +15,7 @@ import (
 // /nexs/anly/* and /monitor/* routes in aocs-intel.
 // Each handler queries the canonical table for its domain.
 
-// HandleListNexusTrends returns daily activity trend from aocs_platform_events.
+// HandleListNexusTrends returns daily activity trend from core_events.
 // GET /api/v1/nexs/anly/trends
 func HandleListNexusTrends(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -153,7 +153,7 @@ func HandleListNexusBenchmarks(db database.DB) http.HandlerFunc {
 			return
 		}
 		var agents []map[string]any
-		// M40: total_interactions is in aocs_agent_telemetry — use vw_agent_full.
+		// M40: total_interactions is in core_agent_telemetry — use vw_agent_full.
 		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblAgentFullView,
 			"agent_id,name,trust_score,behavioral_drift,risk_tier,total_interactions",
 			"tenant_id", tenantID, &agents); _dbErr != nil {
@@ -238,7 +238,7 @@ func HandleGetMonitorGeoSpread(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusUnauthorized, respond.ErrCodeUnauthorized, "tenant context required")
 			return
 		}
-		// aocs_platform_events has no top-level ip_address column — it lives in payload JSON.
+		// core_events has no top-level ip_address column — it lives in payload JSON.
 		var events []map[string]any
 		if _dbErr := db.QueryRowsWithin90Days(database.TblPlatformEvents, "event_type,payload,created_at", tenantID, &events); _dbErr != nil {
 			slog.Error("QueryRowsWithin90Days failed", "error", _dbErr)

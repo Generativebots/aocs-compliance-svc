@@ -5,7 +5,7 @@ package reports
 // /intelligence/trajectories page to receive a 404 "route not found" which
 // Next.js rendered as "Internal Server Error".
 //
-// Agent learning trajectories are stored in aocs_ontology with object_type
+// Agent learning trajectories are stored in core_ontology with object_type
 // values of OBSERVATION_GAP, TRAJECTORY, or INSIGHT.
 
 import (
@@ -18,7 +18,7 @@ import (
 
 // HandleListTrajectories — GET /intelligence/trajectories
 // Returns agent learning trajectory observations for the tenant.
-// Data source: aocs_ontology rows with object_type IN ('OBSERVATION_GAP','TRAJECTORY','INSIGHT').
+// Data source: core_ontology rows with object_type IN ('OBSERVATION_GAP','TRAJECTORY','INSIGHT').
 func HandleListTrajectories(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if respond.RequireDB(w, db) {

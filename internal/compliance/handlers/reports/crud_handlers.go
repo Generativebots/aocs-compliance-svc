@@ -652,7 +652,7 @@ func HandleUpdateActivityExecution(db database.DB) http.HandlerFunc {
 	}
 }
 
-// MCP TENANT CONFIGS — aocs_mcp_tenant_configs  PK: config_id
+// MCP TENANT CONFIGS — extc_installs  PK: config_id
 
 func HandleCreateMCPTenantConfig(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
