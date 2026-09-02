@@ -5,9 +5,11 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	hadmin "github.com/ocx/compliance/internal/compliance/handlers/admin"
 	hsecurity "github.com/ocx/compliance/internal/compliance/handlers/security"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
+	"github.com/ocx/shared/infra/middleware"
 	"github.com/ocx/shared/infra/security"
 	"github.com/ocx/shared/infra/serviceclient"
 	"log/slog"
@@ -36,8 +38,51 @@ func registerComplianceRoutes(
 	// Required to register /nonce/validate, /sybil/check, /security/attacks etc.
 	// which are gated on secMgr != nil in registerIntelComplianceRoutes.
 	nonceStore := security.NewNonceStore(15 * time.Minute)
+
+	// S3 Fix: Cross-pod collusion detection backed by Supabase.
+	// Redis L1 not available here (no Redis client injected into routes).
+	// DB-only mode is valid — Redis L1 is additive performance optimization.
+	var collusionStore security.CollusionStore
+	if db != nil {
+		collusionStore = security.NewDBCollusionStore(db, nil) // nil redis = DB-only
+		slog.Info("S3: CollusionStore wired (DB mode — Redis L1 not wired in compliance)")
+	}
 	sybilDetector := security.NewSybilDetector(10, 0.5, nil)
-	// SCAN-13 FIX: Read ChallengeVerifier secret from env var (same as aocs-platform).
+	if collusionStore != nil {
+		sybilDetector = sybilDetector.WithCollusionStore(collusionStore)
+		slog.Info("S3: SybilDetector upgraded to cross-pod CollusionStore")
+	}
+
+	// S2 Fix: Load (or create once) the persistent Ed25519 signing key.
+	// LoadOrCreateSigningKey reads from compliance.platform_signing_keys.
+	// If no active key exists, it generates one and persists it.
+	// PLATFORM_MASTER_KEY must be set — absent → fails-fast (by design).
+	masterKey := os.Getenv("PLATFORM_MASTER_KEY")
+	if masterKey != "" && db != nil {
+		if _, err := security.LoadOrCreateSigningKey(nil, db, masterKey); err != nil {
+			slog.Error("S2: LoadOrCreateSigningKey failed — evidence signing will use ZKPVerifier fallback",
+				"error", err,
+			)
+		} else {
+			slog.Info("S2: Persistent Ed25519 signing key loaded from DB")
+		}
+	} else {
+		slog.Warn("S2: PLATFORM_MASTER_KEY not set or DB unavailable — signing key not loaded (dev/test only)")
+	}
+
+	// ── Admin routes (SuperAdmin only) ────────────────────────────────────────
+	// POST /admin/rotate-signing-key — rotates the persistent Ed25519 key (S2)
+	// SuperAdminRequired wraps the handler: blocks non-superadmin at HTTP layer.
+	if pgx != nil {
+		api.Handle("/admin/rotate-signing-key",
+			middleware.SuperAdminRequired(pgx, hadmin.HandleRotateSigningKey(db))).
+			Methods("POST")
+		slog.Info("S2: POST /admin/rotate-signing-key registered (SuperAdmin only)")
+	} else {
+		slog.Warn("S2: /admin/rotate-signing-key NOT registered — pgx pool unavailable")
+	}
+
+	// SCAN-13 FIX: Read ChallengeVerifier secret from env var.
 	// Previously hardcoded to "ocx-compliance-cv-secret" — any operator who knew
 	// the string could forge valid challenge responses.
 	challengeSecret := []byte(os.Getenv("OCX_CHALLENGE_SECRET"))

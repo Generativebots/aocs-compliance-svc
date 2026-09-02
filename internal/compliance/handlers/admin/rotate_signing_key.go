@@ -32,6 +32,7 @@ import (
 )
 
 // RotateSigningKeyDB is the DB interface needed by the rotate handler.
+// Delegates to security.SigningKeyDB — same interface already satisfied by SupabaseClient.
 type RotateSigningKeyDB interface {
 	security.SigningKeyDB
 }
