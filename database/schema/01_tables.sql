@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS compliance.core_compliance (
 );
 
 -- ── compliance.core_compliance ──────────────────────────────────────
-CREATE TABLE IF NOT EXISTS compliance.core_compliance (
+CREATE TABLE IF NOT EXISTS compliance.core_compliance_obligations (
     control_id          TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS compliance.core_evidence (
 
 -- ── compliance.core_evidence ────────────────────────────────────────────────
 -- Zero-Knowledge Proof records. Cryptographic proof that a governance action occurred.
-CREATE TABLE IF NOT EXISTS compliance.core_evidence (
+CREATE TABLE IF NOT EXISTS compliance.core_evidence_anchors (
     proof_id            TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
@@ -228,25 +228,9 @@ CREATE TABLE IF NOT EXISTS compliance.core_compliance_comments (
 
 -- ── compliance.shar_trust ───────────────────────────────────
 -- P-16: Daily sybil detection results per tenant.
-CREATE TABLE IF NOT EXISTS compliance.shar_trust (
-    assessment_id   TEXT        PRIMARY KEY DEFAULT public.gen_id(),
-    tenant_id       TEXT        NOT NULL REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
-    agent_id        TEXT,
-    risk_score      DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-    risk_level      TEXT        NOT NULL DEFAULT 'LOW' CHECK (risk_level IN ('LOW','MEDIUM','HIGH','CRITICAL')),
-    signals         JSONB       NOT NULL DEFAULT '{}',
-    assessed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    worker_run_at   TIMESTAMPTZ
-);
+-- shar_trust removed: merged into core_trust_events with cross_org=true flag.
+-- See ocx-shared-go/infra/database/models_tables.go TblSharTrust.
 
-SELECT 'compliance tables created' AS status;
-
--- ── compliance.platform_signing_keys ─────────────────────────────────────────
--- S2 Fix (Palantir Gap): Persistent Ed25519 keypair for evidence vault signing.
--- Fixes: NewZKPVerifier previously called ed25519.GenerateKey() as a fallback,
--- generating a new ephemeral key on every pod restart — breaking chain of custody.
--- Private key is AES-256-GCM encrypted with PLATFORM_MASTER_KEY env var.
--- Key rotation via POST /admin/rotate-signing-key.
 CREATE TABLE IF NOT EXISTS compliance.platform_signing_keys (
     key_id      TEXT        PRIMARY KEY DEFAULT public.gen_id('sk'),
     key_type    TEXT        NOT NULL DEFAULT 'ed25519',
