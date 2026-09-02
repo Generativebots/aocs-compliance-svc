@@ -235,3 +235,94 @@ CREATE TABLE IF NOT EXISTS compliance.aocs_collusion_ip_agents (
 
 CREATE INDEX IF NOT EXISTS idx_collusion_ip_tenant
     ON compliance.aocs_collusion_ip_agents (tenant_id);
+
+-- ── DBA Audit Fixes (2026-09-02) ──────────────────────────────────────────────
+-- M2: Add default values to prevent null compliance fields
+ALTER TABLE public.aocs_tenants
+    ALTER COLUMN data_residency_region SET DEFAULT 'us-central1',
+    ALTER COLUMN last_config_changed_by SET DEFAULT 'SYSTEM';
+
+-- H5: Add updated_at to compliance tables missing it (required for incremental sync + ETL)
+-- Palantir standard: every mutable table must have an updated_at column with auto-trigger.
+ALTER TABLE compliance.aocs_case_comments    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE compliance.aocs_dlp_findings     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE compliance.aocs_sybil_risk_assessments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE compliance.aocs_zkp_proofs       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE compliance.platform_signing_keys ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+-- Auto-update trigger function (shared within compliance schema)
+CREATE OR REPLACE FUNCTION compliance.set_updated_at()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER trg_case_comments_updated_at
+    BEFORE UPDATE ON compliance.aocs_case_comments
+    FOR EACH ROW EXECUTE FUNCTION compliance.set_updated_at();
+
+CREATE OR REPLACE TRIGGER trg_dlp_findings_updated_at
+    BEFORE UPDATE ON compliance.aocs_dlp_findings
+    FOR EACH ROW EXECUTE FUNCTION compliance.set_updated_at();
+
+CREATE OR REPLACE TRIGGER trg_sybil_assessments_updated_at
+    BEFORE UPDATE ON compliance.aocs_sybil_risk_assessments
+    FOR EACH ROW EXECUTE FUNCTION compliance.set_updated_at();
+
+CREATE OR REPLACE TRIGGER trg_zkp_proofs_updated_at
+    BEFORE UPDATE ON compliance.aocs_zkp_proofs
+    FOR EACH ROW EXECUTE FUNCTION compliance.set_updated_at();
+
+CREATE OR REPLACE TRIGGER trg_signing_keys_updated_at
+    BEFORE UPDATE ON compliance.platform_signing_keys
+    FOR EACH ROW EXECUTE FUNCTION compliance.set_updated_at();
+
+-- H6: Add explicit ON DELETE to FK columns missing it
+-- Palantir standard: every FK must declare ON DELETE behaviour explicitly.
+ALTER TABLE compliance.platform_signing_keys
+    DROP CONSTRAINT IF EXISTS platform_signing_keys_superseded_by_fkey,
+    ADD CONSTRAINT platform_signing_keys_superseded_by_fkey
+        FOREIGN KEY (superseded_by)
+        REFERENCES compliance.platform_signing_keys (key_id)
+        ON DELETE SET NULL;
+
+-- H6 (system): aocs_platform_departments.parent_id
+ALTER TABLE public.aocs_platform_departments
+    DROP CONSTRAINT IF EXISTS aocs_platform_departments_parent_id_fkey,
+    ADD CONSTRAINT aocs_platform_departments_parent_id_fkey
+        FOREIGN KEY (parent_id)
+        REFERENCES public.aocs_platform_departments (department_id)
+        ON DELETE SET NULL;
+
+-- aocs_audit_log: NOT NULL on tenant_id (data isolation)
+ALTER TABLE public.aocs_audit_log ALTER COLUMN tenant_id SET NOT NULL;
+
+-- Compound index for dashboard query pattern (tenant_id, created_at DESC)
+CREATE INDEX IF NOT EXISTS idx_aocs_audit_log_tenant_time
+    ON public.aocs_audit_log (tenant_id, created_at DESC);
+
+-- aocs_notification_rules + aocs_tenant_config indexes
+CREATE INDEX IF NOT EXISTS idx_notification_rules_tenant ON public.aocs_notification_rules (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_tenant_config_tenant      ON public.aocs_tenant_config (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_platform_depts_parent     ON public.aocs_platform_departments (parent_id);
+
+-- M5: pg_stat_statements for slow query identification (Google/Palantir monitoring standard)
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
+-- RLS on new security-critical tables
+ALTER TABLE compliance.aocs_collusion_ip_agents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE compliance.platform_signing_keys    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.aocs_notification_rules      ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY IF NOT EXISTS signing_keys_superadmin_only ON compliance.platform_signing_keys
+    FOR ALL TO authenticated
+    USING ((current_setting('request.jwt.claims', true)::jsonb ->> 'is_superadmin')::boolean = true);
+
+CREATE POLICY IF NOT EXISTS collusion_ip_service_role_only ON compliance.aocs_collusion_ip_agents
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+CREATE POLICY IF NOT EXISTS notification_rules_tenant ON public.aocs_notification_rules
+    FOR ALL TO authenticated
+    USING (tenant_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'tenant_id'));
