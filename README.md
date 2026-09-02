@@ -5,9 +5,9 @@
 ## Ring Position
 
 ```
-Ring 0: aocs-system-svc  ← tenants, users, billing (ALWAYS ON)
+Ring 0: aocs-system-svc  ← tenants, users, billing (PAID — requires FeatureCompliance license entitlement)
   │
-  ├── Ring 0-adjacent: aocs-compliance-svc  ← THIS SERVICE (ALWAYS ON)
+  ├── Ring 3 (PAID): aocs-compliance-svc  ← THIS SERVICE (PAID — requires FeatureCompliance license entitlement)
   │     └── Reads Ring 1 at runtime (agent/HITL data)
   │
   └── Ring 1: ocx-core-svc + aocs-hub ← agents, governance, HITL

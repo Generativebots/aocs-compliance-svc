@@ -23,7 +23,7 @@ GRANT USAGE ON SCHEMA compliance TO svc_platform;
 DO $$ BEGIN
     CREATE ROLE svc_compliance NOLOGIN NOINHERIT;
     COMMENT ON ROLE svc_compliance IS
-        'Ring 0-adjacent — aocs-compliance-svc. ZKP, DLP, compliance cases, evidence vault. '
+        'Ring 3 (PAID) — aocs-compliance-svc. ZKP, DLP, compliance cases, evidence vault. '
         'Runtime deps: Ring 0 (aocs-system for tenant data) + Ring 1 (aocs-core for agent data).';
 EXCEPTION WHEN duplicate_object THEN
     RAISE NOTICE 'Role svc_compliance already exists — skipping';

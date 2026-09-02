@@ -1,6 +1,6 @@
 -- =============================================================================
 -- aocs-compliance-svc — Superuser Runbook
--- Ring: 0-adjacent — always-on compliance observability + evidence layer
+-- Ring: 3 — PAID compliance service (independently purchasable)
 -- =============================================================================
 -- WHO RUNS THIS: Platform engineer with Supabase postgres superuser access
 -- WHERE TO RUN:  Supabase Dashboard → SQL Editor

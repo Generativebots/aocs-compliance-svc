@@ -1,5 +1,5 @@
 # =============================================================================
-# docker-compose.yml — aocs-compliance-svc (Ring 0-adjacent)
+# docker-compose.yml — aocs-compliance-svc (Ring 3 (PAID))
 # =============================================================================
 # Ring dependency:
 #   REQUIRES Ring 0 (aocs-system-svc :8082) — for tenant validation + billing
@@ -70,7 +70,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     labels:
-      com.aocs.ring: "0-adjacent"
+      com.aocs.ring: "3"
       com.aocs.service: "compliance"
       com.aocs.description: "ZKP, DLP, compliance cases, evidence vault, SOC2/EU AI Act reports"
     healthcheck:
