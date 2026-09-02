@@ -52,7 +52,7 @@ func (s *LedgerServer) RecordEvidence(ctx context.Context, req *pb.RecordEvidenc
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	// aocs_evidence: entity_id = decision FK; chain_data JSONB stores hash/version/status
+	// core_evidence: entity_id = decision FK; chain_data JSONB stores hash/version/status
 	row := map[string]any{
 		"entity_id":     req.DecisionId,
 		"entity_type":   "HITL_DECISION",
@@ -94,7 +94,7 @@ func (s *LedgerServer) VerifyEvidence(ctx context.Context, req *pb.VerifyEvidenc
 		return nil, status.Error(codes.InvalidArgument, "decision_id and tenant_id are required")
 	}
 
-	// Fetch the stored evidence record — aocs_evidence (entity_id = decision_id FK)
+	// Fetch the stored evidence record — core_evidence (entity_id = decision_id FK)
 	var rows []map[string]any
 	if err := s.DB.QueryRowsCompoundCtx(ctx, database.TblCoreEvidence,
 		"evidence_id, entity_id, chain_data, updated_at",

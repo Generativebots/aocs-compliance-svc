@@ -18,7 +18,7 @@ Ring 0: aocs-system-svc  ← tenants, users, billing (PAID — requires FeatureC
 | Domain | Tables |
 |--------|--------|
 | Compliance cases | `compliance.core_compliance` |
-| Evidence vault | `compliance.aocs_evidence` |
+| Evidence vault | `compliance.core_evidence` |
 | ZKP proofs | `compliance.aocs_zkp_proofs` |
 | DLP findings | `compliance.aocs_dlp_findings` |
 | Controls | `compliance.aocs_compliance_controls` |

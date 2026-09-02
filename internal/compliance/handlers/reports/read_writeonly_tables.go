@@ -162,7 +162,7 @@ func HandleListGuardianVerdicts(db database.DB) http.HandlerFunc {
 		// We fetch all records and let the client filter by metadata.verdict_type if needed.
 		pp := parseLimit(r, 50, 200)
 
-		// Actual aocs_guardian_verdicts columns: verdict_id, tenant_id, agent_id, confidence, metadata, created_at
+		// Actual core_verdicts columns: verdict_id, tenant_id, agent_id, confidence, metadata, created_at
 		// guardian_verdict_id, verdict_type, decision, reason, evidence, appealed — do NOT exist.
 		cols := "verdict_id,tenant_id,agent_id,confidence,metadata,created_at"
 		var rows []map[string]any
@@ -220,7 +220,7 @@ func HandleGetGuardianVerdict(db database.DB) http.HandlerFunc {
 			return
 		}
 		var rows []map[string]any
-		// aocs_guardian_verdicts columns: verdict_id, tenant_id, agent_id, confidence, metadata, created_at.
+		// core_verdicts columns: verdict_id, tenant_id, agent_id, confidence, metadata, created_at.
 		// No guardian_verdict_id, decision, verdict_type, reason, evidence, or appealed columns.
 		if err := db.QueryRowsCompound(database.TblGuardianVerdicts,
 			"verdict_id,tenant_id,agent_id,confidence,metadata,created_at",
