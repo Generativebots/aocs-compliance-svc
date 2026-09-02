@@ -7,24 +7,24 @@
 -- WHEN TO RUN:   After Ring 0 (aocs-system-svc) tables are deployed.
 --
 -- RING DEPENDENCY:
---   DB Schema:  Same Supabase project as Ring 0 and Ring 1.
+--   DB Schema:  Same Supabase project as Ring 0, Ring 1, and Ring 2.
 --               Tables live in compliance schema (not public).
 --               FK to public.aocs_tenants (Ring 0) — hard FK.
---               FK to Ring 1 tables — TEXT only (app-level enforced).
+--               FK to Ring 2 tables (core: agents, HITL) — TEXT only (app-level enforced).
 --
 --   Runtime:    Calls Ring 0 (aocs-system) for tenant validation.
---               Calls Ring 1 (aocs-core/aocs-hub) for agent execution data,
+--               Calls Ring 2 (ocx-core-svc/aocs-hub) for agent execution data,
 --               HITL decisions, enforcement actions.
 --               Will START without Ring 1 running but report handlers 503
---               until Ring 1 is available.
+--               until Ring 2 (ocx-core-svc) is available.
 --
 -- STARTUP ORDER:
 --   1. Run Ring 0 schema (aocs-system-svc) → aocs_tenants must exist
 --   2. Run this file (compliance schema + tables)
---   3. Optionally run Ring 1 schema (ocx-core-svc) — compliance reads Ring 1 at runtime
+--   3. Optionally run Ring 2 schema (ocx-core-svc) — compliance reads Ring 2 at runtime
 --   4. Start Ring 0 docker compose
 --   5. Start aocs-compliance docker compose
---   6. Start Ring 1 docker compose (compliance gains full functionality)
+--   6. Start Ring 2 docker compose — ocx-core-svc (compliance gains full agent data)
 -- =============================================================================
 
 -- =============================================================================
