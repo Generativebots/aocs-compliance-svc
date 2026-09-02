@@ -290,7 +290,7 @@ ALTER TABLE compliance.platform_signing_keys
 
 -- H6 (system): syst_departments.parent_id
 ALTER TABLE public.syst_departments
-    DROP CONSTRAINT IF EXISTS aocs_platform_departments_parent_id_fkey,
+    DROP CONSTRAINT IF EXISTS ocx_departments_parent_id_fkey,
     ADD CONSTRAINT ocx_platform_departments_parent_id_fkey
         FOREIGN KEY (parent_id)
         REFERENCES public.syst_departments (department_id)
