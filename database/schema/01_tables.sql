@@ -47,8 +47,8 @@ CREATE TABLE IF NOT EXISTS compliance.core_compliance (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ── compliance.aocs_compliance_controls ──────────────────────────────────────
-CREATE TABLE IF NOT EXISTS compliance.aocs_compliance_controls (
+-- ── compliance.core_compliance ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS compliance.core_compliance (
     control_id          TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
@@ -68,14 +68,14 @@ CREATE TABLE IF NOT EXISTS compliance.aocs_compliance_controls (
     UNIQUE (tenant_id, framework, control_ref)
 );
 
--- ── compliance.aocs_evidence ─────────────────────────────────────────────────
+-- ── compliance.core_evidence ─────────────────────────────────────────────────
 -- Evidence vault: ZKP proofs, DLP findings, audit screenshots, SOC2 artifacts.
-CREATE TABLE IF NOT EXISTS compliance.aocs_evidence (
+CREATE TABLE IF NOT EXISTS compliance.core_evidence (
     evidence_id         TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     case_id             TEXT        REFERENCES compliance.core_compliance(case_id) ON DELETE SET NULL,
-    control_id          TEXT        REFERENCES compliance.aocs_compliance_controls(control_id) ON DELETE SET NULL,
+    control_id          TEXT        REFERENCES compliance.core_compliance(control_id) ON DELETE SET NULL,
     -- Ring 1 TEXT references
     agent_id            TEXT,
     execution_id        TEXT,
@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS compliance.aocs_evidence (
     signature           TEXT,       -- Ed25519 signature (persisted — not ephemeral)
     signing_key_id      TEXT,       -- References public.platform_signing_keys.key_id
     chain_hash          TEXT,       -- Merkle chain hash (links to previous entry)
-    prev_evidence_id    TEXT        REFERENCES compliance.aocs_evidence(evidence_id),
+    prev_evidence_id    TEXT        REFERENCES compliance.core_evidence(evidence_id),
     collected_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     collected_by        TEXT        NOT NULL DEFAULT 'system',
     expires_at          TIMESTAMPTZ,
@@ -100,13 +100,13 @@ CREATE TABLE IF NOT EXISTS compliance.aocs_evidence (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ── compliance.aocs_zkp_proofs ────────────────────────────────────────────────
+-- ── compliance.core_evidence ────────────────────────────────────────────────
 -- Zero-Knowledge Proof records. Cryptographic proof that a governance action occurred.
-CREATE TABLE IF NOT EXISTS compliance.aocs_zkp_proofs (
+CREATE TABLE IF NOT EXISTS compliance.core_evidence (
     proof_id            TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
-    evidence_id         TEXT        REFERENCES compliance.aocs_evidence(evidence_id),
+    evidence_id         TEXT        REFERENCES compliance.core_evidence(evidence_id),
     case_id             TEXT        REFERENCES compliance.core_compliance(case_id),
     -- Ring 1 TEXT references
     agent_id            TEXT,
@@ -126,9 +126,9 @@ CREATE TABLE IF NOT EXISTS compliance.aocs_zkp_proofs (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ── compliance.aocs_dlp_findings ─────────────────────────────────────────────
+-- ── compliance.shar_dlp_integrations ─────────────────────────────────────────────
 -- Data Loss Prevention scan results.
-CREATE TABLE IF NOT EXISTS compliance.aocs_dlp_findings (
+CREATE TABLE IF NOT EXISTS compliance.shar_dlp_integrations (
     finding_id          TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
@@ -222,10 +222,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS uidx_platform_signing_keys_active
     ON compliance.platform_signing_keys (key_type)
     WHERE is_active = TRUE;
 
--- ── compliance.aocs_collusion_ip_agents ───────────────────────────────────────
+-- ── compliance.core_anomaly_detection ───────────────────────────────────────
 -- S3 Fix (Palantir Gap): Cross-pod sybil collusion tracking.
 -- CollusionStore.RecordAgentOnIP() upserts here for cross-pod shared state.
-CREATE TABLE IF NOT EXISTS compliance.aocs_collusion_ip_agents (
+CREATE TABLE IF NOT EXISTS compliance.core_anomaly_detection (
     tenant_id   TEXT        NOT NULL REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     ip_address  TEXT        NOT NULL,
     agent_ids   JSONB       NOT NULL DEFAULT '[]',
@@ -234,7 +234,7 @@ CREATE TABLE IF NOT EXISTS compliance.aocs_collusion_ip_agents (
 );
 
 CREATE INDEX IF NOT EXISTS idx_collusion_ip_tenant
-    ON compliance.aocs_collusion_ip_agents (tenant_id);
+    ON compliance.core_anomaly_detection (tenant_id);
 
 -- ── DBA Audit Fixes (2026-09-02) ──────────────────────────────────────────────
 -- M2: Add default values to prevent null compliance fields
@@ -245,9 +245,9 @@ ALTER TABLE public.syst_tenants
 -- H5: Add updated_at to compliance tables missing it (required for incremental sync + ETL)
 -- Palantir standard: every mutable table must have an updated_at column with auto-trigger.
 ALTER TABLE compliance.core_compliance_comments    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-ALTER TABLE compliance.aocs_dlp_findings     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE compliance.shar_dlp_integrations     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE compliance.shar_trust ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-ALTER TABLE compliance.aocs_zkp_proofs       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE compliance.core_evidence       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE compliance.platform_signing_keys ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 -- Auto-update trigger function (shared within compliance schema)
@@ -264,7 +264,7 @@ CREATE OR REPLACE TRIGGER trg_case_comments_updated_at
     FOR EACH ROW EXECUTE FUNCTION compliance.set_updated_at();
 
 CREATE OR REPLACE TRIGGER trg_dlp_findings_updated_at
-    BEFORE UPDATE ON compliance.aocs_dlp_findings
+    BEFORE UPDATE ON compliance.shar_dlp_integrations
     FOR EACH ROW EXECUTE FUNCTION compliance.set_updated_at();
 
 CREATE OR REPLACE TRIGGER trg_sybil_assessments_updated_at
@@ -272,7 +272,7 @@ CREATE OR REPLACE TRIGGER trg_sybil_assessments_updated_at
     FOR EACH ROW EXECUTE FUNCTION compliance.set_updated_at();
 
 CREATE OR REPLACE TRIGGER trg_zkp_proofs_updated_at
-    BEFORE UPDATE ON compliance.aocs_zkp_proofs
+    BEFORE UPDATE ON compliance.core_evidence
     FOR EACH ROW EXECUTE FUNCTION compliance.set_updated_at();
 
 CREATE OR REPLACE TRIGGER trg_signing_keys_updated_at
@@ -291,20 +291,20 @@ ALTER TABLE compliance.platform_signing_keys
 -- H6 (system): syst_departments.parent_id
 ALTER TABLE public.syst_departments
     DROP CONSTRAINT IF EXISTS aocs_platform_departments_parent_id_fkey,
-    ADD CONSTRAINT aocs_platform_departments_parent_id_fkey
+    ADD CONSTRAINT ocx_platform_departments_parent_id_fkey
         FOREIGN KEY (parent_id)
         REFERENCES public.syst_departments (department_id)
         ON DELETE SET NULL;
 
--- aocs_audit_log: NOT NULL on tenant_id (data isolation)
-ALTER TABLE public.aocs_audit_log ALTER COLUMN tenant_id SET NOT NULL;
+-- syst_audit: NOT NULL on tenant_id (data isolation)
+ALTER TABLE public.syst_audit ALTER COLUMN tenant_id SET NOT NULL;
 
 -- Compound index for dashboard query pattern (tenant_id, created_at DESC)
-CREATE INDEX IF NOT EXISTS idx_aocs_audit_log_tenant_time
-    ON public.aocs_audit_log (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ocx_audit_log_tenant_time
+    ON public.syst_audit (tenant_id, created_at DESC);
 
--- aocs_notification_rules + syst_tenants indexes
-CREATE INDEX IF NOT EXISTS idx_notification_rules_tenant ON public.aocs_notification_rules (tenant_id);
+-- syst_tenants + syst_tenants indexes
+CREATE INDEX IF NOT EXISTS idx_notification_rules_tenant ON public.syst_tenants (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_tenant_config_tenant      ON public.syst_tenants (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_platform_depts_parent     ON public.syst_departments (parent_id);
 
@@ -312,17 +312,17 @@ CREATE INDEX IF NOT EXISTS idx_platform_depts_parent     ON public.syst_departme
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 
 -- RLS on new security-critical tables
-ALTER TABLE compliance.aocs_collusion_ip_agents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE compliance.core_anomaly_detection ENABLE ROW LEVEL SECURITY;
 ALTER TABLE compliance.platform_signing_keys    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.aocs_notification_rules      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.syst_tenants      ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY IF NOT EXISTS signing_keys_superadmin_only ON compliance.platform_signing_keys
     FOR ALL TO authenticated
     USING ((current_setting('request.jwt.claims', true)::jsonb ->> 'is_superadmin')::boolean = true);
 
-CREATE POLICY IF NOT EXISTS collusion_ip_service_role_only ON compliance.aocs_collusion_ip_agents
+CREATE POLICY IF NOT EXISTS collusion_ip_service_role_only ON compliance.core_anomaly_detection
     FOR ALL TO service_role USING (true) WITH CHECK (true);
 
-CREATE POLICY IF NOT EXISTS notification_rules_tenant ON public.aocs_notification_rules
+CREATE POLICY IF NOT EXISTS notification_rules_tenant ON public.syst_tenants
     FOR ALL TO authenticated
     USING (tenant_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'tenant_id'));

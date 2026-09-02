@@ -4,10 +4,10 @@
 -- =============================================================================
 
 ALTER TABLE compliance.core_compliance        ENABLE ROW LEVEL SECURITY;
-ALTER TABLE compliance.aocs_compliance_controls     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE compliance.aocs_evidence                ENABLE ROW LEVEL SECURITY;
-ALTER TABLE compliance.aocs_zkp_proofs              ENABLE ROW LEVEL SECURITY;
-ALTER TABLE compliance.aocs_dlp_findings            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE compliance.core_compliance     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE compliance.core_evidence                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE compliance.core_evidence              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE compliance.shar_dlp_integrations            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE compliance.nexus_compliance_reports     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE compliance.core_compliance_comments           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE compliance.shar_trust  ENABLE ROW LEVEL SECURITY;
@@ -16,8 +16,8 @@ ALTER TABLE compliance.shar_trust  ENABLE ROW LEVEL SECURITY;
 -- Superadmin bypass + tenant isolation pattern (same as Ring 0)
 DO $$ DECLARE t TEXT; BEGIN
   FOREACH t IN ARRAY ARRAY[
-    'core_compliance','aocs_compliance_controls','aocs_evidence',
-    'aocs_zkp_proofs','aocs_dlp_findings','nexus_compliance_reports',
+    'core_compliance','core_compliance','core_evidence',
+    'core_evidence','shar_dlp_integrations','nexus_compliance_reports',
     'core_compliance_comments','shar_trust'
   ] LOOP
     EXECUTE format('DROP POLICY IF EXISTS superadmin_all ON compliance.%I', t);
