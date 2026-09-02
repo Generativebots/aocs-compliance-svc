@@ -11,7 +11,7 @@ package reports
 //   vw_compliance_kpis   — compliance summary metrics per tenant
 //
 // Circular flow:
-//   Agent gate calls → core_events / qcore_verdicts
+//   Agent gate calls → core_events / core_verdicts
 //   DB views → vw_agent_dashboard, vw_compliance_kpis (live aggregation)
 //   These handlers → read views → UI dashboards
 
@@ -26,7 +26,7 @@ import (
 
 // HandleGetAgentDashboard — GET /api/v1/analytics/agent-dashboard
 // Reads vw_agent_dashboard (DB view) instead of doing a multi-table raw join.
-// Was reading raw qcore_verdicts + platform_events + reputation tables
+// Was reading raw core_verdicts + platform_events + reputation tables
 // separately in JS — now a single DB view query.
 func HandleGetAgentDashboard(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

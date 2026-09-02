@@ -3,10 +3,10 @@ package compliance
 // GRA (Governance Risk Assessment) Handlers — Group 4 Consolidated
 // Tables: gra_frameworks, gra_cases, gra_tenant_status
 // Canonical pattern:
-//   - gra_frameworks absorbs: qcore_gra_regulatory_frameworks, compliance_regions, risk_config
+//   - gra_frameworks absorbs: gra_frameworks, compliance_regions, risk_config
 //   - gra_cases absorbs: verification_intents, agent_actions, risk_assessments
 //     case_type discriminator: 'verification_intent' | 'agent_action' | 'risk_assessment'
-//   - gra_tenant_status: renamed from qcore_gra_tenant_status
+//   - gra_tenant_status: renamed from gra_tenant_status
 // Rule: type-specific fields packed into data JSONB.
 
 import (

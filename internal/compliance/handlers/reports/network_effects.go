@@ -408,7 +408,7 @@ func HandleListIntelCategories(db database.DB) http.HandlerFunc {
 			return
 		}
 		var policies []map[string]any
-		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblQCorePolicies, "policy_id,category,name,status", "tenant_id", tenantID, &policies); _dbErr != nil {
+		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCorePolicies, "policy_id,category,name,status", "tenant_id", tenantID, &policies); _dbErr != nil {
 			slog.Error("QueryRows failed", "error", _dbErr)
 		}
 		byCategory := map[string]int{}

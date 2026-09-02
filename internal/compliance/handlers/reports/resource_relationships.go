@@ -172,10 +172,10 @@ func HandleBindPolicy(db database.DB) http.HandlerFunc {
 			"status":         "ACTIVE",
 			// bound_at / created_at DEFAULT NOW() — DB handles
 		}
-		// Write to qcore_policy_bindings (agent↔policy junction), NOT qcore_policies.
-		// Previously this wrote to qcore_policies (the policy definition table), so no binding
+		// Write to core_policies (agent↔policy junction), NOT core_policies.
+		// Previously this wrote to core_policies (the policy definition table), so no binding
 		// was ever created and the gate's policy lookup found zero bindings for every agent.
-		if err := db.InsertRow(database.TblQCorePolicyBindings, row); err != nil {
+		if err := db.InsertRow(database.TblCorePolicies, row); err != nil {
 			slog.Error("BindPolicy failed", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to bind policy", nil)
 			return
@@ -203,7 +203,7 @@ func HandleUnbindPolicy(db database.DB) http.HandlerFunc {
 			return
 		}
 
-		if err := db.UpdateRowCompound(database.TblQCorePolicies,
+		if err := db.UpdateRowCompound(database.TblCorePolicies,
 			"agent_id", agentID,
 			"tenant_id", tenantID,
 			map[string]any{"is_active": false}); err != nil {
@@ -389,7 +389,7 @@ func HandleImportSourceExtract(db database.DB) http.HandlerFunc {
 			}
 
 			// Fallback: metadata-only policy extraction (when OCX_APE_HTTP_URL not configured).
-			// Satisfies CIP patent requirement: APE extraction → qcore_policies (DRAFT)
+			// Satisfies CIP patent requirement: APE extraction → core_policies (DRAFT)
 			// → core_selfheal (PENDING) for operator review before anything goes live.
 			setStatus("SYNCED", "")
 
@@ -408,7 +408,7 @@ func HandleImportSourceExtract(db database.DB) http.HandlerFunc {
 				"extraction_id":     extractionID,
 				"created_at":        "now()",
 			}
-			if insertErr := db.InsertRow(database.TblQCorePolicies, policyRow); insertErr != nil {
+			if insertErr := db.InsertRow(database.TblCorePolicies, policyRow); insertErr != nil {
 				slog.Error("APE: failed to persist extracted policy",
 					"extraction_id", extractionID, "error", insertErr)
 				// Non-fatal: document is SYNCED, policy write failure is logged for retry

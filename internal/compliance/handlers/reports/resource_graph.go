@@ -250,7 +250,7 @@ func HandleGetResourceGraph(db database.DB) http.HandlerFunc {
 			defer wg.Done()
 			var policies []map[string]any
 			// tier→category, trigger_intent→name, source_name→name, is_active→status (remapped to existing cols)
-			if err := db.QueryRowsCtx(r.Context(), database.TblQCorePolicies, "policy_id,name,category,status,scope,agent_id", "tenant_id", tenantID, &policies); err != nil {
+			if err := db.QueryRowsCtx(r.Context(), database.TblCorePolicies, "policy_id,name,category,status,scope,agent_id", "tenant_id", tenantID, &policies); err != nil {
 				slog.Error("HandleGetResourceGraph: QueryRows policies failed", "error", err)
 				errCh <- err
 				return
@@ -265,7 +265,7 @@ func HandleGetResourceGraph(db database.DB) http.HandlerFunc {
 			}
 		})
 
-		// 8. Agt ↔ Policy binding edges (FROM qcore_agent_policy_bindings)
+		// 8. Agt ↔ Policy binding edges (FROM core_policies)
 		concurrent.Go("resource_graph", func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -279,8 +279,8 @@ func HandleGetResourceGraph(db database.DB) http.HandlerFunc {
 			}()
 			defer wg.Done()
 			var policyBindings []map[string]any
-			// binding_type→scope (existing col). Gets agent→policy binding via agent_id on qcore_policies
-			if err := db.QueryRowsCtx(r.Context(), database.TblQCorePolicies, "agent_id,policy_id,scope", "tenant_id", tenantID, &policyBindings); err != nil {
+			// binding_type→scope (existing col). Gets agent→policy binding via agent_id on core_policies
+			if err := db.QueryRowsCtx(r.Context(), database.TblCorePolicies, "agent_id,policy_id,scope", "tenant_id", tenantID, &policyBindings); err != nil {
 				slog.Error("HandleGetResourceGraph: QueryRows agent_policy_bindings failed", "error", err)
 				errCh <- err
 				return

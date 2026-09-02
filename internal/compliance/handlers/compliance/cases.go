@@ -93,7 +93,7 @@ func HandleListCases(db database.DB) http.HandlerFunc {
 					COALESCE(p.name, '')         AS policy_name
 				FROM core_hitl h
 				LEFT JOIN core_agents         a ON a.agent_id  = h.agent_id  AND a.tenant_id = h.tenant_id
-				LEFT JOIN qcore_policies      p ON p.policy_id = h.policy_id AND p.tenant_id = h.tenant_id
+				LEFT JOIN core_policies      p ON p.policy_id = h.policy_id AND p.tenant_id = h.tenant_id
 				ORDER BY h.created_at DESC
 				LIMIT 500`
 		} else {
@@ -119,7 +119,7 @@ func HandleListCases(db database.DB) http.HandlerFunc {
 					COALESCE(p.name, '')         AS policy_name
 				FROM core_hitl h
 				LEFT JOIN core_agents         a ON a.agent_id  = h.agent_id  AND a.tenant_id = h.tenant_id
-				LEFT JOIN qcore_policies      p ON p.policy_id = h.policy_id AND p.tenant_id = h.tenant_id
+				LEFT JOIN core_policies      p ON p.policy_id = h.policy_id AND p.tenant_id = h.tenant_id
 				WHERE h.tenant_id = $1
 				ORDER BY h.created_at DESC
 				LIMIT 500`

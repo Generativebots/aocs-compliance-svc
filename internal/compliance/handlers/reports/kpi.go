@@ -363,7 +363,7 @@ func HandleListAnalyticsErrors(db database.DB, coreClients ...*serviceclient.Cli
 // C3 FIX: Gate Performance Analytics — GET /api/v1/analytics/gate-performance
 
 // HandleGetGatePerformance — C3: gate latency / pass-rate analytics.
-// Queries qcore_gate_runs, groups by gate_name, computes pass_rate and avg_latency_ms.
+// Queries core_audit, groups by gate_name, computes pass_rate and avg_latency_ms.
 func HandleGetGatePerformance(db database.DB, coreClients ...*serviceclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if respond.RequireDB(w, db) {
@@ -560,7 +560,7 @@ func HandleGetPlatformStatus(db database.DB) http.HandlerFunc {
 		}
 
 		var policies []map[string]any
-		if err := db.QueryRowsCursor(database.TblQCorePolicies, "policy_id, status", "tenant_id", tenantID, database.ParseCursorPage(r), &policies); err != nil {
+		if err := db.QueryRowsCursor(database.TblCorePolicies, "policy_id, status", "tenant_id", tenantID, database.ParseCursorPage(r), &policies); err != nil {
 			slog.Error("GetPlatformStatus: policies query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "load platform status", err)
 			return

@@ -491,9 +491,9 @@ func HandleGetAnalyticsClaims(db database.DB) http.HandlerFunc {
 				return db.QueryRowsWithin90Days(database.TblCoreEvents, database.ColsPlatformEvents, tenantID, &interactions)
 			}},
 			// B-NEW FIX: was a duplicate core_events query (same table, same filter as interactions).
-			// Replaced with qcore_evidence_records to give distinct metrics data for the analytics dashboard.
+			// Replaced with core_evidence_records to give distinct metrics data for the analytics dashboard.
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblQCoreEvidenceRecords, "evidence_id,status,compliance_score,tenant_id,created_at", "tenant_id", tenantID, &metrics)
+				return db.QueryRowsCtx(r.Context(), database.TblCoreEvidenceRecords, "evidence_id,status,compliance_score,tenant_id,created_at", "tenant_id", tenantID, &metrics)
 			}},
 		})
 

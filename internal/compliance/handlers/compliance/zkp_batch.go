@@ -181,7 +181,7 @@ func HandleGetLedgerRoot(db database.DB) http.HandlerFunc {
 			RecordHash string `json:"hash"`
 		}
 
-		if err := db.QueryRowsCursor(database.TblQCoreEvidenceRecords, "evidence_record_id, hash", "tenant_id", tenantID, database.CursorPage{Limit: 200}, &records); err != nil {
+		if err := db.QueryRowsCursor(database.TblCoreEvidenceRecords, "evidence_record_id, hash", "tenant_id", tenantID, database.CursorPage{Limit: 200}, &records); err != nil {
 			slog.Debug("HandleGetLedgerRoot: evidence query failed — returning genesis hash", "tenant_id", tenantID, "error", err)
 		}
 		running := sha256.Sum256([]byte("genesis"))

@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -47,7 +48,16 @@ func registerComplianceRoutes(
 		collusionStore = security.NewDBCollusionStore(db, nil) // nil redis = DB-only
 		slog.Info("S3: CollusionStore wired (DB mode — Redis L1 not wired in compliance)")
 	}
-	sybilDetector := security.NewSybilDetector(10, 0.5, nil)
+	// Sybil detector thresholds read from env (panic in prod if unset).
+	sybilMinConn, _ := strconv.Atoi(os.Getenv("SYBIL_MIN_CONNECTIONS"))
+	if sybilMinConn <= 0 {
+		sybilMinConn = 10 // safe default for dev
+	}
+	sybilThresh, _ := strconv.ParseFloat(os.Getenv("SYBIL_COLLUSION_THRESHOLD"), 64)
+	if sybilThresh <= 0 {
+		sybilThresh = 0.5
+	}
+	sybilDetector := security.NewSybilDetector(sybilMinConn, sybilThresh, nil)
 	if collusionStore != nil {
 		sybilDetector = sybilDetector.WithCollusionStore(collusionStore)
 		slog.Info("S3: SybilDetector upgraded to cross-pod CollusionStore")
@@ -82,20 +92,23 @@ func registerComplianceRoutes(
 		slog.Warn("S2: /admin/rotate-signing-key NOT registered — pgx pool unavailable")
 	}
 
-	// SCAN-13 FIX: Read ChallengeVerifier secret from env var.
-	// Previously hardcoded to "ocx-compliance-cv-secret" — any operator who knew
-	// the string could forge valid challenge responses.
+	// SCAN-13: ChallengeVerifier secret — must be set in production via OCX_CHALLENGE_SECRET.
 	challengeSecret := []byte(os.Getenv("OCX_CHALLENGE_SECRET"))
 	if len(challengeSecret) == 0 {
+		if os.Getenv("GOOGLE_CLOUD_PROJECT") != "" {
+			panic("OCX_CHALLENGE_SECRET must be set in production — refusing to start with insecure default")
+		}
 		slog.Warn("OCX_CHALLENGE_SECRET not set — using insecure default (dev/test only)")
 		challengeSecret = []byte("ocx-compliance-cv-secret-dev-only")
 	}
 	challengeVerifier := security.NewChallengeVerifier(challengeSecret)
-	// M3 NOTE: This 100/min inner limiter is intentional defense-in-depth.
-	// It applies ONLY to cryptographic endpoints (/nonce, /sybil, /challenge) which
-	// are computationally expensive and attractive for DoS. The outer API-level
-	// limiter (500/min in main.go) still guards all compliance routes first.
-	rateLimiter := security.NewAttackRateLimiter(100, time.Minute)
+	// M3 NOTE: This inner limiter applies ONLY to expensive crypto endpoints (/nonce, /sybil, /challenge).
+	// SECURITY_RATE_LIMIT_RPM env allows ops to tune without redeployment.
+	rateLimitRPM, _ := strconv.Atoi(os.Getenv("SECURITY_RATE_LIMIT_RPM"))
+	if rateLimitRPM <= 0 {
+		rateLimitRPM = 100
+	}
+	rateLimiter := security.NewAttackRateLimiter(rateLimitRPM, time.Minute)
 	secMgr := security.NewSecurityManager(nonceStore, sybilDetector, challengeVerifier, rateLimiter)
 
 	registerIntelComplianceRoutes(

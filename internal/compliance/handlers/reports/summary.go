@@ -96,7 +96,7 @@ func HandleGetAnalyticsQuery(db database.DB) http.HandlerFunc {
 
 		case "policies":
 			var policies []map[string]any
-			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblQCorePolicies, "policy_id,name,status,policy_type", "tenant_id", tenantID, &policies); _dbErr != nil {
+			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCorePolicies, "policy_id,name,status,policy_type", "tenant_id", tenantID, &policies); _dbErr != nil {
 				slog.Error("db.QueryRows failed (best-effort)", "error", _dbErr)
 			}
 			byStatus := map[string]int{}
@@ -138,7 +138,7 @@ func HandleGetAnalyticsQuery(db database.DB) http.HandlerFunc {
 			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreEvidence, "evidence_record_id", "tenant_id", tenantID, &evidence); _dbErr != nil {
 				slog.Error("db.QueryRows failed (best-effort)", "error", _dbErr)
 			}
-			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblQCorePolicies, "policy_id", "tenant_id", tenantID, &policies); _dbErr != nil {
+			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCorePolicies, "policy_id", "tenant_id", tenantID, &policies); _dbErr != nil {
 				slog.Error("db.QueryRows failed (best-effort)", "error", _dbErr)
 			}
 			result["total_agents"] = len(agents)

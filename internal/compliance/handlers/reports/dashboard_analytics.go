@@ -76,7 +76,7 @@ func HandleGetImpactClaims(db database.DB) http.HandlerFunc {
 			return
 		}
 
-		// OPTIMISED: Was 4 concurrent hits on the same qcore_biz_impact table.
+		// OPTIMISED: Was 4 concurrent hits on the same core_evidence table.
 		// Now: 1 query loads all rows, Go partitions by impact_type in a single pass.
 		// NOTE: the real column is impact_type, not record_type (schema verified).
 		var allImpact []map[string]any
@@ -89,7 +89,7 @@ func HandleGetImpactClaims(db database.DB) http.HandlerFunc {
 
 		runConcurrent(r.Context(), []dbQuery{
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblQCoreBizImpact, impactCols, "tenant_id", tenantID, &allImpact)
+				return db.QueryRowsCtx(r.Context(), database.TblCoreEvidence, impactCols, "tenant_id", tenantID, &allImpact)
 			}},
 			{fn: func() error {
 				return db.QueryRowsCtx(r.Context(), database.TblSharComplianceReports, database.ColsNexusComplianceReports, "tenant_id", tenantID, &reports)
@@ -97,7 +97,7 @@ func HandleGetImpactClaims(db database.DB) http.HandlerFunc {
 		})
 
 		// Partition by impact_type in one pass — avoids 3 extra DB round-trips.
-		// real column: impact_type (qcore_biz_impact schema, verified 2026-07-17)
+		// real column: impact_type (core_evidence schema, verified 2026-07-17)
 		var assumptions, estimates, simulations, templates []map[string]any
 		for _, row := range allImpact {
 			it, _ := row["impact_type"].(string)
@@ -145,7 +145,7 @@ func HandleGetGovernanceTestingClaims(db database.DB) http.HandlerFunc {
 
 		runConcurrent(r.Context(), []dbQuery{
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblQCorePolicies, database.ColsQcorePolicies, "tenant_id", tenantID, &tests)
+				return db.QueryRowsCtx(r.Context(), database.TblCorePolicies, database.ColsQcorePolicies, "tenant_id", tenantID, &tests)
 			}},
 			{fn: func() error {
 				return db.QueryRowsCtx(r.Context(), database.TblSharComplianceReports, database.ColsNexusComplianceReports, "tenant_id", tenantID, &coverage)

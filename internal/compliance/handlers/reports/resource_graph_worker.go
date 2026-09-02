@@ -5,7 +5,7 @@ package reports
 // Aocs_resource_graph_nodes and core_resource_graph_edges were permanently
 // empty — the Sankey/Ograph views had no data to render. This worker scans:
 //   - core_agents (nodes: agent type)
-//   - qcore_policy_bindings (edges: agent→policy)
+//   - core_policies (edges: agent→policy)
 //   - core_intents (edges: agent→intent)
 // and materializes the graph into the resource graph tables.
 //
@@ -198,7 +198,7 @@ func runResourceGraphScan(ctx context.Context, db database.DB) {
 			Name     string `json:"name"`
 			TenantID string `json:"tenant_id"`
 		}
-		if err := db.QueryRowsCtx(ctx, database.TblQCorePolicyBindings, "policy_id,name,tenant_id",
+		if err := db.QueryRowsCtx(ctx, database.TblCorePolicies, "policy_id,name,tenant_id",
 			"tenant_id", tid, &policies); err != nil {
 			slog.Error("policy nodes query failed", "tenant_id", tid, "error", err)
 			continue

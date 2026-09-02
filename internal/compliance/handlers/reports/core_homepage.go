@@ -54,9 +54,9 @@ func HandleGetAnalyticsCoreHomepage(db database.DB) http.HandlerFunc {
 			}
 		}
 
-		// Count policies — canonical table is qcore_policies (gov_policies was a naming error)
+		// Count policies — canonical table is core_policies (gov_policies was a naming error)
 		var policies []map[string]any
-		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblQCorePolicies, "policy_id", "tenant_id", tenantID, &policies); _dbErr != nil {
+		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCorePolicies, "policy_id", "tenant_id", tenantID, &policies); _dbErr != nil {
 			slog.Error("db operation failed", "method", "QueryRows", "error", _dbErr)
 		}
 

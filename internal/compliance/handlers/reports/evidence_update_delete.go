@@ -1,6 +1,6 @@
 package reports
 
-// Table: qcore_evidence_records (PK: id, compound key with timestamp for chain integrity)
+// Table: core_evidence_records (PK: id, compound key with timestamp for chain integrity)
 // Update: allows correction of metadata fields (type, action_class) before attestation.
 // Delete: soft-delete — sets a deleted_at marker; immutable chain fields (hash, previous_hash)
 //         are preserved to keep the cryptographic audit chain intact.
@@ -38,7 +38,7 @@ func HandleUpdateEvidence(db database.DB) http.HandlerFunc {
 		}
 		// Verify ownership and attestation status
 		var rows []database.QCoreEvidenceRecord
-		if err := db.QueryRowsCompound(database.TblQCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "evidence_record_id", id, "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
+		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "evidence_record_id", id, "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "evidence not found")
 			return
 		}
@@ -72,7 +72,7 @@ func HandleUpdateEvidence(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "no fields to update")
 			return
 		}
-		if dbErr := db.UpdateRowCompound(database.TblQCoreEvidenceRecords, "evidence_record_id", id, "tenant_id", tenantID, updates); dbErr != nil {
+		if dbErr := db.UpdateRowCompound(database.TblCoreEvidenceRecords, "evidence_record_id", id, "tenant_id", tenantID, updates); dbErr != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "update evidence", dbErr)
 			return
 		}
@@ -100,7 +100,7 @@ func HandleDeleteEvidence(db database.DB) http.HandlerFunc {
 		}
 		// Verify ownership
 		var rows []database.QCoreEvidenceRecord
-		if err := db.QueryRowsCompound(database.TblQCoreEvidenceRecords, "evidence_record_id,tenant_id,verified", "evidence_record_id", id, "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
+		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, "evidence_record_id,tenant_id,verified", "evidence_record_id", id, "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "evidence not found")
 			return
 		}
@@ -115,7 +115,7 @@ func HandleDeleteEvidence(db database.DB) http.HandlerFunc {
 		}
 		delEvent, _ := json.Marshal(map[string]any{"deleted_at": time.Now().UTC().Format(time.RFC3339)})
 		updates["event_data"] = string(delEvent)
-		if dbErr := db.UpdateRowCompound(database.TblQCoreEvidenceRecords, "evidence_record_id", id, "tenant_id", tenantID, updates); dbErr != nil {
+		if dbErr := db.UpdateRowCompound(database.TblCoreEvidenceRecords, "evidence_record_id", id, "tenant_id", tenantID, updates); dbErr != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "delete evidence", dbErr)
 			return
 		}

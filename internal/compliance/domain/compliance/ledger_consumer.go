@@ -1,7 +1,7 @@
 // Package compliance — Pub/Sub consumer for AOCS Ledger.
 //
 // This consumer subscribes to "aocs.ledger.write" and streams evidence payloads
-// asynchronously into the qcore_evidence_records table, preventing the core REST API
+// asynchronously into the core_evidence_records table, preventing the core REST API
 // from blocking during high-throughput orchestration cycles.
 package compliance
 
@@ -126,7 +126,7 @@ func (c *LedgerConsumer) insertEvidence(ctx context.Context, e database.QCoreEvi
 		createdBy = "ledger.consumer"
 	}
 	query := `
-		INSERT INTO qcore_evidence_records (
+		INSERT INTO core_evidence_records (
 			id, type, transaction_id, tenant_id, agent_id,
 			hash, payload, timestamp, created_at, created_by
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9)

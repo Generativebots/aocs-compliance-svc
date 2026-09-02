@@ -5,8 +5,8 @@
 //
 // Phase L additions (2026-04-06):
 //   - EBCL Contracts CRUD (ia_ebcl_contracts)
-//   - GRA Risk Assessments CRUD (qcore_gra_risk_assessments)
-//   - Policy Extractions CRUD (qcore_policy_extractions)
+//   - GRA Risk Assessments CRUD (gra_cases)
+//   - Policy Extractions CRUD (core_policies)
 //   - APE Read-Side Go handlers (ia_authority_gaps, ia_parsed_documents,
 //     ia_authority_contracts) — removed Python proxy dependency
 //   - Ops Fleet Deployments CRUD (aocs_ops_fleet_deployments)

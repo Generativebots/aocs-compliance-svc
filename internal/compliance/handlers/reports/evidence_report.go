@@ -33,7 +33,7 @@ func HandleSearchEvidence(db database.DB) http.HandlerFunc {
 
 		// Fetch all tenant evlt (pre-filter at DB level by tenant)
 		var records []database.QCoreEvidenceRecord
-		if err := db.QueryRowsCtx(r.Context(), database.TblQCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, &records); err != nil {
+		if err := db.QueryRowsCtx(r.Context(), database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, &records); err != nil {
 			slog.Error("SearchEvidence DB query failed", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to search evidence records", nil)
 			return
@@ -295,10 +295,10 @@ func HandleGetAnalyticsOverview(db database.DB) http.HandlerFunc {
 		db.QueryRowsCtx(r.Context(), database.TblCoreEscrowTxns, "status", "tenant_id", tenantID, &esc)
 
 		var evlt []map[string]any
-		db.QueryRowsCtx(r.Context(), database.TblQCoreEvidenceRecords, "evidence_record_id", "tenant_id", tenantID, &evlt)
+		db.QueryRowsCtx(r.Context(), database.TblCoreEvidenceRecords, "evidence_record_id", "tenant_id", tenantID, &evlt)
 
 		var policies []map[string]any
-		db.QueryRowsCtx(r.Context(), database.TblQCorePolicies, "policy_id", "tenant_id", tenantID, &policies)
+		db.QueryRowsCtx(r.Context(), database.TblCorePolicies, "policy_id", "tenant_id", tenantID, &policies)
 
 		held := 0
 		released := 0
@@ -367,7 +367,7 @@ func HandleGetEvidenceChain(db database.DB) http.HandlerFunc {
 		}
 
 		var records []database.QCoreEvidenceRecord
-		if err := db.QueryRowsCursor(database.TblQCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, database.ParseCursorPage(r), &records); err != nil {
+		if err := db.QueryRowsCursor(database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, database.ParseCursorPage(r), &records); err != nil {
 			slog.Error("HandleGetEvidenceChain query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "get evidence chain", err)
 			return
@@ -417,7 +417,7 @@ func HandleVerifyChain(db database.DB) http.HandlerFunc {
 		}
 
 		var records []database.QCoreEvidenceRecord
-		if err := db.QueryRowsCursor(database.TblQCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, database.ParseCursorPage(r), &records); err != nil {
+		if err := db.QueryRowsCursor(database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, database.ParseCursorPage(r), &records); err != nil {
 			slog.Error("HandleVerifyChain query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "verify evidence chain", err)
 			return
@@ -461,7 +461,7 @@ func HandleComplianceReport(db database.DB) http.HandlerFunc {
 		}
 
 		var records []database.QCoreEvidenceRecord
-		if err := db.QueryRowsCtx(r.Context(), database.TblQCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, &records); err != nil {
+		if err := db.QueryRowsCtx(r.Context(), database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, &records); err != nil {
 			slog.Error("HandleComplianceReport query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "compliance report", err)
 			return
