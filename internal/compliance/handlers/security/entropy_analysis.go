@@ -88,7 +88,7 @@ func HandleGetEntropyEvents(db database.DB, coreClients ...*serviceclient.Client
 			return
 		}
 		var rows []database.PlatformEvent
-		if err := db.QueryRowsWithin90DaysCompound(database.TblPlatformEvents, database.ColsPlatformEvent,
+		if err := db.QueryRowsWithin90DaysCompound(database.TblCoreEvents, database.ColsPlatformEvent,
 			tenantID, "event_type", database.PlatformEventEntropyBreach, &rows); err != nil {
 			slog.Error("GetEntropyEvents failed", "tenant", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to list entropy events", err)
@@ -134,7 +134,7 @@ func HandleGetEntropyEvent(db database.DB, coreClients ...*serviceclient.Client)
 			return
 		}
 		var rows []database.PlatformEvent
-		if err := db.QueryRowsCompound(database.TblPlatformEvents, database.ColsPlatformEvent,
+		if err := db.QueryRowsCompound(database.TblCoreEvents, database.ColsPlatformEvent,
 			"log_id", eventID, "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "entropy event not found")
 			return
@@ -202,7 +202,7 @@ func HandleCreateEntropyEvent(db database.DB, coreClients ...*serviceclient.Clie
 			Action:       "entropy_recorded",
 			Severity:     "WARN",
 		}
-		if err := db.InsertRow(database.TblPlatformEvents, evt); err != nil {
+		if err := db.InsertRow(database.TblCoreEvents, evt); err != nil {
 			slog.Error("CreateEntropyEvent failed", "tenant", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to create entropy event", err)
 			return

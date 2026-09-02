@@ -79,7 +79,7 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 		txResult, isTxErr := func() (reassignResult, error) {
 			var res reassignResult
 			err := db.WithTransaction(r.Context(), func(tx database.DB) error {
-				if qErr := tx.QueryRowsCompoundForUpdate(database.TblHITLDecisions,
+				if qErr := tx.QueryRowsCompoundForUpdate(database.TblCoreHitl,
 					"decision_id,department_id,status",
 					"decision_id", caseID, "tenant_id", tenantID, &caseRows); qErr != nil || len(caseRows) == 0 {
 					return fmt.Errorf("not_found")
@@ -115,7 +115,7 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 
 		// ── Check 2: Target dept has HITL enabled ─────────────────────────────
 		var deptRows []map[string]any
-		if err := db.QueryRowsCompound(database.TblPlatformDepartments, "slug,enabled_features",
+		if err := db.QueryRowsCompound(database.TblSystDepartments, "slug,enabled_features",
 			"slug", req.ToDeptID, "tenant_id", tenantID, &deptRows); err != nil || len(deptRows) == 0 {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest,
 				fmt.Sprintf("target department '%s' not found", req.ToDeptID))
@@ -155,7 +155,7 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 			}
 			fetchPolicy := func(deptSlug string) deptPolicy {
 				var rows []map[string]any
-				if _dbErr := db.QueryRowsCompound(database.TblHITLSLAConfig,
+				if _dbErr := db.QueryRowsCompound(database.TblCoreHitlSla,
 					"department_id,auto_approve_threshold,escalate_threshold",
 					"department_id", deptSlug, "tenant_id", tenantID, &rows); _dbErr != nil {
 					slog.Error("QueryRowsCompound failed", "error", _dbErr)
@@ -203,7 +203,7 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 
 		// ── Check 3: Recompute SLA deadline for target dept ───────────────────
 		var slaRows []map[string]any
-		if _dbErr := db.QueryRowsCompound(database.TblHITLSLAConfig, "department_id,sla_hours",
+		if _dbErr := db.QueryRowsCompound(database.TblCoreHitlSla, "department_id,sla_hours",
 			"department_id", req.ToDeptID, "tenant_id", tenantID, &slaRows); _dbErr != nil {
 			slog.Error("QueryRowsCompound failed", "error", _dbErr)
 		}
@@ -240,7 +240,7 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 		// Only write sla_deadline if the column exists (added in Part 1 migrations)
 		update["sla_deadline"] = newDeadline
 
-		if err := db.UpdateRowCompound(database.TblHITLDecisions, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
+		if err := db.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
 			slog.Error("update failed", "case_id", caseID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "reassign case", err)
 			return
@@ -269,7 +269,7 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 				if _err := coreClient.PostEvent(r.Context(), auditRow); _err != nil {
 					slog.Error("coreClient.PostEvent dept_handover failed (best-effort)", "error", _err)
 				}
-			} else if _dbErr := db.InsertRow(database.TblPlatformEvents, auditRow); _dbErr != nil {
+			} else if _dbErr := db.InsertRow(database.TblCoreEvents, auditRow); _dbErr != nil {
 				slog.Error("InsertRow failed", "error", _dbErr)
 			}
 		})

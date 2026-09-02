@@ -141,7 +141,7 @@ func HandleVerifyZKP(db database.DB, verifier types.ZKPVerifier) http.HandlerFun
 		// to prevent a replayed proof from being recorded as a second valid verification.
 		if challengeID != "" && challengeID != verificationID {
 			var existing []database.SentiZKPVerification
-			if err := db.QueryRowsCompound(database.TblSentiZKPVerifications, database.Meta[database.TblSentiZKPVerifications],
+			if err := db.QueryRowsCompound(database.TblSharZkpVerify, database.Meta[database.TblSharZkpVerify],
 				"tenant_id", tenantID, "challenge_id", challengeID, &existing); err == nil && len(existing) > 0 {
 				slog.Warn("ZKP replay blocked — challenge_id already consumed",
 					"challenge_id", challengeID, "tenant_id", tenantID, "agent_id", req.AgentID)
@@ -151,7 +151,7 @@ func HandleVerifyZKP(db database.DB, verifier types.ZKPVerifier) http.HandlerFun
 			}
 		}
 
-		if err := db.InsertRow(database.TblSentiZKPVerifications, record); err != nil {
+		if err := db.InsertRow(database.TblSharZkpVerify, record); err != nil {
 			slog.Error("Failed to persist ZKP verification", "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "persist zkp verification", err)
 			return
@@ -218,11 +218,11 @@ func HandleListZKPVerifications(db database.DB) http.HandlerFunc {
 
 		var rawRows []database.SentiZKPVerification
 		if from != "" || to != "" {
-			if _dbErr := db.QueryRowsWithWindow(database.TblSentiZKPVerifications, database.ColsSentiZkpVerifications, tenantID, from, to, &rawRows); _dbErr != nil {
+			if _dbErr := db.QueryRowsWithWindow(database.TblSharZkpVerify, database.ColsSentiZkpVerifications, tenantID, from, to, &rawRows); _dbErr != nil {
 				slog.Error("db operation failed", "method", "QueryRowsWithWindow", "error", _dbErr)
 			}
 		} else {
-			if _dbErr := db.QueryRowsWithin90Days(database.TblSentiZKPVerifications, database.ColsSentiZkpVerifications, tenantID, &rawRows); _dbErr != nil {
+			if _dbErr := db.QueryRowsWithin90Days(database.TblSharZkpVerify, database.ColsSentiZkpVerifications, tenantID, &rawRows); _dbErr != nil {
 				slog.Error("db operation failed", "method", "QueryRowsWithin90Days", "error", _dbErr)
 			}
 		}
@@ -282,7 +282,7 @@ func HandleGetZKPVerification(db database.DB) http.HandlerFunc {
 		}
 
 		var rows []database.SentiZKPVerification
-		err := db.QueryRowsCompound(database.TblSentiZKPVerifications, database.ColsSentiZkpVerifications, database.Meta[database.TblSentiZKPVerifications], id, "tenant_id", tenantID, &rows)
+		err := db.QueryRowsCompound(database.TblSharZkpVerify, database.ColsSentiZkpVerifications, database.Meta[database.TblSharZkpVerify], id, "tenant_id", tenantID, &rows)
 		if err != nil || len(rows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "ZKP verification not found")
 			return
@@ -307,7 +307,7 @@ func HandleGetZKPStats(db database.DB) http.HandlerFunc {
 		}
 
 		var rows []database.SentiZKPVerification
-		if _dbErr := db.QueryRowsWithin90Days(database.TblSentiZKPVerifications, database.ColsSentiZkpVerifications, tenantID, &rows); _dbErr != nil {
+		if _dbErr := db.QueryRowsWithin90Days(database.TblSharZkpVerify, database.ColsSentiZkpVerifications, tenantID, &rows); _dbErr != nil {
 			slog.Error("db operation failed", "method", "QueryRowsWithin90Days", "error", _dbErr)
 		}
 

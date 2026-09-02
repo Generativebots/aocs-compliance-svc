@@ -73,9 +73,9 @@ func HandleListIntelligenceObservations(db database.DB) http.HandlerFunc {
 		var rows []obsRow
 		cols := "observation_id,agent_id,event_type,severity,source,title,description,status,acknowledged_by,resolved_by,created_at,updated_at"
 
-		if err := db.QueryRowsCtx(r.Context(), database.TblObservations, cols, "tenant_id", tenantID, &rows); err != nil {
+		if err := db.QueryRowsCtx(r.Context(), database.TblCoreObservations, cols, "tenant_id", tenantID, &rows); err != nil {
 			slog.Error("HandleListIntelligenceObservations: query failed",
-				"table", database.TblObservations, "err", err)
+				"table", database.TblCoreObservations, "err", err)
 			// Return empty list — never 500 on a missing/empty table
 			respond.JSON(w, http.StatusOK, map[string]any{"items": []obsRow{}, "total": 0})
 			return

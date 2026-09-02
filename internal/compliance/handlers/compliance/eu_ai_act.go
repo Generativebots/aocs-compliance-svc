@@ -312,7 +312,7 @@ func HandleSubmitEUAIActDeclaration(db database.DB) http.HandlerFunc {
 			"confirm_accuracy": req.ConfirmAccuracy,
 		})
 
-		if err := db.InsertRow(database.TblComplianceCases, map[string]any{
+		if err := db.InsertRow(database.TblCoreCompliance, map[string]any{
 			"case_id":    declarationID,
 			"tenant_id":  tenantID,
 			"case_type":  "EU_AI_ACT_DECLARATION",
@@ -363,7 +363,7 @@ func HandleGetEUAIActDeclarationStatus(db database.DB) http.HandlerFunc {
 			CreatedAt string          `json:"created_at"`
 		}
 
-		if err := db.QueryRowsCompound(database.TblComplianceCases,
+		if err := db.QueryRowsCompound(database.TblCoreCompliance,
 			"case_id,status,data,created_at",
 			"tenant_id", tenantID, "case_type", "EU_AI_ACT_DECLARATION",
 			&rows); err != nil || len(rows) == 0 {

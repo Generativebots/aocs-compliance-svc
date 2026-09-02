@@ -136,7 +136,7 @@ func HandleCreateDLPFinding(db database.DB) http.HandlerFunc {
 			"description": req.Description,
 			"metadata":    string(metaJSON),
 		}
-		if err := db.InsertRow(database.TblIAAuditLogs, finding); err != nil {
+		if err := db.InsertRow(database.TblCoreAudit, finding); err != nil {
 			slog.Error("dlp/findings: create failed", "err", err)
 			respond.InternalError(w, http.StatusInternalServerError, "create DLP finding", err)
 			return
@@ -200,7 +200,7 @@ func HandleUpdateDLPFinding(db database.DB) http.HandlerFunc {
 
 		// Ownership check
 		var existing []map[string]any
-		if err := db.QueryRowsCompound(database.TblIAAuditLogs, "audit_log_id,action_type",
+		if err := db.QueryRowsCompound(database.TblCoreAudit, "audit_log_id,action_type",
 			"audit_log_id", findingID, "tenant_id", tenantID, &existing); err != nil || len(existing) == 0 {
 			respond.NotFound(w, "DLP finding not found")
 			return
@@ -223,7 +223,7 @@ func HandleUpdateDLPFinding(db database.DB) http.HandlerFunc {
 		if req.Status != nil {
 			// Read existing metadata, merge status, write back as string
 			var metaRows []map[string]any
-			if _dbErr := db.QueryRowsCompound(database.TblIAAuditLogs, "metadata",
+			if _dbErr := db.QueryRowsCompound(database.TblCoreAudit, "metadata",
 				"audit_log_id", findingID, "tenant_id", tenantID, &metaRows); _dbErr != nil {
 				slog.Error("db.QueryRowsCompound failed (best-effort)", "error", _dbErr)
 			}
@@ -244,7 +244,7 @@ func HandleUpdateDLPFinding(db database.DB) http.HandlerFunc {
 			update["metadata"] = string(metaJSON)
 		}
 
-		if err := db.UpdateRowCompound(database.TblIAAuditLogs, "audit_log_id", findingID, "tenant_id", tenantID, update); err != nil {
+		if err := db.UpdateRowCompound(database.TblCoreAudit, "audit_log_id", findingID, "tenant_id", tenantID, update); err != nil {
 			slog.Error("dlp/findings: update failed", "err", err)
 			respond.InternalError(w, http.StatusInternalServerError, "update DLP finding", err)
 			return
@@ -272,7 +272,7 @@ func HandleDeleteDLPFinding(db database.DB) http.HandlerFunc {
 		actorID := r.Header.Get("X-User-ID")
 
 		var existing []map[string]any
-		if err := db.QueryRowsCompound(database.TblIAAuditLogs, "audit_log_id,metadata",
+		if err := db.QueryRowsCompound(database.TblCoreAudit, "audit_log_id,metadata",
 			"audit_log_id", findingID, "tenant_id", tenantID, &existing); err != nil || len(existing) == 0 {
 			respond.NotFound(w, "DLP finding not found")
 			return
@@ -300,7 +300,7 @@ func HandleDeleteDLPFinding(db database.DB) http.HandlerFunc {
 		}
 		metaJSON, _ := json.Marshal(meta)
 
-		if err := db.UpdateRowCompound(database.TblIAAuditLogs, "audit_log_id", findingID, "tenant_id", tenantID, map[string]any{
+		if err := db.UpdateRowCompound(database.TblCoreAudit, "audit_log_id", findingID, "tenant_id", tenantID, map[string]any{
 			"metadata":   string(metaJSON),
 			"updated_at": now,
 		}); err != nil {

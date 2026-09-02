@@ -35,11 +35,11 @@ func HandleDeleteComplianceReport(db database.DB) http.HandlerFunc {
 		}
 		// Verify ownership
 		var rows []map[string]any
-		if dbErr := db.QueryRowsCompound(database.TblNexusComplianceReports, database.ColsNexusComplianceReport, "compliance_report_id", id, "tenant_id", tenantID, &rows); dbErr != nil || len(rows) == 0 {
+		if dbErr := db.QueryRowsCompound(database.TblSharComplianceReports, database.ColsNexusComplianceReport, "compliance_report_id", id, "tenant_id", tenantID, &rows); dbErr != nil || len(rows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "report not found")
 			return
 		}
-		if dbErr := db.UpdateRowCompound(database.TblNexusComplianceReports, "compliance_report_id", id, "tenant_id", tenantID,
+		if dbErr := db.UpdateRowCompound(database.TblSharComplianceReports, "compliance_report_id", id, "tenant_id", tenantID,
 			map[string]any{"status": "ARCHIVED"}); dbErr != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "delete compliance report", dbErr)
 			return
@@ -74,7 +74,7 @@ func HandleDeleteExportJob(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing job id")
 			return
 		}
-		if dbErr := db.UpdateRowCompound(database.TblExportJobs, "job_id", id, "tenant_id", tenantID,
+		if dbErr := db.UpdateRowCompound(database.TblCoreJobs, "job_id", id, "tenant_id", tenantID,
 			map[string]any{"status": "CANCELLED"}); dbErr != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "delete export job", dbErr)
 			return
@@ -111,7 +111,7 @@ func HandleExecuteComplianceReport(db database.DB) http.HandlerFunc {
 			"executed_at": "now()",
 			"updated_at":  "now()",
 		}
-		if err := db.UpdateRow(database.TblNexusComplianceReports, "report_id", reportID, updates); err != nil {
+		if err := db.UpdateRow(database.TblSharComplianceReports, "report_id", reportID, updates); err != nil {
 			slog.Error("HandleExecuteComplianceReport: db update failed",
 				"report_id", reportID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "execute compliance report", err)
@@ -151,7 +151,7 @@ func HandleScheduleComplianceReport(db database.DB) http.HandlerFunc {
 			"scheduled_by":    callerID,
 			"updated_at":      "now()",
 		}
-		if err := db.UpdateRow(database.TblNexusComplianceReports, "report_id", reportID, updates); err != nil {
+		if err := db.UpdateRow(database.TblSharComplianceReports, "report_id", reportID, updates); err != nil {
 			slog.Error("HandleScheduleComplianceReport: db update failed",
 				"report_id", reportID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "schedule compliance report", err)

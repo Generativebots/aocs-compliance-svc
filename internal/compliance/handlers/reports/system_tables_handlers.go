@@ -76,13 +76,13 @@ func sysListHandler(tbl, cols string, db database.DB) http.HandlerFunc {
 // Lists active distributed cron locks for the tenant. Used to monitor which
 // background jobs are currently locked (preventing double-execution).
 func HandleListCronLocks(db database.DB) http.HandlerFunc {
-	return sysListHandler(database.TblOpsCronLocks, "*", db)
+	return sysListHandler(database.TblCoreCronLocks, "*", db)
 }
 
 // HandleListNonces — GET /api/v1/system/nonces
 // Lists active (unconsumed) MFA/replay-prevention nonces for the tenant.
 func HandleListNonces(db database.DB) http.HandlerFunc {
-	return sysListHandler(database.TblNonces, "*", db)
+	return sysListHandler(database.TblCoreNonces, "*", db)
 }
 
 // HandleListUsedNonces — GET /api/v1/system/used-nonces
@@ -137,7 +137,7 @@ func HandleListQuotaSnapshots(db database.DB) http.HandlerFunc {
 // Lists active kill switch entries. Kill switches immediately halt specific
 // agent actions or API paths without a deployment.
 func HandleListKillSwitchEntries(db database.DB) http.HandlerFunc {
-	return sysListHandler(database.TblKillSwitchEntries, "*", db)
+	return sysListHandler(database.TblCoreKillSwitch, "*", db)
 }
 
 // HandleListActivityExecutions — GET /api/v1/system/activity-executions
@@ -151,7 +151,7 @@ func HandleListActivityExecutions(db database.DB) http.HandlerFunc {
 // HandleListIAActivities — GET /api/v1/ia/activities
 // Lists Intent Architecture activity definitions for the tenant.
 func HandleListIAActivities(db database.DB) http.HandlerFunc {
-	return sysListHandler(database.TblActivities, "*", db)
+	return sysListHandler(database.TblCoreDispatches, "*", db)
 }
 
 // HandleListMCPServerSessions — GET /api/v1/system/mcp-server-sessions

@@ -69,7 +69,7 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 
 		// ── Load dept config ───────────────────────────────────────────────────
 		var deptRows []map[string]any
-		if err := db.QueryRowsCompound(database.TblPlatformDepartments,
+		if err := db.QueryRowsCompound(database.TblSystDepartments,
 			"slug,name,enabled_features,overflow_routing_config",
 			"slug", slug, "tenant_id", tenantID, &deptRows); err != nil || len(deptRows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, fmt.Sprintf("department %q not found", slug))
@@ -79,7 +79,7 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 
 		// ── Load SLA/capacity config ───────────────────────────────────────────
 		var slaRows []map[string]any
-		if _dbErr := db.QueryRowsCompound(database.TblHITLSLAConfig, "department_id,sla_hours,max_cases",
+		if _dbErr := db.QueryRowsCompound(database.TblCoreHitlSla, "department_id,sla_hours,max_cases",
 			"department_id", slug, "tenant_id", tenantID, &slaRows); _dbErr != nil {
 			slog.Error("db.QueryRowsCompound failed (best-effort)", "error", _dbErr)
 		}
@@ -101,7 +101,7 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 				return
 			}
 			pendingRows = hitlRows
-		} else if _dbErr := db.QueryRowsCompound(database.TblHITLDecisions, "decision_id,created_at",
+		} else if _dbErr := db.QueryRowsCompound(database.TblCoreHitl, "decision_id,created_at",
 			"department_id", slug, "status", "PENDING", &pendingRows); _dbErr != nil {
 			slog.Error("db.QueryRowsCompound failed", "error", _dbErr)
 			respond.InternalError(w, http.StatusInternalServerError, "overflow_check_query_failed", nil)
@@ -143,7 +143,7 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 
 		// ── Verify target dept has HITL enabled ────────────────────────────────
 		var targetDeptRows []map[string]any
-		if err := db.QueryRowsCompound(database.TblPlatformDepartments, "slug,enabled_features",
+		if err := db.QueryRowsCompound(database.TblSystDepartments, "slug,enabled_features",
 			"slug", targetDept, "tenant_id", tenantID, &targetDeptRows); err != nil || len(targetDeptRows) == 0 {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest,
 				fmt.Sprintf("overflow target department %q not found", targetDept))
@@ -152,7 +152,7 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 
 		// ── Get overflow SLA for target dept ───────────────────────────────────
 		var targetSLARows []map[string]any
-		if _dbErr := db.QueryRowsCompound(database.TblHITLSLAConfig, "department_id,sla_hours",
+		if _dbErr := db.QueryRowsCompound(database.TblCoreHitlSla, "department_id,sla_hours",
 			"department_id", targetDept, "tenant_id", tenantID, &targetSLARows); _dbErr != nil {
 			slog.Error("db.QueryRowsCompound failed (best-effort)", "error", _dbErr)
 		}
@@ -193,7 +193,7 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 						"case_id", caseID, "error", _rErr)
 					continue
 				}
-			} else if err := db.UpdateRowCompound(database.TblHITLDecisions, "decision_id", caseID, "status", "PENDING",
+			} else if err := db.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "status", "PENDING",
 				map[string]any{
 					"department_id": targetDept,
 					"sla_deadline":  newDeadline,
@@ -229,7 +229,7 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 					if _err := coreClient.PostEvent(r.Context(), auditRow); _err != nil {
 						slog.Error("coreClient.PostEvent overflow_routed failed (best-effort)", "error", _err)
 					}
-				} else if _dbErr := db.InsertRow(database.TblPlatformEvents, auditRow); _dbErr != nil {
+				} else if _dbErr := db.InsertRow(database.TblCoreEvents, auditRow); _dbErr != nil {
 					slog.Error("db.InsertRow failed (best-effort)", "error", _dbErr)
 				}
 			})
@@ -290,7 +290,7 @@ func HandleGuardDeptDeletion(db database.DB, coreClients ...*serviceclient.Clien
 				return
 			}
 			pendingRows = hitlRows
-		} else if _dbErr := db.QueryRowsCompound(database.TblHITLDecisions, "decision_id",
+		} else if _dbErr := db.QueryRowsCompound(database.TblCoreHitl, "decision_id",
 			"department_id", slug, "status", "PENDING", &pendingRows); _dbErr != nil {
 			slog.Error("db.QueryRowsCompound failed", "error", _dbErr)
 			respond.InternalError(w, http.StatusInternalServerError, "overflow_check_query_failed", nil)
@@ -341,7 +341,7 @@ func HandleGuardDeptDeletion(db database.DB, coreClients ...*serviceclient.Clien
 				}); _rErr == nil {
 					migrated++
 				}
-			} else if err := db.UpdateRowCompound(database.TblHITLDecisions, "decision_id", caseID, "tenant_id", tenantID,
+			} else if err := db.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID,
 				map[string]any{
 					"department_id": req.TargetDept,
 					"context_data":  string(ctxUpdate),

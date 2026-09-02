@@ -46,7 +46,7 @@ func HandleListAnalyticsKPIs(db database.DB, coreClients ...*serviceclient.Clien
 
 		var agt []map[string]any
 		// added is_frozen to SELECT so frozenAgents count is not always 0
-		if err := db.QueryRowsCursor(database.TblAgents, "agent_id, trust_score, status, risk_tier, is_frozen", "tenant_id", tenantID, database.ParseCursorPage(r), &agt); err != nil {
+		if err := db.QueryRowsCursor(database.TblCoreAgents, "agent_id, trust_score, status, risk_tier, is_frozen", "tenant_id", tenantID, database.ParseCursorPage(r), &agt); err != nil {
 			slog.Error("HandleListAnalyticsKPIs: agents query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "load agent KPIs", err)
 			return
@@ -158,7 +158,7 @@ func HandleListAnalyticsKPIs(db database.DB, coreClients ...*serviceclient.Clien
 				}
 			} else if db != nil {
 				if _sErr := db.QueryRowsLimitedWithWindow(
-					database.TblPlatformEvents,
+					database.TblCoreEvents,
 					"payload",
 					"tenant_id", tenantID,
 					30,
@@ -303,7 +303,7 @@ func HandleAnalyticsErrors(db database.DB, coreClients ...*serviceclient.Client)
 		if _r1 != nil {
 			_ = _r1.PostEvent(r.Context(), row)
 		} else if db != nil {
-			if err := db.InsertRow(database.TblPlatformEvents, row); err != nil {
+			if err := db.InsertRow(database.TblCoreEvents, row); err != nil {
 				respond.InternalError(w, http.StatusInternalServerError, "persist error report", err)
 				return
 			}
@@ -348,7 +348,7 @@ func HandleListAnalyticsErrors(db database.DB, coreClients ...*serviceclient.Cli
 			return
 		}
 		var errors []map[string]any
-		if err := db.QueryRowsLimitedWithWindow(database.TblPlatformEvents, database.ColsPlatformEvent, "tenant_id", tenantID, 30, database.ParsePageParams(r.URL.Query()), &errors); err != nil {
+		if err := db.QueryRowsLimitedWithWindow(database.TblCoreEvents, database.ColsPlatformEvent, "tenant_id", tenantID, 30, database.ParsePageParams(r.URL.Query()), &errors); err != nil {
 			slog.Error("ListAnalyticsErrors failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "list analytics errors", err)
 			return
@@ -397,7 +397,7 @@ func HandleGetGatePerformance(db database.DB, coreClients ...*serviceclient.Clie
 			if respond.RequireDB(w, db) {
 				return
 			}
-			if err := db.QueryRowsLimitedWithWindow(database.TblPlatformEvents, database.ColsPlatformEvent, "tenant_id", tenantID, 30, database.ParsePageParams(r.URL.Query()), &runs); err != nil {
+			if err := db.QueryRowsLimitedWithWindow(database.TblCoreEvents, database.ColsPlatformEvent, "tenant_id", tenantID, 30, database.ParsePageParams(r.URL.Query()), &runs); err != nil {
 				slog.Error("GetGatePerformance: query failed", "tenant_id", tenantID, "error", err)
 				respond.InternalError(w, http.StatusInternalServerError, "load gate events", err)
 				return
@@ -472,7 +472,7 @@ func HandleGetAgentRiskMatrix(db database.DB) http.HandlerFunc {
 		}
 
 		var agents []map[string]any
-		if err := db.QueryRowsCursor(database.TblAgents, "agent_id, trust_score, status,risk_tier", "tenant_id", tenantID, database.ParseCursorPage(r), &agents); err != nil {
+		if err := db.QueryRowsCursor(database.TblCoreAgents, "agent_id, trust_score, status,risk_tier", "tenant_id", tenantID, database.ParseCursorPage(r), &agents); err != nil {
 			slog.Error("GetAgentRiskMatrix: query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "load agent risk matrix", err)
 			return
@@ -540,7 +540,7 @@ func HandleGetPlatformStatus(db database.DB) http.HandlerFunc {
 		}
 
 		var agents []map[string]any
-		if err := db.QueryRowsCursor(database.TblAgents, "agent_id, status", "tenant_id", tenantID, database.ParseCursorPage(r), &agents); err != nil {
+		if err := db.QueryRowsCursor(database.TblCoreAgents, "agent_id, status", "tenant_id", tenantID, database.ParseCursorPage(r), &agents); err != nil {
 			slog.Error("GetPlatformStatus: agents query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "load platform status", err)
 			return
@@ -577,7 +577,7 @@ func HandleGetPlatformStatus(db database.DB) http.HandlerFunc {
 		}
 
 		var escrow []map[string]any
-		if err := db.QueryRowsCursor(database.TblEscrowTransactions, "status", "tenant_id", tenantID, database.ParseCursorPage(r), &escrow); err != nil {
+		if err := db.QueryRowsCursor(database.TblCoreEscrowTxns, "status", "tenant_id", tenantID, database.ParseCursorPage(r), &escrow); err != nil {
 			slog.Error("GetPlatformStatus: escrow query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "load platform status", err)
 			return
@@ -651,7 +651,7 @@ func HandleGetEvaluationVault(db database.DB, coreClients ...*serviceclient.Clie
 				return
 			}
 			if err := db.QueryRowsLimitedWithWindow(
-				database.TblPlatformEvents,
+				database.TblCoreEvents,
 				database.ColsPlatformEvent,
 				"tenant_id", tenantID,
 				90,

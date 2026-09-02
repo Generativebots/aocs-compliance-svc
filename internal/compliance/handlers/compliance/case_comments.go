@@ -145,7 +145,7 @@ func HandleGetCase(db database.DB, coreClients ...*serviceclient.Client) http.Ha
 		} else {
 			// Fallback: direct DB access when coreClient not wired (test mode)
 			var rows []map[string]any
-			if err := db.QueryRowsCompound(database.TblHITLDecisions, database.ColsHITLDecision,
+			if err := db.QueryRowsCompound(database.TblCoreHitl, database.ColsHITLDecision,
 				"decision_id", caseID, "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
 				respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "case not found")
 				return

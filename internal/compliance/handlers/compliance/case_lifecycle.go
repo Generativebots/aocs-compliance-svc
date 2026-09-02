@@ -214,7 +214,7 @@ func CreateCase(
 		if err := r1.CreateHITLCase(ctx, row); err != nil {
 			return nil, fmt.Errorf("caselifecycle.CreateCase: ocx-core-svc insert failed: %w", err)
 		}
-	} else if err := db.InsertRowCtx(ctx, database.TblHITLDecisions, row); err != nil {
+	} else if err := db.InsertRowCtx(ctx, database.TblCoreHitl, row); err != nil {
 		return nil, fmt.Errorf("caselifecycle.CreateCase: insert failed: %w", err)
 	}
 
@@ -330,7 +330,7 @@ func TransitionCase(
 		if data != nil {
 			rows = []map[string]any{data}
 		}
-	} else if err := db.QueryRowsCompoundCtx(ctx, database.TblHITLDecisions,
+	} else if err := db.QueryRowsCompoundCtx(ctx, database.TblCoreHitl,
 		"status,sla_breach_at,sla_deadline_at,sla_breached,escalation_count",
 		"decision_id", caseID, "tenant_id", tenantID, &rows); err != nil {
 		return fmt.Errorf("caselifecycle.TransitionCase: read current case: %w", err)
@@ -391,7 +391,7 @@ func TransitionCase(
 		if err := r1.PatchHITLCase(ctx, tenantID, caseID, update); err != nil {
 			return fmt.Errorf("caselifecycle.TransitionCase: ocx-core-svc update failed: %w", err)
 		}
-	} else if err := db.UpdateRowCompoundCtx(ctx, database.TblHITLDecisions, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
+	} else if err := db.UpdateRowCompoundCtx(ctx, database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
 		return fmt.Errorf("caselifecycle.TransitionCase: update failed: %w", err)
 	}
 
@@ -458,7 +458,7 @@ func writeLifecycleEvent(
 			slog.Error("writeLifecycleEvent: ocx-core-svc PostEvent failed (non-fatal)",
 				"case_id", caseID, "from", fromStatus, "to", toStatus, "err", _err)
 		}
-	} else if err := db.InsertRowCtx(ctx, database.TblPlatformEvents, row); err != nil {
+	} else if err := db.InsertRowCtx(ctx, database.TblCoreEvents, row); err != nil {
 		slog.Error("writeLifecycleEvent: insert failed (non-fatal)",
 			"case_id", caseID, "from", fromStatus, "to", toStatus, "err", err)
 	}
@@ -485,7 +485,7 @@ func writeLifecycleEvent(
 			slog.Error("F-HITL-01: ocx-core-svc PostEvent timeline failed — SLA dashboard has gap for this transition",
 				"case_id", caseID, "from", fromStatus, "to", toStatus, "err", tlErr)
 		}
-	} else if tlErr := db.InsertRowCtx(ctx, database.TblPlatformEvents, tlRow); tlErr != nil {
+	} else if tlErr := db.InsertRowCtx(ctx, database.TblCoreEvents, tlRow); tlErr != nil {
 		slog.Error("F-HITL-01: HITL timeline event insert failed — SLA dashboard has gap for this transition",
 			"case_id", caseID, "from", fromStatus, "to", toStatus, "err", tlErr)
 	}
@@ -514,7 +514,7 @@ func markAlertEscalated(ctx context.Context, db database.DB, alertID, tenantID, 
 				"alert_id", alertID, "case_id", caseID, "err", err)
 			return
 		}
-	} else if err := db.UpdateRowCompoundCtx(ctx, database.TblAlerts,
+	} else if err := db.UpdateRowCompoundCtx(ctx, database.TblSharAlerts,
 		"alert_id", alertID, "tenant_id", tenantID, update); err != nil {
 		slog.Error("caselifecycle.markAlertEscalated: failed to update senti_alert (non-fatal)",
 			"alert_id", alertID, "case_id", caseID, "err", err)

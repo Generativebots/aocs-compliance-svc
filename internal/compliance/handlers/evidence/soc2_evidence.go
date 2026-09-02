@@ -134,7 +134,7 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 		// CC5/CC6: Active policies and gate verdicts
 		var policyRows []struct{ PolicyID string `json:"policy_id"` }
 		policyCount := 0
-		if err := db.QueryRowsCompound(database.TblPolicies, "policy_id",
+		if err := db.QueryRowsCompound(database.TblCorePolicies, "policy_id",
 			"tenant_id", tenantID, "status", "ACTIVE", &policyRows); err == nil {
 			policyCount = len(policyRows)
 		}
@@ -142,7 +142,7 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 		// CC7: Compliance cases (incidents, violations)
 		var violationRows []struct{ CaseID string `json:"case_id"` }
 		violationCount := 0
-		if err := db.QueryRowsCompound(database.TblComplianceCases, "case_id",
+		if err := db.QueryRowsCompound(database.TblCoreCompliance, "case_id",
 			"tenant_id", tenantID, "case_type", "VIOLATION", &violationRows); err == nil {
 			violationCount = len(violationRows)
 		}
@@ -150,7 +150,7 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 		// CC6: Active agents (each represents an access principal)
 		var agentRows []struct{ AgentID string `json:"agent_id"` }
 		agentCount := 0
-		if err := db.QueryRowsCompound(database.TblAgents, "agent_id",
+		if err := db.QueryRowsCompound(database.TblCoreAgents, "agent_id",
 			"tenant_id", tenantID, "status", "ACTIVE", &agentRows); err == nil {
 			agentCount = len(agentRows)
 		}
@@ -158,7 +158,7 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 		// CC4/CC7: HITL cases (human monitoring decisions)
 		var hitlRows []struct{ CaseID string `json:"case_id"` }
 		hitlCount := 0
-		if err := db.QueryRowsCompound(database.TblComplianceCases, "case_id",
+		if err := db.QueryRowsCompound(database.TblCoreCompliance, "case_id",
 			"tenant_id", tenantID, "case_type", "HITL", &hitlRows); err == nil {
 			hitlCount = len(hitlRows)
 		}
@@ -305,7 +305,7 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 
 		pkgJSON, _ := json.Marshal(pkg)
 
-		if err := db.InsertRow(database.TblComplianceCases, map[string]any{
+		if err := db.InsertRow(database.TblCoreCompliance, map[string]any{
 			"case_id":    packageID,
 			"tenant_id":  tenantID,
 			"case_type":  "SOC2_EVIDENCE_PACKAGE",
@@ -350,7 +350,7 @@ func HandleGetSOC2Package(db database.DB) http.HandlerFunc {
 			Data      json.RawMessage `json:"data"`
 			CreatedAt string          `json:"created_at"`
 		}
-		if err := db.QueryRowsCompound(database.TblComplianceCases,
+		if err := db.QueryRowsCompound(database.TblCoreCompliance,
 			"case_id,status,data,created_at",
 			"case_id", id, "tenant_id", tenantID,
 			&rows); err != nil || len(rows) == 0 {
@@ -381,7 +381,7 @@ func HandleListSOC2Packages(db database.DB) http.HandlerFunc {
 			Data      json.RawMessage `json:"data"`
 			CreatedAt string          `json:"created_at"`
 		}
-		if err := db.QueryRowsCompound(database.TblComplianceCases,
+		if err := db.QueryRowsCompound(database.TblCoreCompliance,
 			"case_id,status,data,created_at",
 			"tenant_id", tenantID, "case_type", "SOC2_EVIDENCE_PACKAGE",
 			&rows); err != nil {

@@ -12,32 +12,32 @@ import (
 
 // HandleGetNexsAnomaly — GET /analytics/anomalies/:id.
 func HandleGetNexsAnomaly(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblAlerts, "anomaly_id")
+	return byid.GetByID(db, database.TblSharAlerts, "anomaly_id")
 }
 
 // HandleGetNexsBenchmark — GET /analytics/benchmarks/:id.
 func HandleGetNexsBenchmark(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblNexusComplianceReports, "benchmark_id")
+	return byid.GetByID(db, database.TblSharComplianceReports, "benchmark_id")
 }
 
 // HandleGetNexsForecast — GET /analytics/forecasts/:id.
 func HandleGetNexsForecast(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblNexusComplianceReports, "forecast_id")
+	return byid.GetByID(db, database.TblSharComplianceReports, "forecast_id")
 }
 
 // HandleGetNexsSegment — GET /analytics/segments/:id.
 func HandleGetNexsSegment(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblNexusComplianceReports, "segment_id")
+	return byid.GetByID(db, database.TblSharComplianceReports, "segment_id")
 }
 
 // HandleUpdateNexsSegment — PUT /analytics/segments/:id.
 func HandleUpdateNexsSegment(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.UpdateByID(db, database.TblNexusComplianceReports, "segment_id")
+	return byid.UpdateByID(db, database.TblSharComplianceReports, "segment_id")
 }
 
 // HandleDeleteNexsSegment — DELETE /analytics/segments/:id (soft-delete).
 func HandleDeleteNexsSegment(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.DeleteByID(db, database.TblNexusComplianceReports, "segment_id")
+	return byid.DeleteByID(db, database.TblSharComplianceReports, "segment_id")
 }
 
 // HandleGetNexsUsageRecord — GET /analytics/usage/:id.
@@ -57,17 +57,17 @@ func HandleUpdateIntelCategory(db *database.SupabaseClient) http.HandlerFunc {
 
 // HandleGetIntelForecastItem — GET /analytics/intel-forecasts/:id.
 func HandleGetIntelForecastItem(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblNexusComplianceReports, "forecast_id")
+	return byid.GetByID(db, database.TblSharComplianceReports, "forecast_id")
 }
 
 // HandleGetMarketSignal — GET /analytics/market-signals/:id.
 func HandleGetMarketSignal(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblMarketplaceListings, "signal_id")
+	return byid.GetByID(db, database.TblExtcMarketplaceListings, "signal_id")
 }
 
 // HandleGetThreat — GET /analytics/threats/:id.
 func HandleGetThreat(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblAlerts, "threat_id")
+	return byid.GetByID(db, database.TblSharAlerts, "threat_id")
 }
 
 // HandleGetAgentUsageRecord — GET /analytics/agent-usage/:id.
@@ -82,12 +82,12 @@ func HandleGetIntentUsageRecord(db *database.SupabaseClient) http.HandlerFunc {
 
 // HandleGetUsageProjection — GET /analytics/usage-projections/:id.
 func HandleGetUsageProjection(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblNexusComplianceReports, "forecast_id")
+	return byid.GetByID(db, database.TblSharComplianceReports, "forecast_id")
 }
 
 // HandleGetRevenueStream — GET /analytics/revenue-streams/:id.
 func HandleGetRevenueStream(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblNexusLedger, "stream_id")
+	return byid.GetByID(db, database.TblSharLedger, "stream_id")
 }
 
 // HandleGetStakingPosition — GET /analytics/staking-positions/:id.
@@ -137,7 +137,7 @@ func HandleListStakingLedger(db *database.SupabaseClient) http.HandlerFunc {
 
 // HandleGetTransactionSummary — GET /analytics/transactions/:id.
 func HandleGetTransactionSummary(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblLedger, "transaction_id")
+	return byid.GetByID(db, database.TblCoreLedger, "transaction_id")
 }
 
 // HandleGetAttackSurfaceItem — GET /analytics/attack-surface/:id.
@@ -172,5 +172,5 @@ func HandleUpdateTrustTaxClaim(db *database.SupabaseClient) http.HandlerFunc {
 
 // HandleGetComplianceReport — GET /analytics/compliance-reports/:id.
 func HandleGetComplianceReport(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblNexusComplianceReports, "report_id")
+	return byid.GetByID(db, database.TblSharComplianceReports, "report_id")
 }

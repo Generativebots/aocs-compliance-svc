@@ -71,7 +71,7 @@ func HandleGetTokenUsageByDepartment(db database.DB) http.HandlerFunc {
 
 		// 1. Query platform department catalog (names).
 		var catalogRows []map[string]any
-		if _rErr := db.QueryRowsCtx(r.Context(), database.TblPlatformDepartments,
+		if _rErr := db.QueryRowsCtx(r.Context(), database.TblSystDepartments,
 			"slug,name", "", "", &catalogRows); _rErr != nil {
 			slog.Warn("READ_DEGRADED: QueryRowsCtx failed — best-effort query",
 				"table", "slug,name", "file", "aocs-intel/handlers/analytics/token_usage_dept_handler.go", "err", _rErr)
@@ -127,7 +127,7 @@ func HandleGetTokenUsageByDepartment(db database.DB) http.HandlerFunc {
 
 		// 3. Query gate stage events for the month to aggregate token usage per department.
 		var stageRows []map[string]any
-		err := db.QueryRowsCtx(r.Context(), database.TblGateStages,
+		err := db.QueryRowsCtx(r.Context(), database.TblCoreGateStages,
 			"department_id,token_usage", "tenant_id", tenantID, &stageRows)
 		if err != nil {
 			slog.Warn("token_usage/by-department: gate_stages query failed — returning empty", "err", err)

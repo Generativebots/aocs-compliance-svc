@@ -106,7 +106,7 @@ func generateDailyReports(ctx context.Context, db database.DB, coreClient *servi
 			TenantID string `json:"tenant_id"`
 			Slug     string `json:"slug"`
 		}
-		if err := db.QueryRowsLimited(database.TblTenants, "tenant_id, slug", "status", "ACTIVE",
+		if err := db.QueryRowsLimited(database.TblSystTenants, "tenant_id, slug", "status", "ACTIVE",
 			database.PageParams{Limit: 200, Offset: 0}, &tenants); err != nil {
 			slog.Error("failed to load tenants (fallback)", "error", err)
 			return
@@ -164,7 +164,7 @@ func generateTenantReport(ctx context.Context, db database.DB, coreClient *servi
 		}
 	} else {
 		var hitlRows []map[string]any
-		if _dbErr := db.QueryRowsCursor(database.TblHITLDecisions, "decision_id,status,decision_type,created_at",
+		if _dbErr := db.QueryRowsCursor(database.TblCoreHitl, "decision_id,status,decision_type,created_at",
 			"tenant_id", tenantID, database.CursorPage{Limit: 200}, &hitlRows); _dbErr != nil {
 			slog.Error("db.QueryRows HITL failed (best-effort)", "error", _dbErr)
 		}
@@ -191,7 +191,7 @@ func generateTenantReport(ctx context.Context, db database.DB, coreClient *servi
 	var enfRows []map[string]any
 	// FIX: Column name aligned with actual core_compliance schema.
 	// Previous code referenced phantom column enforcement_action_id (SQLSTATE 42703).
-	if _dbErr := db.QueryRowsCursor(database.TblComplianceCases, "case_id,case_type,created_at",
+	if _dbErr := db.QueryRowsCursor(database.TblCoreCompliance, "case_id,case_type,created_at",
 		"tenant_id", tenantID, database.CursorPage{Limit: 200}, &enfRows); _dbErr != nil {
 		slog.Error("db.QueryRows compliance cases failed (best-effort)", "error", _dbErr)
 	}
@@ -225,7 +225,7 @@ func generateTenantReport(ctx context.Context, db database.DB, coreClient *servi
 		}
 	} else {
 		var sopRows []map[string]any
-		if _dbErr := db.QueryRowsCursor(database.TblPlatformEvents, "event_id,event_type,severity,created_at",
+		if _dbErr := db.QueryRowsCursor(database.TblCoreEvents, "event_id,event_type,severity,created_at",
 			"tenant_id", tenantID, database.CursorPage{Limit: 200}, &sopRows); _dbErr != nil {
 			slog.Error("db.QueryRows platform events failed (best-effort)", "error", _dbErr)
 		}
@@ -255,7 +255,7 @@ func generateTenantReport(ctx context.Context, db database.DB, coreClient *servi
 		}
 	} else {
 		var probRows []map[string]any
-		if _dbErr := db.QueryRowsCursor(database.TblSentiProbationPeriods, "agent_id,is_active",
+		if _dbErr := db.QueryRowsCursor(database.TblSharProbation, "agent_id,is_active",
 			"tenant_id", tenantID, database.CursorPage{Limit: 200}, &probRows); _dbErr != nil {
 			slog.Error("db.QueryRows probation failed (best-effort)", "error", _dbErr)
 		}
@@ -293,7 +293,7 @@ func generateTenantReport(ctx context.Context, db database.DB, coreClient *servi
 	}
 	reportID := fmt.Sprintf("%d%02d", now.Year(), int(now.Month())) + string(b)
 
-	return db.InsertRow(database.TblNexusComplianceReports, map[string]any{
+	return db.InsertRow(database.TblSharComplianceReports, map[string]any{
 		"compliance_report_id": reportID,
 		"tenant_id":            tenantID,
 		"report_type":          "DAILY",

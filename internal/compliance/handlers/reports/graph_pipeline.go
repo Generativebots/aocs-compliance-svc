@@ -79,7 +79,7 @@ func HandleGetOgraphStats(db database.DB) http.HandlerFunc {
 
 		// core_events: final_verdict lives inside payload JSON, not a top-level column.
 		var events []platformEvent
-		if _dbErr := db.QueryRowsWithin90DaysCompound(database.TblPlatformEvents,
+		if _dbErr := db.QueryRowsWithin90DaysCompound(database.TblCoreEvents,
 			"event_id,agent_id,tool_name,payload,created_at",
 			tenantID,
 			"event_type", database.PlatformEventClassification,
@@ -139,7 +139,7 @@ func HandleGetOgraphTimeline(db database.DB) http.HandlerFunc {
 		// core_events: verdict/action data lives in payload JSON.
 		// log_id, final_verdict, action_class are NOT top-level columns.
 		var raw []platformEvent
-		if _dbErr := db.QueryRowsWithin90DaysCompound(database.TblPlatformEvents,
+		if _dbErr := db.QueryRowsWithin90DaysCompound(database.TblCoreEvents,
 			"event_id,agent_id,tool_name,payload,created_at",
 			tenantID,
 			"event_type", database.PlatformEventClassification,
@@ -219,7 +219,7 @@ func HandleGetOgraphSankey(db database.DB) http.HandlerFunc {
 
 		// core_events: final_verdict and action_class live in payload JSON.
 		var raw []platformEvent
-		if _dbErr := db.QueryRowsWithin90DaysCompound(database.TblPlatformEvents,
+		if _dbErr := db.QueryRowsWithin90DaysCompound(database.TblCoreEvents,
 			"event_id,agent_id,tool_name,payload,created_at",
 			tenantID,
 			"event_type", database.PlatformEventClassification,
@@ -343,7 +343,7 @@ func HandleUpsertOgraphFlow(db database.DB) http.HandlerFunc {
 			"flow_type":   req.FlowType,
 		}
 
-		if err := db.InsertRow(database.TblOGraphFlows, row); err != nil {
+		if err := db.InsertRow(database.TblCoreOgraphFlows, row); err != nil {
 			// Table may not exist — fail gracefully
 			slog.Error("HandleUpsertOgraphFlow: insert failed (table may be missing)", "error", err)
 			respond.ErrorWithCode(w, http.StatusServiceUnavailable, respond.ErrCodeUnavailable, "flow storage not available")

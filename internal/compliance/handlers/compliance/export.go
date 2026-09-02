@@ -31,8 +31,8 @@ func HandleGetCaseExportJob(db database.DB) http.HandlerFunc {
 			return
 		}
 		var rows []map[string]any
-		// SCHEMA FIX: PK on aocs_bulk_import_jobs (TblExportJobs) is job_id, not nexus_export_job_id.
-		if err := db.QueryRowsCompound(database.TblExportJobs, database.ColsNexusExportJobs, "job_id", mux.Vars(r)["id"], "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
+		// SCHEMA FIX: PK on aocs_bulk_import_jobs (TblCoreJobs) is job_id, not nexus_export_job_id.
+		if err := db.QueryRowsCompound(database.TblCoreJobs, database.ColsNexusExportJobs, "job_id", mux.Vars(r)["id"], "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "export job not found")
 			return
 		}
@@ -75,7 +75,7 @@ func HandleMergeCase(db database.DB) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if err := db.UpdateRowCompound(database.TblHITLDecisions, "decision_id", childID, "tenant_id", tenantID, update); err != nil {
+		if err := db.UpdateRowCompound(database.TblCoreHitl, "decision_id", childID, "tenant_id", tenantID, update); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "merge case", err)
 			return
 		}
@@ -196,12 +196,12 @@ func HandleCasesSubmitJuryVote(db database.DB, coreClient *serviceclient.Client)
 		}
 		if txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
 			// 1. INSERT vote (UNIQUE case_id+voter_id → error on duplicate)
-			if err := tx.InsertRow(database.TblHITLVotes, vote.InsertPayload()); err != nil {
+			if err := tx.InsertRow(database.TblCoreHitlVotes, vote.InsertPayload()); err != nil {
 				return err
 			}
 			// 2. Read current case state inside tx to prevent TOCTOU race
 			var rows []map[string]any
-			if err := tx.QueryRowsCompoundForUpdate(database.TblHITLDecisions, "decision_id,status,result,decision_data",
+			if err := tx.QueryRowsCompoundForUpdate(database.TblCoreHitl, "decision_id,status,result,decision_data",
 				"decision_id", caseID, "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
 				return fmt.Errorf("case not found: %s", caseID)
 			}
@@ -297,13 +297,13 @@ func HandleCasesSubmitJuryVote(db database.DB, coreClient *serviceclient.Client)
 				update["user_id"] = body.VoterID
 			}
 			// 3. Update main case status + quorum data
-			if err := tx.UpdateRowCompound(database.TblHITLDecisions, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
+			if err := tx.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
 				return err
 			}
 
 			// 4. X-15: Auto-escalate deadlocked panels
 			if panelComplete && !quorumReached {
-				if err := tx.UpdateRowCompound(database.TblHITLDecisions, "decision_id", caseID, "tenant_id", tenantID,
+				if err := tx.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID,
 					map[string]any{
 						"status":     "ESCALATED",
 						"result":     "DEADLOCKED",
@@ -408,9 +408,9 @@ func HandleListHITLVotes(db database.DB) http.HandlerFunc {
 			return
 		}
 		var rows []map[string]any
-		// SCHEMA FIX: votes are in core_hitl_votes (TblHITLVotes), not core_hitl.
+		// SCHEMA FIX: votes are in core_hitl_votes (TblCoreHitlVotes), not core_hitl.
 		// core_hitl_votes columns: vote_id, case_id, tenant_id, voter_id, decision, voted_at.
-		if err := db.QueryRowsCompound(database.TblHITLVotes, database.ColsHitlVote, "case_id", caseID, "tenant_id", tenantID, &rows); err != nil {
+		if err := db.QueryRowsCompound(database.TblCoreHitlVotes, database.ColsHitlVote, "case_id", caseID, "tenant_id", tenantID, &rows); err != nil {
 			slog.Error("ListHITLVotes failed", "case_id", caseID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "list votes", err)
 			return

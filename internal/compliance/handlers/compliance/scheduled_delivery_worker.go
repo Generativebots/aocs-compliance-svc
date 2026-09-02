@@ -98,7 +98,7 @@ func runScheduledDeliveryCycle(ctx context.Context, db database.DB, coreClient *
 		var activeTenants []struct {
 			TenantID string `json:"tenant_id"`
 		}
-		if err := db.QueryRowsCtx(ctx, database.TblTenants, "tenant_id", "is_active", "true", &activeTenants); err != nil {
+		if err := db.QueryRowsCtx(ctx, database.TblSystTenants, "tenant_id", "is_active", "true", &activeTenants); err != nil {
 			slog.Error("scheduled-delivery: failed to fetch active tenants (fallback)", "error", err)
 			return
 		}
@@ -110,7 +110,7 @@ func runScheduledDeliveryCycle(ctx context.Context, db database.DB, coreClient *
 	var dueReports []reportRow
 	for _, tenantID := range tenantIDs {
 		var tenantReports []reportRow
-		if err := db.QueryRowsCompound(database.TblNexusComplianceReports,
+		if err := db.QueryRowsCompound(database.TblSharComplianceReports,
 			"compliance_report_id,tenant_id,schedule_config,next_delivery_at,status",
 			"status", "READY", "tenant_id", tenantID, &tenantReports); err != nil {
 			slog.Warn("scheduled-delivery: failed to query reports for tenant", "tenant_id", tenantID, "error", err)
@@ -166,7 +166,7 @@ func runScheduledDeliveryCycle(ctx context.Context, db database.DB, coreClient *
 		// On failure: DB keeps old last_sent_at → next scheduled run sees this report
 		// as overdue → re-delivers → tenant receives DUPLICATE compliance report.
 		// Now: log ERROR with report_id so ops can manually correct the DB record.
-		if updErr := db.UpdateRowCompound(database.TblNexusComplianceReports,
+		if updErr := db.UpdateRowCompound(database.TblSharComplianceReports,
 			"compliance_report_id", rpt.ReportID,
 			"tenant_id", rpt.TenantID,
 			map[string]any{

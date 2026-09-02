@@ -151,7 +151,7 @@ func HandleGenerateEUAIActReport(db database.DB, coreClient *serviceclient.Clien
 		// ── Step 3: Persist as DRAFT in core_compliance ────────────
 		reportBytes, _ := json.Marshal(report)
 		userID := auth.GetUserID(ctx)
-		if err := db.InsertRow(database.TblComplianceCases, map[string]any{
+		if err := db.InsertRow(database.TblCoreCompliance, map[string]any{
 			"case_id":     reportID,
 			"tenant_id":   tenantID,
 			"case_type":   "EU_AI_ACT_REGULATORY_REPORT",
@@ -204,7 +204,7 @@ func HandleSubmitEUAIActReport(db database.DB) http.HandlerFunc {
 
 		// Verify report belongs to this tenant and is still DRAFT
 		var cases []map[string]any
-		if err := db.QueryRowsCompound(database.TblComplianceCases,
+		if err := db.QueryRowsCompound(database.TblCoreCompliance,
 			"case_id,status,case_data",
 			"case_id", req.ReportID, "tenant_id", tenantID, &cases); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "lookup report", err)
@@ -241,7 +241,7 @@ func HandleSubmitEUAIActReport(db database.DB) http.HandlerFunc {
 		stored.ContentHash = hex.EncodeToString(h[:])
 		finalBodyWithHash, _ := json.Marshal(stored)
 
-		if err := db.UpdateRowCompound(database.TblComplianceCases,
+		if err := db.UpdateRowCompound(database.TblCoreCompliance,
 			"case_id", req.ReportID, "tenant_id", tenantID,
 			map[string]any{
 				"status":      "FILED",
@@ -284,7 +284,7 @@ func HandleGetEUAIActReport(db database.DB) http.HandlerFunc {
 		}
 
 		var cases []map[string]any
-		if err := db.QueryRowsCompound(database.TblComplianceCases,
+		if err := db.QueryRowsCompound(database.TblCoreCompliance,
 			"case_id,status,case_data,created_at,updated_at",
 			"case_id", reportID, "tenant_id", tenantID, &cases); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "lookup report", err)

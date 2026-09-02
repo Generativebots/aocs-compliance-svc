@@ -49,7 +49,7 @@ func HandleEscalateCase(db database.DB) http.HandlerFunc {
 		// write silently drops the first escalation's context entries.
 		txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
 			var existing []map[string]any
-			if err := tx.QueryRowsCompoundForUpdate(database.TblHITLDecisions, "decision_id,context_data,status",
+			if err := tx.QueryRowsCompoundForUpdate(database.TblCoreHitl, "decision_id,context_data,status",
 				"decision_id", caseID, "tenant_id", tenantID, &existing); err != nil {
 				return fmt.Errorf("lock escalation row: %w", err)
 			}
@@ -74,7 +74,7 @@ func HandleEscalateCase(db database.DB) http.HandlerFunc {
 				"context_data": ctx,
 				"updated_at":   now,
 			}
-			if err := tx.UpdateRowCompound(database.TblHITLDecisions, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
+			if err := tx.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
 				return fmt.Errorf("update escalation: %w", err)
 			}
 			return nil
@@ -146,7 +146,7 @@ func HandleRejectJuror(db database.DB) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if err := db.UpdateRowCompound(database.TblHITLDecisions, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
+		if err := db.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
 			slog.Error("RecuseJuror failed", "case_id", caseID, "juror_id", jurorID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "recuse juror", err)
 			return
@@ -180,7 +180,7 @@ func HandleGetRecusalLog(db database.DB) http.HandlerFunc {
 			return
 		}
 		var rows []map[string]any
-		if _dbErr := db.QueryRowsCompound(database.TblHITLDecisions, "decision_id,recusal_log", "decision_id", caseID, "tenant_id", tenantID, &rows); _dbErr != nil {
+		if _dbErr := db.QueryRowsCompound(database.TblCoreHitl, "decision_id,recusal_log", "decision_id", caseID, "tenant_id", tenantID, &rows); _dbErr != nil {
 			slog.Error("db operation failed", "method", "QueryRowsCompound", "error", _dbErr)
 		}
 		if len(rows) == 0 {

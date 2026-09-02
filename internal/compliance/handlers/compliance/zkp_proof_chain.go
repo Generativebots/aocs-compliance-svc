@@ -56,7 +56,7 @@ func HandleGenerateProofChain(db database.DB) http.HandlerFunc {
 		var proofs []struct {
 			ProofHash string `json:"proof_hash"`
 		}
-		if _dbErr := db.QueryRowsCompound(database.TblSentiZKPVerifications, database.ColsSentiZkpVerificationsProofHash,
+		if _dbErr := db.QueryRowsCompound(database.TblSharZkpVerify, database.ColsSentiZkpVerificationsProofHash,
 			"agent_id", body.AgentID, "tenant_id", tenantID, &proofs); _dbErr != nil {
 			slog.Error("db.QueryRowsCompound failed (best-effort)", "error", _dbErr)
 		}

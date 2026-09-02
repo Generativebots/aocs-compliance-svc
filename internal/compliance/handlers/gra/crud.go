@@ -90,7 +90,7 @@ func HandleAdminCreateFederationPeer(db database.DB) http.HandlerFunc {
 				"description": req.Description,
 			},
 		}
-		if err := db.InsertRow(database.TblA2AConnections, row); err != nil {
+		if err := db.InsertRow(database.TblCoreA2aConnections, row); err != nil {
 			slog.Error("InsertRow core_a2a_connections", "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "insert failed", nil)
 			return
@@ -103,7 +103,7 @@ func HandleAdminCreateFederationPeer(db database.DB) http.HandlerFunc {
 			if peerTenantID == "" {
 				peerTenantID = req.InstanceID // fallback
 			}
-			if _dbErr := db.InsertRow(database.TblFedConsents, map[string]any{
+			if _dbErr := db.InsertRow(database.TblCoreLegal, map[string]any{
 				"grantor_tenant_id": tenantID,
 				"grantee_tenant_id": peerTenantID,
 				"agent_id":          req.AgentID,
@@ -164,7 +164,7 @@ func HandleAdminUpdateFederationPeer(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "no updatable fields provided")
 			return
 		}
-		if err := db.UpdateRowCompound(database.TblA2AConnections, "a2a_connection_id", id, "tenant_id", tenantID, update); err != nil {
+		if err := db.UpdateRowCompound(database.TblCoreA2aConnections, "a2a_connection_id", id, "tenant_id", tenantID, update); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "update failed", nil)
 			return
 		}
@@ -188,7 +188,7 @@ func HandleAdminDeleteFederationPeer(db database.DB) http.HandlerFunc {
 			return
 		}
 		// Scope delete to tenant
-		if err := db.UpdateRowCompound(database.TblA2AConnections,
+		if err := db.UpdateRowCompound(database.TblCoreA2aConnections,
 			"a2a_connection_id", id,
 			"tenant_id", tenantID,
 			map[string]any{"is_active": false}); err != nil {
@@ -202,7 +202,7 @@ func HandleAdminDeleteFederationPeer(db database.DB) http.HandlerFunc {
 // TENANT AGT — CRUD
 
 func HandleUpdateTenantAgent(db database.DB) http.HandlerFunc {
-	return crudUpdateHandler(db, database.TblAgents, "agent_id")
+	return crudUpdateHandler(db, database.TblCoreAgents, "agent_id")
 }
 
 // GHST STATE — speculative_actions (read)
@@ -212,7 +212,7 @@ func HandleUpdateTenantAgent(db database.DB) http.HandlerFunc {
 // GOV — ledger, proposals, votes, committee
 
 func HandleGetGovernanceProposal(db database.DB) http.HandlerFunc {
-	return crudGetHandler(db, database.TblGovernanceProposals, "governance_proposal_id")
+	return crudGetHandler(db, database.TblCoreProposals, "governance_proposal_id")
 }
 
 func HandleCreateGovernanceProposal(db database.DB) http.HandlerFunc {
@@ -243,7 +243,7 @@ func HandleCreateGovernanceProposal(db database.DB) http.HandlerFunc {
 			"description":   req.Description,
 			"config":        req.Config,
 		}
-		if err := db.InsertRow(database.TblGovernanceProposals, row); err != nil {
+		if err := db.InsertRow(database.TblCoreProposals, row); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "failed to create governance proposal", nil)
 			return
 		}
@@ -294,7 +294,7 @@ func HandleUpdateGovernanceProposal(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "no updatable fields provided")
 			return
 		}
-		if err := db.UpdateRowCompound(database.TblGovernanceProposals, "governance_proposal_id", entryID, "tenant_id", tenantID, update); err != nil {
+		if err := db.UpdateRowCompound(database.TblCoreProposals, "governance_proposal_id", entryID, "tenant_id", tenantID, update); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "failed to update governance proposal", nil)
 			return
 		}
@@ -303,7 +303,7 @@ func HandleUpdateGovernanceProposal(db database.DB) http.HandlerFunc {
 		if req.Status == "VOTING" {
 			// CONC-1: anonymous goroutine — ensure this is lifecycle-managed via svcboot.BgCtx
 	concurrent.Go("admin/crud", func() {
-				if _dbErr := db.InsertRow(database.TblGovRounds, map[string]any{
+				if _dbErr := db.InsertRow(database.TblCoreGovRounds, map[string]any{
 					"tenant_id":   tenantID,
 					"proposal_id": entryID,
 					"status":      "OPEN",
@@ -333,7 +333,7 @@ func HandleDeleteGovernanceProposal(db database.DB) http.HandlerFunc {
 			return
 		}
 		// Scope delete to tenant
-		if err := db.SoftDeleteRowCompound(database.TblGovernanceProposals, "governance_proposal_id", entryID, "tenant_id", tenantID); err != nil {
+		if err := db.SoftDeleteRowCompound(database.TblCoreProposals, "governance_proposal_id", entryID, "tenant_id", tenantID); err != nil {
 			slog.Error("DeleteGovernanceProposal failed", "error", err)
 				respond.InternalError(w, http.StatusInternalServerError, "db operation failed", err)
 				return
@@ -371,7 +371,7 @@ func HandleCastGovernanceVote(db database.DB) http.HandlerFunc {
 			"reason":      req.Reason,
 			"status":      "VOTED",
 		}
-		if err := db.InsertRow(database.TblGovRounds, row); err != nil {
+		if err := db.InsertRow(database.TblCoreGovRounds, row); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "failed to record vote", nil)
 			return
 		}
@@ -380,7 +380,7 @@ func HandleCastGovernanceVote(db database.DB) http.HandlerFunc {
 }
 
 func HandleListGovernanceVotes(db database.DB) http.HandlerFunc {
-	return crudListHandler(db, database.TblGovRounds, "gov_round_id")
+	return crudListHandler(db, database.TblCoreGovRounds, "gov_round_id")
 }
 
 func HandleAddCommitteeMember(db database.DB) http.HandlerFunc {

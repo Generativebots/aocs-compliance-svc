@@ -77,7 +77,7 @@ func HandleGetAnalyticsQuery(db database.DB) http.HandlerFunc {
 
 		case "evidence", "evidence_chain":
 			var records []map[string]any
-			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblAocsEvidence, "evidence_record_id,agent_id,type,tampered,created_at", "tenant_id", tenantID, &records); _dbErr != nil {
+			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreEvidence, "evidence_record_id,agent_id,type,tampered,created_at", "tenant_id", tenantID, &records); _dbErr != nil {
 				slog.Error("db.QueryRows failed (best-effort)", "error", _dbErr)
 			}
 			byType := map[string]int{}
@@ -110,7 +110,7 @@ func HandleGetAnalyticsQuery(db database.DB) http.HandlerFunc {
 
 		case "escrow":
 			var txns []map[string]any
-			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblEscrowTransactions, "status,amount", "tenant_id", tenantID, &txns); _dbErr != nil {
+			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreEscrowTxns, "status,amount", "tenant_id", tenantID, &txns); _dbErr != nil {
 				slog.Error("db.QueryRows failed (best-effort)", "error", _dbErr)
 			}
 			held, released := 0, 0
@@ -132,10 +132,10 @@ func HandleGetAnalyticsQuery(db database.DB) http.HandlerFunc {
 			var agents []map[string]any
 			var evidence []map[string]any
 			var policies []map[string]any
-			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblAgents, "agent_id", "tenant_id", tenantID, &agents); _dbErr != nil {
+			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreAgents, "agent_id", "tenant_id", tenantID, &agents); _dbErr != nil {
 				slog.Error("db.QueryRows failed (best-effort)", "error", _dbErr)
 			}
-			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblAocsEvidence, "evidence_record_id", "tenant_id", tenantID, &evidence); _dbErr != nil {
+			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreEvidence, "evidence_record_id", "tenant_id", tenantID, &evidence); _dbErr != nil {
 				slog.Error("db.QueryRows failed (best-effort)", "error", _dbErr)
 			}
 			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblQCorePolicies, "policy_id", "tenant_id", tenantID, &policies); _dbErr != nil {
@@ -241,7 +241,7 @@ func HandleCreateReport(db database.DB) http.HandlerFunc {
 			"end_date":     req.EndDate,
 			"generated_at": now.Format(time.RFC3339),
 		}
-		if err := db.InsertRow(database.TblNexusComplianceReports, row); err != nil {
+		if err := db.InsertRow(database.TblSharComplianceReports, row); err != nil {
 			slog.Error("CreateReport failed", "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to create report", nil)
 			return
@@ -315,7 +315,7 @@ func HandleUpdateReport(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "no updatable fields provided")
 			return
 		}
-		if err := db.UpdateRowCompound(database.TblNexusComplianceReports, "compliance_report_id", reportID, "tenant_id", tenantID, update); err != nil {
+		if err := db.UpdateRowCompound(database.TblSharComplianceReports, "compliance_report_id", reportID, "tenant_id", tenantID, update); err != nil {
 			slog.Error("UpdateReport failed", "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "update_report_failed", nil)
 			return
@@ -342,7 +342,7 @@ func HandleDeleteReport(db database.DB) http.HandlerFunc {
 			return
 		}
 		// Scope delete to tenant
-		if err := db.SoftDeleteRowCompound(database.TblNexusComplianceReports, "compliance_report_id", reportID, "tenant_id", tenantID); err != nil {
+		if err := db.SoftDeleteRowCompound(database.TblSharComplianceReports, "compliance_report_id", reportID, "tenant_id", tenantID); err != nil {
 			slog.Error("DeleteReport failed", "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "delete_report_failed", nil)
 			return
@@ -424,7 +424,7 @@ func HandleScheduleReport(db database.DB) http.HandlerFunc {
 			"schedule_config": string(schedData),
 		}
 		// Scope update to tenant
-		if err := db.UpdateRowCompound(database.TblNexusComplianceReports, "compliance_report_id", reportID, "tenant_id", tenantID, patch); err != nil {
+		if err := db.UpdateRowCompound(database.TblSharComplianceReports, "compliance_report_id", reportID, "tenant_id", tenantID, patch); err != nil {
 			slog.Error("ScheduleReport persist failed", "report_id", reportID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to persist schedule", nil)
 			return
@@ -459,7 +459,7 @@ func HandleCreateExport(db database.DB) http.HandlerFunc {
 			return
 		}
 		now := time.Now().UTC().Format(time.RFC3339)
-		// SCHEMA FIX: aocs_bulk_import_jobs (TblExportJobs) columns:
+		// SCHEMA FIX: aocs_bulk_import_jobs (TblCoreJobs) columns:
 		// job_id(PK), tenant_id, status, job_type, export_type, format, metadata, created_at.
 		// entity_type/filters/name/updated_at do NOT exist on this table.
 		row := map[string]any{
@@ -469,7 +469,7 @@ func HandleCreateExport(db database.DB) http.HandlerFunc {
 			"status":      "PENDING",
 			"created_at":  now,
 		}
-		if err := db.InsertRow(database.TblExportJobs, row); err != nil {
+		if err := db.InsertRow(database.TblCoreJobs, row); err != nil {
 			slog.Error("CreateExport insert failed", "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to create export job", nil)
 			return
@@ -503,7 +503,7 @@ func HandleGetExportStatus(db database.DB) http.HandlerFunc {
 		}
 		var rows []map[string]any
 		// SCHEMA FIX: PK on aocs_bulk_import_jobs is 'job_id', not 'export_job_id'.
-		if err := db.QueryRowsCompoundCtx(r.Context(), database.TblExportJobs, database.ColsReportExportJobs, "job_id", jobID, "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
+		if err := db.QueryRowsCompoundCtx(r.Context(), database.TblCoreJobs, database.ColsReportExportJobs, "job_id", jobID, "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "export job not found")
 			return
 		}
@@ -535,7 +535,7 @@ func HandleExportDownload(db database.DB) http.HandlerFunc {
 		}
 		var rows []map[string]any
 		// SCHEMA FIX: PK is 'job_id'; 'download_url' doesn't exist (real col is 'file_url').
-		if err := db.QueryRowsCtx(r.Context(), database.TblExportJobs, "status,file_url,tenant_id", "job_id", jobID, &rows); err != nil || len(rows) == 0 {
+		if err := db.QueryRowsCtx(r.Context(), database.TblCoreJobs, "status,file_url,tenant_id", "job_id", jobID, &rows); err != nil || len(rows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "export job not found")
 			return
 		}
@@ -592,7 +592,7 @@ func HandleListDashboards(db database.DB) http.HandlerFunc {
 						"id":          "w1",
 						"type":        "chart",
 						"title":       "Overview",
-						"data_source": database.TblAgents,
+						"data_source": database.TblCoreAgents,
 						"config": map[string]any{
 							"refresh_interval": 30,
 							"color_scheme":     "default",

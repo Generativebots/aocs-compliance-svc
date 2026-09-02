@@ -45,7 +45,7 @@ func HandleGetServiceMetrics(db database.DB) http.HandlerFunc {
 
 		// M40: telemetry cols (total/successful/failed_interactions) + model_name live in
 		// satellite tables. Must read vw_agent_full which JOINs core_agents +
-		// core_agent_config + core_agent_telemetry — not TblAgents directly.
+		// core_agent_config + core_agent_telemetry — not TblCoreAgents directly.
 		var agents []map[string]any
 		if err := db.QueryRowsCtx(r.Context(), database.TblAgentFullView,
 			"agent_id,tenant_id,name,status,is_frozen,blacklisted,behavioral_drift,total_interactions,successful_interactions,failed_interactions,risk_tier,tier,model_name,created_at",

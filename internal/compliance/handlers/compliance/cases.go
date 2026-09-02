@@ -133,9 +133,9 @@ func HandleListCases(db database.DB) http.HandlerFunc {
 				"tenant_id", tenantID, "join_err", joinErr)
 			var plainErr error
 			if tenantID != "" {
-				plainErr = db.QueryRowsCtx(r.Context(), database.TblHITLDecisions, database.ColsHITLDecision, "tenant_id", tenantID, &rows)
+				plainErr = db.QueryRowsCtx(r.Context(), database.TblCoreHitl, database.ColsHITLDecision, "tenant_id", tenantID, &rows)
 			} else {
-				plainErr = db.QueryRowsCtx(r.Context(), database.TblHITLDecisions, database.ColsHITLDecision, "", "", &rows)
+				plainErr = db.QueryRowsCtx(r.Context(), database.TblCoreHitl, database.ColsHITLDecision, "", "", &rows)
 			}
 			if plainErr != nil {
 				slog.Error("ListCases fallback failed", "tenant_id", tenantID, "error", plainErr)
@@ -288,7 +288,7 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 		var txErr error
 		txErr = db.WithTransaction(r.Context(), func(tx database.DB) error {
 			var existing []map[string]any
-			if err := tx.QueryRowsCompoundForUpdate(database.TblHITLDecisions, "decision_id,status",
+			if err := tx.QueryRowsCompoundForUpdate(database.TblCoreHitl, "decision_id,status",
 				"decision_id", caseID, "tenant_id", tenantID, &existing); err != nil {
 				return fmt.Errorf("lock decision row: %w", err)
 			}
@@ -300,7 +300,7 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 			case "APPROVED", "REJECTED", "arbitrated", "MERGED", "RESOLVED":
 				return fmt.Errorf("terminal:%s", curStatus)
 			}
-			if err := tx.UpdateRowCompound(database.TblHITLDecisions, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
+			if err := tx.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
 				return fmt.Errorf("update verdict: %w", err)
 			}
 			return nil
@@ -339,7 +339,7 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 				if _err := coreClient.PostEvent(r.Context(), auditRow); _err != nil {
 					slog.Error("coreClient.PostEvent HITL_VERDICT failed (best-effort)", "error", _err)
 				}
-			} else if _dbErr := db.InsertRow(database.TblPlatformEvents, auditRow); _dbErr != nil {
+			} else if _dbErr := db.InsertRow(database.TblCoreEvents, auditRow); _dbErr != nil {
 				slog.Error("db.InsertRow failed (best-effort)", "error", _dbErr)
 			}
 		})
@@ -456,7 +456,7 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 			// Standard departments (Engineering, Compliance, Finance, Legal…) are shared
 			// across ALL tenants — same model as global roles/permissions.
 			// Only member association (syst_user_roles) is tenant-scoped.
-			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblPlatformDepartments, "slug,enabled_features", "", "", &knownDepts); _dbErr != nil {
+			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblSystDepartments, "slug,enabled_features", "", "", &knownDepts); _dbErr != nil {
 				slog.Error("db.QueryRows failed (best-effort)", "error", _dbErr)
 			}
 			deptMap := make(map[string]map[string]any, len(knownDepts))
@@ -513,7 +513,7 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 			}
 			for _, dept := range deptIDs {
 				var pendingRows []map[string]any
-				if _dbErr := db.QueryRowsCompound(database.TblHITLDecisions, "decision_id",
+				if _dbErr := db.QueryRowsCompound(database.TblCoreHitl, "decision_id",
 					"department_id", dept, "status", "PENDING", &pendingRows); _dbErr != nil {
 					slog.Error("db.QueryRowsCompound failed (best-effort)", "error", _dbErr)
 				}
@@ -544,7 +544,7 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 			// assignments don't overwrite each other (last-write-wins data loss).
 			var existingRows []map[string]any
 			if lockErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
-				if qErr := tx.QueryRowsCompoundForUpdate(database.TblHITLDecisions, "context_data",
+				if qErr := tx.QueryRowsCompoundForUpdate(database.TblCoreHitl, "context_data",
 					"decision_id", caseID, "tenant_id", tenantID, &existingRows); qErr != nil {
 					return qErr
 				}
@@ -588,7 +588,7 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 				update["context_data"] = string(cdBytes)
 			}
 		}
-		if err := db.UpdateRowCompound(database.TblHITLDecisions, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
+		if err := db.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
 			slog.Error("AssignCase failed", "case_id", caseID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "assign case", err)
 			return

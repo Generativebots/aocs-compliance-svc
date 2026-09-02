@@ -66,7 +66,7 @@ func (s *LedgerServer) RecordEvidence(ctx context.Context, req *pb.RecordEvidenc
 		"updated_at": now,
 	}
 	// Try insert first; on conflict update chain_data via entity_id+tenant_id.
-	if err := s.DB.InsertRow(database.TblAocsEvidence, row); err != nil {
+	if err := s.DB.InsertRow(database.TblCoreEvidence, row); err != nil {
 		updates := map[string]any{
 			"chain_data": map[string]any{
 				"hash":    req.Hash,
@@ -75,7 +75,7 @@ func (s *LedgerServer) RecordEvidence(ctx context.Context, req *pb.RecordEvidenc
 			},
 			"updated_at": now,
 		}
-		if uerr := s.DB.UpdateRowCompoundCtx(context.Background(), database.TblAocsEvidence,
+		if uerr := s.DB.UpdateRowCompoundCtx(context.Background(), database.TblCoreEvidence,
 			"entity_id", req.DecisionId, "tenant_id", req.TenantId, updates); uerr != nil {
 			slog.Error("LedgerServer.RecordEvidence: upsert failed",
 				"entity_id", req.DecisionId, "tenant_id", req.TenantId, "err", uerr)
@@ -96,7 +96,7 @@ func (s *LedgerServer) VerifyEvidence(ctx context.Context, req *pb.VerifyEvidenc
 
 	// Fetch the stored evidence record — aocs_evidence (entity_id = decision_id FK)
 	var rows []map[string]any
-	if err := s.DB.QueryRowsCompoundCtx(ctx, database.TblAocsEvidence,
+	if err := s.DB.QueryRowsCompoundCtx(ctx, database.TblCoreEvidence,
 		"evidence_id, entity_id, chain_data, updated_at",
 		"entity_id", req.DecisionId,
 		"tenant_id", req.TenantId,
@@ -151,7 +151,7 @@ func (s *LedgerServer) GetEvidence(ctx context.Context, req *pb.GetEvidenceReque
 	}
 
 	var rows []map[string]any
-	if err := s.DB.QueryRowsCompoundCtx(ctx, database.TblAocsEvidence,
+	if err := s.DB.QueryRowsCompoundCtx(ctx, database.TblCoreEvidence,
 		"evidence_id, entity_id, chain_data, updated_at",
 		"entity_id", req.DecisionId,
 		"tenant_id", req.TenantId,

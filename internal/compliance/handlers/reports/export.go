@@ -34,7 +34,7 @@ func HandleExportHistory(db database.DB) http.HandlerFunc {
 			CreatedAt   string `json:"created_at"`
 			CompletedAt string `json:"completed_at"`
 		}
-		if err := db.QueryRowsCtx(r.Context(), database.TblPlatformEvents,
+		if err := db.QueryRowsCtx(r.Context(), database.TblCoreEvents,
 			"id,tenant_id,job_type,status,file_size,download_url,created_at,completed_at",
 			"tenant_id", tenantID, &rows); err != nil {
 			slog.Error("HandleExportHistory: query failed", "tenant_id", tenantID, "error", err)

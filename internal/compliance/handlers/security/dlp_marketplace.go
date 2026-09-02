@@ -62,7 +62,7 @@ func HandleListTenantIntegrations(store *DLPStore) http.HandlerFunc {
 					EventCount:  ri.EventCount,
 				})
 			}
-		} else if err := store.db.QueryRowsCtx(r.Context(), database.TblSentiDLPIntegrations, database.ColsSentiDLPIntegration, "tenant_id", tenantID, &integrations); err != nil {
+		} else if err := store.db.QueryRowsCtx(r.Context(), database.TblSharDlpIntegrations, database.ColsSentiDLPIntegration, "tenant_id", tenantID, &integrations); err != nil {
 			slog.Error("HandleListTenantIntegrations DB query failed", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to list tenant integrations", nil)
 			return

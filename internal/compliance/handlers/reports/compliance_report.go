@@ -81,7 +81,7 @@ func HandleGetRegulatoryComplianceReport(db database.PlatformRepository) http.Ha
 		var hitlRows []struct {
 			Status string `json:"status"`
 		}
-		hitlQueryErr := db.QueryRowsCtx(r.Context(), database.TblHITLDecisions,
+		hitlQueryErr := db.QueryRowsCtx(r.Context(), database.TblCoreHitl,
 			"status", "tenant_id", tenantID, &hitlRows)
 		if hitlQueryErr != nil {
 			slog.Error("F-RPT-01: compliance report HITL query failed — report incomplete",
@@ -106,7 +106,7 @@ func HandleGetRegulatoryComplianceReport(db database.PlatformRepository) http.Ha
 		var verdictRows []struct {
 			Verdict string `json:"verdict"`
 		}
-		verdictQueryErr := db.QueryRowsCtx(r.Context(), database.TblVerdicts,
+		verdictQueryErr := db.QueryRowsCtx(r.Context(), database.TblCoreVerdicts,
 			"verdict", "tenant_id", tenantID, &verdictRows)
 		if verdictQueryErr != nil {
 			slog.Error("F-RPT-01: compliance report verdict query failed — report incomplete",
@@ -121,12 +121,12 @@ func HandleGetRegulatoryComplianceReport(db database.PlatformRepository) http.Ha
 		}
 
 		// 5. Agent inventory
-		agentTotal, _ := db.CountRows(database.TblAgents, "tenant_id", tenantID)
+		agentTotal, _ := db.CountRows(database.TblCoreAgents, "tenant_id", tenantID)
 
 		// 6. Shadow agents detected
 		// F-RPT-01 FIX: was _ = (silent drop). Missing shadow agents = security gap in report.
 		var shadowRows []struct{ AgentID string `json:"agent_id"` }
-		shadowQueryErr := db.QueryRowsCompoundCtx(r.Context(), database.TblAgents, "agent_id", "origin", "proxy_discovered", "tenant_id", tenantID, &shadowRows)
+		shadowQueryErr := db.QueryRowsCompoundCtx(r.Context(), database.TblCoreAgents, "agent_id", "origin", "proxy_discovered", "tenant_id", tenantID, &shadowRows)
 		if shadowQueryErr != nil {
 			slog.Error("F-RPT-01: compliance report shadow agent query failed — count set to -1 (unknown)",
 				"tenant_id", tenantID, "error", shadowQueryErr)
@@ -224,7 +224,7 @@ func HandleGetRegulatoryComplianceReport(db database.PlatformRepository) http.Ha
 			"created_by":  tenantID,
 			"created_at":  time.Now().UTC().Format(time.RFC3339),
 		}
-		if dbErr := db.InsertRow(database.TblNexusComplianceReports, dbRecord); dbErr != nil {
+		if dbErr := db.InsertRow(database.TblSharComplianceReports, dbRecord); dbErr != nil {
 			// Non-fatal — log but still return the report to the caller
 			log.WarnContext(r.Context(), "compliance report DB persist failed",
 				"error", dbErr, "tenant_id", tenantID)

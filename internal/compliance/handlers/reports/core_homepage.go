@@ -43,7 +43,7 @@ func HandleGetAnalyticsCoreHomepage(db database.DB) http.HandlerFunc {
 
 		// Count core_agents
 		var agents []map[string]any
-		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblAgents, "agent_id,status", "tenant_id", tenantID, &agents); _dbErr != nil {
+		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreAgents, "agent_id,status", "tenant_id", tenantID, &agents); _dbErr != nil {
 			slog.Error("db operation failed", "method", "QueryRows", "error", _dbErr)
 		}
 		totalAgents := len(agents)
@@ -62,7 +62,7 @@ func HandleGetAnalyticsCoreHomepage(db database.DB) http.HandlerFunc {
 
 		// Count open alerts from senti_alerts
 		var alerts []map[string]any
-		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblAlerts, "senti_alert_id,status", "tenant_id", tenantID, &alerts); _dbErr != nil {
+		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblSharAlerts, "senti_alert_id,status", "tenant_id", tenantID, &alerts); _dbErr != nil {
 			slog.Error("db operation failed", "method", "QueryRows", "error", _dbErr)
 		}
 		openAlerts := 0
@@ -74,7 +74,7 @@ func HandleGetAnalyticsCoreHomepage(db database.DB) http.HandlerFunc {
 
 		// Count pending HITL cases
 		var hitlCases []map[string]any
-		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblHITLDecisions, "decision_id,status,sla_breach_at", "tenant_id", tenantID, &hitlCases); _dbErr != nil {
+		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreHitl, "decision_id,status,sla_breach_at", "tenant_id", tenantID, &hitlCases); _dbErr != nil {
 			slog.Error("db operation failed", "method", "QueryRows", "error", _dbErr)
 		}
 		openHITL := 0

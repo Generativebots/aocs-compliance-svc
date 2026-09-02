@@ -95,7 +95,7 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 		var knownDepts []map[string]any
 		// nolint:tenant_filter — syst_departments is GLOBAL by design.
 		// Same model as global roles/permissions. Member ↔ dept association is in syst_user_roles.
-		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblPlatformDepartments, "slug,name,enabled_features", "", "", &knownDepts); _dbErr != nil {
+		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblSystDepartments, "slug,name,enabled_features", "", "", &knownDepts); _dbErr != nil {
 			slog.Error("db.QueryRows failed (best-effort)", "error", _dbErr)
 		}
 		deptMap := make(map[string]map[string]any, len(knownDepts))
@@ -139,7 +139,7 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 							"created_at":  time.Now().UTC().Format(time.RFC3339),
 						})
 					})
-				} else if _wErr := db.InsertRow(database.TblPlatformEvents, map[string]any{
+				} else if _wErr := db.InsertRow(database.TblCoreEvents, map[string]any{
 					"tenant_id":   tenantID,
 					"event_type":  "HITL_ROUTING_CATCHALL",
 					"entity_type": "department_routing",
@@ -148,7 +148,7 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 					"created_at":  time.Now().UTC().Format(time.RFC3339),
 				}); _wErr != nil {
 					slog.Error("SILENT_DROP_FIXED: InsertRow",
-						"table", database.TblPlatformEvents, "file", "aocs-compliance/handlers/compliance/department_routing.go", "err", _wErr)
+						"table", database.TblCoreEvents, "file", "aocs-compliance/handlers/compliance/department_routing.go", "err", _wErr)
 				}
 			}
 		}
@@ -168,7 +168,7 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 		if checkCapacity {
 			for _, dept := range validDepts {
 				var pendingRows []map[string]any
-				if _dbErr := db.QueryRowsCompound(database.TblHITLDecisions, "decision_id",
+				if _dbErr := db.QueryRowsCompound(database.TblCoreHitl, "decision_id",
 					"department_id", dept, "status", "PENDING", &pendingRows); _dbErr != nil {
 					slog.Error("db.QueryRowsCompound failed (best-effort)", "error", _dbErr)
 				}
@@ -186,7 +186,7 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 		}
 
 		concurrent.Go("department_routing", func() {
-			if _dbErr := db.InsertRow(database.TblPlatformEvents, map[string]any{
+			if _dbErr := db.InsertRow(database.TblCoreEvents, map[string]any{
 				"event_type": "department_route_query",
 				"tenant_id":  tenantID,
 				"agent_id":   req.AgentID,

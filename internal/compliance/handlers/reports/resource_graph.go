@@ -72,7 +72,7 @@ func HandleGetResourceGraph(db database.DB) http.HandlerFunc {
 			var imports []map[string]any
 			// core_tenant_docs actual cols (verified 2026-05-27): document_id, source_id, source_type,
 			// name (NOT title), document_type (NOT doc_type), status, description, created_at
-			if err := db.QueryRowsCtx(r.Context(), database.TblTenantDocuments, "document_id,source_id,source_type,name,status,document_type,description", "tenant_id", tenantID, &imports); err != nil {
+			if err := db.QueryRowsCtx(r.Context(), database.TblCoreTenantDocs, "document_id,source_id,source_type,name,status,document_type,description", "tenant_id", tenantID, &imports); err != nil {
 				slog.Error("HandleGetResourceGraph: QueryRows import_sources failed", "error", err)
 				errCh <- err
 				return
@@ -103,7 +103,7 @@ func HandleGetResourceGraph(db database.DB) http.HandlerFunc {
 			var docs []map[string]any
 			// core_tenant_docs actual cols (verified 2026-05-27): name (NOT file_name),
 			// document_type (NOT file_type), status — parse_status, extracted_intents, ai_model_used do NOT exist
-			if err := db.QueryRowsCtx(r.Context(), database.TblTenantDocuments, "document_id,name,document_type,status,mime_type,file_size,source_type", "tenant_id", tenantID, &docs); err != nil {
+			if err := db.QueryRowsCtx(r.Context(), database.TblCoreTenantDocs, "document_id,name,document_type,status,mime_type,file_size,source_type", "tenant_id", tenantID, &docs); err != nil {
 				slog.Error("HandleGetResourceGraph: QueryRows core_tenant_docs failed", "error", err)
 				errCh <- err
 				return
@@ -133,7 +133,7 @@ func HandleGetResourceGraph(db database.DB) http.HandlerFunc {
 			defer wg.Done()
 			var intents []map[string]any
 			// T.IAProcessIntents maps to core_process_intents (junction table, no name col).
-			if err := db.QueryRowsCtx(r.Context(), database.TblIntents, "intent_id,name,description,status,bound_rules,created_at", "tenant_id", tenantID, &intents); err != nil {
+			if err := db.QueryRowsCtx(r.Context(), database.TblCoreIntents, "intent_id,name,description,status,bound_rules,created_at", "tenant_id", tenantID, &intents); err != nil {
 				slog.Error("HandleGetResourceGraph: QueryRows ia_intents failed (non-fatal)", "error", err)
 				// Non-fatal: continue without intent nodes
 				return
@@ -162,7 +162,7 @@ func HandleGetResourceGraph(db database.DB) http.HandlerFunc {
 			}()
 			defer wg.Done()
 			var agt []map[string]any
-			if err := db.QueryRowsCtx(r.Context(), database.TblAgents, "agent_id,name,role,status", "tenant_id", tenantID, &agt); err != nil {
+			if err := db.QueryRowsCtx(r.Context(), database.TblCoreAgents, "agent_id,name,role,status", "tenant_id", tenantID, &agt); err != nil {
 				slog.Error("HandleGetResourceGraph: QueryRows agents failed", "error", err)
 				errCh <- err
 				return
@@ -220,7 +220,7 @@ func HandleGetResourceGraph(db database.DB) http.HandlerFunc {
 			defer wg.Done()
 			var rels []map[string]any
 			// Query using the actual PK column and alias it as "id" for mapStr compatibility.
-			if err := db.QueryRowsCtx(r.Context(), database.TblDocumentConnectors, "document_connector_id AS id,connector_type,display_name,status", "tenant_id", tenantID, &rels); err != nil {
+			if err := db.QueryRowsCtx(r.Context(), database.TblConrDocumentConnectors, "document_connector_id AS id,connector_type,display_name,status", "tenant_id", tenantID, &rels); err != nil {
 				slog.Error("HandleGetResourceGraph: QueryRows resource_relationships failed (non-fatal)", "error", err)
 				// Non-fatal — continue without relationship edges
 				return
@@ -360,7 +360,7 @@ func HandleListImportSources(db database.DB) http.HandlerFunc {
 		}
 
 		var sources []map[string]any
-		if err := db.QueryRowsCtx(r.Context(), database.TblTenantDocuments, database.ColsImportSource, "tenant_id", tenantID, &sources); err != nil {
+		if err := db.QueryRowsCtx(r.Context(), database.TblCoreTenantDocs, database.ColsImportSource, "tenant_id", tenantID, &sources); err != nil {
 			slog.Error("ListImportSources failed", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to list import sources", nil)
 			return
@@ -401,7 +401,7 @@ func HandleCreateImportSource(db database.DB) http.HandlerFunc {
 			"config":      req.Config,
 		}
 		// created_at DEFAULT NOW() — DB handles
-		if err := db.InsertRow(database.TblTenantDocuments, row); err != nil {
+		if err := db.InsertRow(database.TblCoreTenantDocs, row); err != nil {
 			slog.Error("CreateImportSource failed", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to create import source", nil)
 			return
@@ -422,7 +422,7 @@ func HandleListDocuments(db database.DB) http.HandlerFunc {
 
 		// Fetch documents indexed from all connected drives
 		var docs []map[string]any
-		if err := db.QueryRowsCtx(r.Context(), database.TblTenantDocuments, database.ColsTenantDocument, "tenant_id", tenantID, &docs); err != nil {
+		if err := db.QueryRowsCtx(r.Context(), database.TblCoreTenantDocs, database.ColsTenantDocument, "tenant_id", tenantID, &docs); err != nil {
 			slog.Error("ListDocuments failed", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to list documents", nil)
 			return
@@ -436,7 +436,7 @@ func HandleListDocuments(db database.DB) http.HandlerFunc {
 		// X-21 FIX: was _ = (silent drop) — security teams saw empty graph on DB failure
 		// and believed no connected data sources existed, skipping critical reviews.
 		var dataUnavailable bool
-		if connErr := db.QueryRowsCtx(r.Context(), database.TblDocumentConnectors,
+		if connErr := db.QueryRowsCtx(r.Context(), database.TblConrDocumentConnectors,
 			"document_connector_id,connector_type,display_name,status,last_sync_at,documents_synced,sync_enabled",
 			"tenant_id", tenantID, &connectors); connErr != nil {
 			slog.Error("X-21: resource graph connector query FAILED — graph will show empty connectors. Security teams may skip connector review.",
@@ -497,7 +497,7 @@ func HandleSyncConnectorDocuments(db database.DB) http.HandlerFunc {
 
 		// Load connector record
 		var connectors []map[string]any
-		if err := db.QueryRowsCtx(r.Context(), database.TblDocumentConnectors,
+		if err := db.QueryRowsCtx(r.Context(), database.TblConrDocumentConnectors,
 			"document_connector_id,connector_type,display_name,config,auth_config,status",
 			"tenant_id", tenantID, &connectors); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "failed to load connectors", nil)
@@ -550,7 +550,7 @@ func HandleSyncConnectorDocuments(db database.DB) http.HandlerFunc {
 			}
 			// Repository pattern: update connector status via typed method, never raw SQL in handlers
 			if _wErr := db.UpdateRowCompound(
-				database.TblDocumentConnectors,
+				database.TblConrDocumentConnectors,
 				"document_connector_id", cid,
 				"tenant_id", tid,
 				map[string]any{
@@ -559,7 +559,7 @@ func HandleSyncConnectorDocuments(db database.DB) http.HandlerFunc {
 				},
 			); _wErr != nil {
 				slog.Error("SILENT_DROP_FIXED: UpdateRowCompound",
-					"table", database.TblDocumentConnectors, "file", "aocs-intel/handlers/analytics/resource_graph.go", "err", _wErr)
+					"table", database.TblConrDocumentConnectors, "file", "aocs-intel/handlers/analytics/resource_graph.go", "err", _wErr)
 			}
 		}(syncCtx, tenantID, connectorID, connType, displayName, connector)
 

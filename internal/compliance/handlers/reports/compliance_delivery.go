@@ -205,7 +205,7 @@ func HandleDeliverComplianceReport(db database.DB) http.HandlerFunc {
 			Status         string  `json:"status"`
 		}
 		var reports []complianceReportRow
-		if err := db.QueryRows(database.TblNexusComplianceReports,
+		if err := db.QueryRows(database.TblSharComplianceReports,
 			"compliance_report_id,report_type,standard,period,schedule_config,status",
 			"compliance_report_id", reportID, &reports); err != nil || len(reports) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "compliance report not found")
@@ -299,7 +299,7 @@ If you did not expect this report, contact your OCX administrator.
 
 		// 6. Write last_sent_at back to the report row (regardless of partial failures)
 		if len(sent) > 0 {
-			if updateErr := db.UpdateRow(database.TblNexusComplianceReports,
+			if updateErr := db.UpdateRow(database.TblSharComplianceReports,
 				"compliance_report_id", reportID, map[string]any{
 					"last_sent_at": now.Format(time.RFC3339),
 					"updated_at":   now.Format(time.RFC3339),

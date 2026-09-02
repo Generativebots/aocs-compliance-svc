@@ -100,7 +100,7 @@ func HandleBulkEscalationAssign(db database.DB, coreClient *serviceclient.Client
 					},
 				}
 				concurrent.Go("bulk-escalate-assign-event", func() { _ = coreClient.PostEvent(context.Background(), evtPayload) })
-			} else if _wErr := db.InsertRow(database.TblPlatformEvents, map[string]any{
+			} else if _wErr := db.InsertRow(database.TblCoreEvents, map[string]any{
 				"tenant_id":   tenantID,
 				"event_type":  "escalation_chain.assigned",
 				"entity_id":   id,
@@ -195,7 +195,7 @@ func HandleBulkEscalationAcknowledge(db database.DB, coreClient *serviceclient.C
 					"metadata":    map[string]any{"bulk": true},
 				}
 				concurrent.Go("bulk-escalate-ack-event", func() { _ = coreClient.PostEvent(context.Background(), evtPayload) })
-			} else if _wErr := db.InsertRow(database.TblPlatformEvents, map[string]any{
+			} else if _wErr := db.InsertRow(database.TblCoreEvents, map[string]any{
 				"tenant_id":   tenantID,
 				"event_type":  "escalation_chain.acknowledged",
 				"entity_id":   id,

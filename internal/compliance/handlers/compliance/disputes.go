@@ -60,7 +60,7 @@ func HandleListDisputes(db database.DB) http.HandlerFunc {
 			return
 		}
 		var rows []map[string]any
-		if err := db.QueryRowsCtx(r.Context(), database.TblComplianceCases,
+		if err := db.QueryRowsCtx(r.Context(), database.TblCoreCompliance,
 			"case_id,tenant_id,agent_id,case_type,reason,status,evidence_url,created_at,resolved_at",
 			"tenant_id", tenantID, &rows); err != nil {
 			slog.Error("HandleListDisputes: query failed", "tenant_id", tenantID, "error", err)
@@ -91,7 +91,7 @@ func HandleGetDispute(db database.DB) http.HandlerFunc {
 			return
 		}
 		var rows []map[string]any
-		if err := db.QueryRowsCompound(database.TblComplianceCases,
+		if err := db.QueryRowsCompound(database.TblCoreCompliance,
 			"case_id,tenant_id,agent_id,case_type,reason,status,evidence_url,created_at,resolved_at",
 			"dispute_id", id, "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "dispute not found")
@@ -131,7 +131,7 @@ func HandleCreateDispute(db database.DB) http.HandlerFunc {
 		}
 		disputeID := generatePlatformID()
 		now := time.Now().UTC().Format(time.RFC3339)
-		if err := db.InsertRow(database.TblComplianceCases, map[string]any{
+		if err := db.InsertRow(database.TblCoreCompliance, map[string]any{
 			"dispute_id":   disputeID,
 			"tenant_id":    tenantID,
 			"case_id":      body.CaseID,
@@ -186,7 +186,7 @@ func HandleResolveDispute(db database.DB) http.HandlerFunc {
 		now := time.Now().UTC().Format(time.RFC3339)
 		// Verify ownership + current status before mutation
 		var existing []map[string]any
-		if err := db.QueryRowsCompound(database.TblComplianceCases, "dispute_id,tenant_id,status",
+		if err := db.QueryRowsCompound(database.TblCoreCompliance, "dispute_id,tenant_id,status",
 			"dispute_id", id, "tenant_id", tenantID, &existing); err != nil || len(existing) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "dispute not found")
 			return
@@ -195,7 +195,7 @@ func HandleResolveDispute(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusConflict, respond.ErrCodeConflict, "only OPEN disputes can be resolved (current: "+s+")")
 			return
 		}
-		if err := db.UpdateRowCompound(database.TblComplianceCases, "dispute_id", id, "tenant_id", tenantID, map[string]any{
+		if err := db.UpdateRowCompound(database.TblCoreCompliance, "dispute_id", id, "tenant_id", tenantID, map[string]any{
 			"status":            body.Verdict,
 			"resolution":        body.Resolution,
 			"resolved_at":       now,
@@ -229,12 +229,12 @@ func HandleDeleteDispute(db database.DB) http.HandlerFunc {
 		}
 		// Verify tenant ownership
 		var existing []map[string]any
-		if err := db.QueryRowsCompound(database.TblComplianceCases, "dispute_id,tenant_id",
+		if err := db.QueryRowsCompound(database.TblCoreCompliance, "dispute_id,tenant_id",
 			"dispute_id", id, "tenant_id", tenantID, &existing); err != nil || len(existing) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "dispute not found")
 			return
 		}
-		if err := db.UpdateRowCompound(database.TblComplianceCases, "dispute_id", id, "tenant_id", tenantID, map[string]any{
+		if err := db.UpdateRowCompound(database.TblCoreCompliance, "dispute_id", id, "tenant_id", tenantID, map[string]any{
 			"status":            "WITHDRAWN",
 			"resolved_at":       time.Now().UTC().Format(time.RFC3339),
 		}); err != nil {

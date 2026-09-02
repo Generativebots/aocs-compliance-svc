@@ -76,7 +76,7 @@ func HandleListComplianceReports(db database.DB) http.HandlerFunc {
 		}
 
 		var result []map[string]any
-		if err := db.QueryRowsCtx(r.Context(), database.TblNexusComplianceReports, database.ColsNexusComplianceReport, "tenant_id", tenantID, &result); err != nil {
+		if err := db.QueryRowsCtx(r.Context(), database.TblSharComplianceReports, database.ColsNexusComplianceReport, "tenant_id", tenantID, &result); err != nil {
 			slog.Error("ListComplianceReports query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "list compliance reports", err)
 			return
@@ -151,7 +151,7 @@ func HandleCreateComplianceReport(db database.DB) http.HandlerFunc {
 			},
 		}
 
-		if err := db.InsertRow(database.TblNexusComplianceReports, row); err != nil {
+		if err := db.InsertRow(database.TblSharComplianceReports, row); err != nil {
 			slog.Error("CreateComplianceReport failed", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to create report", nil)
 			return
@@ -223,7 +223,7 @@ func HandleUpdateComplianceReport(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "no updatable fields provided")
 			return
 		}
-		if err := db.UpdateRowCompound(database.TblNexusComplianceReports, "compliance_report_id", reportID, "tenant_id", tenantID, update); err != nil {
+		if err := db.UpdateRowCompound(database.TblSharComplianceReports, "compliance_report_id", reportID, "tenant_id", tenantID, update); err != nil {
 			slog.Error("UpdateComplianceReport failed", "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to update report", nil)
 			return
@@ -245,7 +245,7 @@ func HandleGetTokenStats(db database.DB) http.HandlerFunc {
 		}
 
 		var all []map[string]any
-		if err := db.QueryRowsCtx(r.Context(), database.TblJITEntitlements, database.ColsJITEntitlement, "tenant_id", tenantID, &all); err != nil {
+		if err := db.QueryRowsCtx(r.Context(), database.TblCoreJit, database.ColsJITEntitlement, "tenant_id", tenantID, &all); err != nil {
 			slog.Error("TokenStats query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "get token stats", err)
 			return
@@ -289,10 +289,10 @@ func HandleGetAnalyticsOverview(db database.DB) http.HandlerFunc {
 
 		// Aggregate counts from key tables
 		var agt []map[string]any
-		db.QueryRowsCtx(r.Context(), database.TblAgents, "agent_id", "tenant_id", tenantID, &agt)
+		db.QueryRowsCtx(r.Context(), database.TblCoreAgents, "agent_id", "tenant_id", tenantID, &agt)
 
 		var esc []map[string]any
-		db.QueryRowsCtx(r.Context(), database.TblEscrowTransactions, "status", "tenant_id", tenantID, &esc)
+		db.QueryRowsCtx(r.Context(), database.TblCoreEscrowTxns, "status", "tenant_id", tenantID, &esc)
 
 		var evlt []map[string]any
 		db.QueryRowsCtx(r.Context(), database.TblQCoreEvidenceRecords, "evidence_record_id", "tenant_id", tenantID, &evlt)
@@ -499,7 +499,7 @@ func HandleListActiveTokens(db database.DB) http.HandlerFunc {
 		}
 
 		var result []map[string]any
-		if err := db.QueryRowsCtx(r.Context(), database.TblJITEntitlements, database.ColsJITEntitlement, "tenant_id", tenantID, &result); err != nil {
+		if err := db.QueryRowsCtx(r.Context(), database.TblCoreJit, database.ColsJITEntitlement, "tenant_id", tenantID, &result); err != nil {
 			slog.Error("ListActiveTokens query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "list active tokens", err)
 			return

@@ -95,7 +95,7 @@ func HandleListRetrainEvents(db database.DB, coreClients ...*serviceclient.Clien
 		// Now uses QueryRowsCompound to push trigger_source filter to the DB.
 		var events []RetrainEvent
 		cols := "id,tenant_id,case_id,trigger_source,verdict,reason_hash,model_version,status,created_at,completed_at"
-		if err := db.QueryRowsCompound(database.TblPlatformEvents, cols,
+		if err := db.QueryRowsCompound(database.TblCoreEvents, cols,
 			"tenant_id", tenantID,
 			"trigger_source", "HUMAN_ARBITRATION",
 			&events); err != nil {
@@ -185,7 +185,7 @@ func HandleCompleteRetrainEvent(db database.DB, coreClients ...*serviceclient.Cl
 			}
 			// tenant could update another tenant's retrain event by guessing the UUID.
 			// Fixed: use UpdateRowCompound which adds AND tenant_id=$2 to the WHERE clause.
-			if err := db.UpdateRowCompound(database.TblPlatformEvents,
+			if err := db.UpdateRowCompound(database.TblCoreEvents,
 				"id", eventID,
 				"tenant_id", tenantID,
 				updates); err != nil {

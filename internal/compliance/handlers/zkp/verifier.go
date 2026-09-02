@@ -445,7 +445,7 @@ func (v *ZKPVerifier) persistVerification(result *ZKPVerificationResult) {
 		"verified_at":  result.VerifiedAt.Format(time.RFC3339),
 	}
 
-	if err := v.db.InsertRow(database.TblSentiZKPVerifications, row); err != nil {
+	if err := v.db.InsertRow(database.TblSharZkpVerify, row); err != nil {
 		v.logger.Error("Failed to persist ZKP verification", "error", err)
 	}
 }

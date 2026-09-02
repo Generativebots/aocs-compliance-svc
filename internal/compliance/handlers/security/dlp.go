@@ -115,7 +115,7 @@ func HandleDLPScan(store *DLPStore) http.HandlerFunc {
 			Status:   database.EnforcementStatusResolved,
 			Metadata: scanMeta,
 		}
-		if err := store.db.InsertRow(database.TblComplianceCases, scanEA); err != nil {
+		if err := store.db.InsertRow(database.TblCoreCompliance, scanEA); err != nil {
 			slog.Error("DLP scan: failed to persist scan result", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to persist DLP scan result", nil)
 			return
@@ -187,7 +187,7 @@ func HandleDLPScan(store *DLPStore) http.HandlerFunc {
 						slog.Info("DLP→Sentinel: alert raised via coreClient", "classification", result.Classification,
 							"severity", severity, "tenant_id", tenantID, "agent_id", req.AgentID)
 					}
-				} else if err := store.db.InsertRow(database.TblAlerts, alertRow); err != nil {
+				} else if err := store.db.InsertRow(database.TblSharAlerts, alertRow); err != nil {
 					slog.Error("DLP→Sentinel: failed to create senti_alert", "error", err,
 						"classification", result.Classification, "tenant_id", tenantID)
 				} else {
@@ -231,7 +231,7 @@ func HandleDLPStatus(store *DLPStore) http.HandlerFunc {
 		} else {
 			// Fallback when coreClient unavailable (test mode)
 			var integrations []DLPIntegration
-			store.db.QueryRowsCtx(r.Context(), database.TblSentiDLPIntegrations, database.ColsSentiDLPIntegration, "tenant_id", tenantID, &integrations)
+			store.db.QueryRowsCtx(r.Context(), database.TblSharDlpIntegrations, database.ColsSentiDLPIntegration, "tenant_id", tenantID, &integrations)
 			for _, intg := range integrations {
 				if intg.Enabled {
 					integrationCount++
@@ -311,7 +311,7 @@ func HandleDLPMonitorPID(store *DLPStore) http.HandlerFunc {
 			Severity:   database.EnforcementSeverityMedium,
 			Metadata:   pidMeta,
 		}
-		if err := store.db.InsertRow(database.TblComplianceCases, pidEA); err != nil {
+		if err := store.db.InsertRow(database.TblCoreCompliance, pidEA); err != nil {
 			slog.Error("DLP: PID DB persist failed", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to register PID for monitoring", nil)
 			return
@@ -382,7 +382,7 @@ func HandleDLPWebhook(store *DLPStore) http.HandlerFunc {
 			update := map[string]any{
 				"last_event_at": time.Now().UTC().Format(time.RFC3339),
 			}
-			if err := store.db.UpdateRowCompound(database.TblSentiDLPIntegrations, "dlp_integration_id", providerID, "tenant_id", tenantID, update); err != nil {
+			if err := store.db.UpdateRowCompound(database.TblSharDlpIntegrations, "dlp_integration_id", providerID, "tenant_id", tenantID, update); err != nil {
 				slog.Error("DLP webhook: failed to update integration stats", "error", err)
 				respond.InternalError(w, http.StatusInternalServerError, "db operation failed", err)
 				return
@@ -427,7 +427,7 @@ func HandleListDLPIntegrations(store *DLPStore) http.HandlerFunc {
 			}
 		} else {
 			// Fallback for test mode
-			if err := store.db.QueryRowsCtx(r.Context(), database.TblSentiDLPIntegrations, database.ColsSentiDLPIntegration, "tenant_id", tenantID, &integrations); err != nil {
+			if err := store.db.QueryRowsCtx(r.Context(), database.TblSharDlpIntegrations, database.ColsSentiDLPIntegration, "tenant_id", tenantID, &integrations); err != nil {
 				slog.Error("ListDLPIntegrations DB query failed", "error", err, "tenant_id", tenantID)
 				respond.InternalError(w, http.StatusInternalServerError, "failed to list DLP integrations", nil)
 				return
@@ -504,7 +504,7 @@ func HandleCreateDLPIntegration(store *DLPStore) http.HandlerFunc {
 				respond.InternalError(w, http.StatusInternalServerError, "Failed to create integration", nil)
 				return
 			}
-		} else if err := store.db.InsertRow(database.TblSentiDLPIntegrations, row); err != nil {
+		} else if err := store.db.InsertRow(database.TblSharDlpIntegrations, row); err != nil {
 			slog.Error("DLP: Failed to persist integration", "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "Failed to create integration", nil)
 			return
@@ -556,7 +556,7 @@ func HandleDeleteDLPIntegration(store *DLPStore) http.HandlerFunc {
 		} else {
 			// Fallback for test mode
 			var existing []DLPIntegration
-			if err := store.db.QueryRowsCompoundCtx(r.Context(), database.TblSentiDLPIntegrations, database.ColsSentiDLPIntegration, "dlp_integration_id", integrationID, "tenant_id", tenantID, &existing); err != nil || len(existing) == 0 {
+			if err := store.db.QueryRowsCompoundCtx(r.Context(), database.TblSharDlpIntegrations, database.ColsSentiDLPIntegration, "dlp_integration_id", integrationID, "tenant_id", tenantID, &existing); err != nil || len(existing) == 0 {
 				respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "Integration not found")
 				return
 			}
@@ -564,7 +564,7 @@ func HandleDeleteDLPIntegration(store *DLPStore) http.HandlerFunc {
 				respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "Integration not found")
 				return
 			}
-			if err := store.db.SoftDeleteRowCompound(database.TblSentiDLPIntegrations, "dlp_integration_id", integrationID, "tenant_id", tenantID); err != nil {
+			if err := store.db.SoftDeleteRowCompound(database.TblSharDlpIntegrations, "dlp_integration_id", integrationID, "tenant_id", tenantID); err != nil {
 				slog.Error("DLP: Failed to delete integration", "error", err)
 				respond.InternalError(w, http.StatusInternalServerError, "Failed to delete integration", nil)
 				return
@@ -608,7 +608,7 @@ func HandleUpdateDLPIntegration(store *DLPStore) http.HandlerFunc {
 		} else {
 			// Fallback for test mode
 			var existing []DLPIntegration
-			if err := store.db.QueryRowsCompoundCtx(r.Context(), database.TblSentiDLPIntegrations, database.ColsSentiDLPIntegration, "dlp_integration_id", integrationID, "tenant_id", tenantID, &existing); err != nil || len(existing) == 0 {
+			if err := store.db.QueryRowsCompoundCtx(r.Context(), database.TblSharDlpIntegrations, database.ColsSentiDLPIntegration, "dlp_integration_id", integrationID, "tenant_id", tenantID, &existing); err != nil || len(existing) == 0 {
 				respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "Integration not found")
 				return
 			}
@@ -655,7 +655,7 @@ func HandleUpdateDLPIntegration(store *DLPStore) http.HandlerFunc {
 			return
 		}
 
-		if err := store.db.UpdateRowCompound(database.TblSentiDLPIntegrations, "dlp_integration_id", integrationID, "tenant_id", tenantID, update); err != nil {
+		if err := store.db.UpdateRowCompound(database.TblSharDlpIntegrations, "dlp_integration_id", integrationID, "tenant_id", tenantID, update); err != nil {
 			slog.Error("DLP: Failed to update integration", "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "Failed to update integration", nil)
 			return

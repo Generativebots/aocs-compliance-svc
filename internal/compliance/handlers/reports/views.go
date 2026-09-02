@@ -94,7 +94,7 @@ func HandleGetComplianceKPIs(db database.DB) http.HandlerFunc {
 			totalCases := 0
 			breachedCases := 0
 			if statErr := db.QueryRowsCtx(r.Context(),
-				database.TblHITLDecisions,
+				database.TblCoreHitl,
 				"sla_breached",
 				"tenant_id", tenantID,
 				&hitlRows,

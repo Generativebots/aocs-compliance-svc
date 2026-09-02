@@ -185,7 +185,7 @@ func HandleListGuardianVerdicts(db database.DB) http.HandlerFunc {
 		if deptID != "" && agentID == "" {
 			var agentRows []database.Agt
 			agentDept := make(map[string]string)
-			// M40: department_id moved to core_agent_config — use vw_agent_full, not TblAgents.
+			// M40: department_id moved to core_agent_config — use vw_agent_full, not TblCoreAgents.
 			if dbErr := db.QueryRowsCtx(r.Context(), database.TblAgentFullView, "agent_id,department_id",
 				"tenant_id", tenantID, &agentRows); dbErr == nil {
 				for _, a := range agentRows {

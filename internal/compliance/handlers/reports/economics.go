@@ -76,7 +76,7 @@ func HandleGetEscrowHistory(db database.DB) http.HandlerFunc {
 		if err != nil {
 			slog.Error("EscrowHistory query failed, falling back", "error", err)
 			var fallback []map[string]any
-			if _dbErr := db.QueryRowsWithin90Days(database.TblEscrowTransactions, database.ColsEscrowTransactions, tenantID, &fallback); _dbErr != nil {
+			if _dbErr := db.QueryRowsWithin90Days(database.TblCoreEscrowTxns, database.ColsEscrowTransactions, tenantID, &fallback); _dbErr != nil {
 				slog.Error("db operation failed", "method", "QueryRowsWithin90Days", "error", _dbErr)
 				respond.InternalError(w, http.StatusInternalServerError, "escrow_query_failed", nil)
 				return
@@ -130,7 +130,7 @@ func HandleValidateEscrow(db database.DB) http.HandlerFunc {
 		}
 		// Check if esc entry exists and is releasable
 		var rows []map[string]any
-		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblEscrowTransactions, "status,agent_id,tool_name,tenant_id", "transaction_id", req.EscrowID, &rows); _dbErr != nil {
+		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreEscrowTxns, "status,agent_id,tool_name,tenant_id", "transaction_id", req.EscrowID, &rows); _dbErr != nil {
 			slog.Error("db operation failed", "method", "QueryRows", "error", _dbErr)
 			respond.InternalError(w, http.StatusInternalServerError, "escrow_validate_query_failed", nil)
 			return
@@ -174,10 +174,10 @@ func HandleGetEconomicsOverview(db database.DB) http.HandlerFunc {
 		}
 		var staking, escrow []map[string]any
 		// nexus_staking_ledger → nexus_ledger (Wave-9 consolidation). entry_type replaces event_type.
-		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblNexusLedger, "entry_id,tenant_id,amount,entry_type,created_at", "", "", &staking); _dbErr != nil {
+		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblSharLedger, "entry_id,tenant_id,amount,entry_type,created_at", "", "", &staking); _dbErr != nil {
 			slog.Error("db operation failed", "method", "QueryRows", "error", _dbErr)
 		}
-		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblEscrowTransactions, "transaction_id,tenant_id,amount,status,created_at", "", "", &escrow); _dbErr != nil {
+		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreEscrowTxns, "transaction_id,tenant_id,amount,status,created_at", "", "", &escrow); _dbErr != nil {
 			slog.Error("db operation failed", "method", "QueryRows", "error", _dbErr)
 		}
 		var stakingTotal, escrowTotal float64
@@ -210,7 +210,7 @@ func HandleGetEconomicsRevenue(db database.DB) http.HandlerFunc {
 		}
 		var entries []map[string]any
 		// nexus_staking_ledger → nexus_ledger (Wave-9). entry_type replaces event_type; peer_id replaces agent_id.
-		if err := db.QueryRowsCtx(r.Context(), database.TblNexusLedger,
+		if err := db.QueryRowsCtx(r.Context(), database.TblSharLedger,
 			"entry_id,tenant_id,peer_id,amount,entry_type,properties,created_at",
 			"", "", &entries); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "query revenue", err)

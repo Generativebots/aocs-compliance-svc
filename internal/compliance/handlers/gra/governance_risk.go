@@ -38,7 +38,7 @@ import (
 var verdictCache = ttlcache.New[string, []byte](30 * time.Second)
 
 func HandleGetAlert(db database.DB) http.HandlerFunc {
-	return crudGetHandler(db, database.TblAlerts, "alert_id")
+	return crudGetHandler(db, database.TblSharAlerts, "alert_id")
 }
 
 // HandleDeleteAlert — DELETE /api/v1/alerts/{id}
@@ -80,18 +80,18 @@ func HandleGetAgentSchedule(db database.DB) http.HandlerFunc {
 
 // HandleGetTenantAgent — GET /api/v1/agents/{id}
 func HandleGetTenantAgent(db database.DB) http.HandlerFunc {
-	return crudGetHandler(db, database.TblAgents, "agent_id")
+	return crudGetHandler(db, database.TblCoreAgents, "agent_id")
 }
 
 // HandleGetA2AUseCase — GET /api/v1/nufa/a2a/{id}
 func HandleGetA2AUseCase(db database.DB) http.HandlerFunc {
-	return crudGetHandler(db, database.TblIAA2AUseCases, "use_case_id")
+	return crudGetHandler(db, database.TblCoreA2aUseCases, "use_case_id")
 }
 
 // HandleGetLLMMarketplace — GET /api/v1/llmmarketplace
 // Returns all marketplace listings for the tenant (list endpoint, not single-item).
 func HandleGetLLMMarketplace(db database.DB) http.HandlerFunc {
-	return crudListHandler(db, database.TblMarketplaceListings, "marketplace_listing_id")
+	return crudListHandler(db, database.TblExtcMarketplaceListings, "marketplace_listing_id")
 }
 
 // HandleListFederationPeers — GET /federation/peers
@@ -132,12 +132,12 @@ func HandleAdminGetFederationPeer(db database.DB) http.HandlerFunc {
 
 // HandleListAllAgents — GET /superadmin/agents — all agents across all tenants.
 func HandleListAllAgents(db database.DB) http.HandlerFunc {
-	return crudListAllHandler(db, database.TblAgents)
+	return crudListAllHandler(db, database.TblCoreAgents)
 }
 
 // HandleListAllTenants — GET /superadmin/tenants — all tenants on the platform.
 func HandleListAllTenants(db database.DB) http.HandlerFunc {
-	return crudListAllHandler(db, database.TblTenants)
+	return crudListAllHandler(db, database.TblSystTenants)
 }
 
 // HandleListAllVerdicts — GET /gov/verdicts
@@ -175,7 +175,7 @@ func HandleListAllVerdicts(db database.DB) http.HandlerFunc {
 
 		// Cache miss: query with column projection + LIMIT
 		var rows []map[string]any
-		if err := db.QueryRowsCtx(r.Context(), database.TblVerdicts, cols, "tenant_id", tenantID, &rows); err != nil {
+		if err := db.QueryRowsCtx(r.Context(), database.TblCoreVerdicts, cols, "tenant_id", tenantID, &rows); err != nil {
 			slog.Error("HandleListAllVerdicts: query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to list verdicts", err)
 			return
@@ -200,7 +200,7 @@ func HandleListAllVerdicts(db database.DB) http.HandlerFunc {
 
 // HandleListAllEntitlements — GET /superadmin/entitlements — all JIT entitlements across tenants.
 func HandleListAllEntitlements(db database.DB) http.HandlerFunc {
-	return crudListAllHandler(db, database.TblJITEntitlements)
+	return crudListAllHandler(db, database.TblCoreJit)
 }
 
 // HandleListEntitlements — GET /admin/platform/entitlements (tenant-scoped)
@@ -208,7 +208,7 @@ func HandleListAllEntitlements(db database.DB) http.HandlerFunc {
 // JIT entitlements — uses crudListHandler (TenantScoped:true, FilterCol:"tenant_id").
 // Contrast with HandleListAllEntitlements (SuperAdmin, cross-tenant, no filter).
 func HandleListEntitlements(db database.DB) http.HandlerFunc {
-	return crudListHandler(db, database.TblJITEntitlements, "")
+	return crudListHandler(db, database.TblCoreJit, "")
 }
 
 // HandleListAllAuditLog — GET /admin/platform/audit-log — all platform events across tenants.
@@ -219,7 +219,7 @@ func HandleListEntitlements(db database.DB) http.HandlerFunc {
 //   - ?tenant_id=<uuid>              — scope to a specific tenant
 //   - ?agent_id=<uuid>               — scope to a specific agent
 //
-// database.TblPlatformEvents (the canonical audit event store).
+// database.TblCoreEvents (the canonical audit event store).
 func HandleListAllAuditLog(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if respond.RequireDB(w, db) {
@@ -237,20 +237,20 @@ func HandleListAllAuditLog(db database.DB) http.HandlerFunc {
 		// Use the most selective compound filter available; all paths use 90-day window
 		switch {
 		case eventType != "" && tenantFilter != "":
-			err = db.QueryRowsWithin90DaysCompound(database.TblPlatformEvents, database.ColsPlatformEvent,
+			err = db.QueryRowsWithin90DaysCompound(database.TblCoreEvents, database.ColsPlatformEvent,
 				tenantFilter, "event_type", eventType, &result)
 		case agentFilter != "" && tenantFilter != "":
-			err = db.QueryRowsWithin90DaysCompound(database.TblPlatformEvents, database.ColsPlatformEvent,
+			err = db.QueryRowsWithin90DaysCompound(database.TblCoreEvents, database.ColsPlatformEvent,
 				tenantFilter, "agent_id", agentFilter, &result)
 		case tenantFilter != "":
-			err = db.QueryRowsWithin90Days(database.TblPlatformEvents, database.ColsPlatformEvent,
+			err = db.QueryRowsWithin90Days(database.TblCoreEvents, database.ColsPlatformEvent,
 				tenantFilter, &result)
 		case eventType != "":
 			// event_type-only filter: use global 90-day scan (superadmin, no tenant scope)
-			err = db.QueryRowsGlobalWithin90Days(database.TblPlatformEvents, database.ColsPlatformEvent, &result)
+			err = db.QueryRowsGlobalWithin90Days(database.TblCoreEvents, database.ColsPlatformEvent, &result)
 		default:
 			// Superadmin full scan — 90-day window replaces unbounded PostgREST scan
-			err = db.QueryRowsGlobalWithin90Days(database.TblPlatformEvents, database.ColsPlatformEvent, &result)
+			err = db.QueryRowsGlobalWithin90Days(database.TblCoreEvents, database.ColsPlatformEvent, &result)
 		}
 
 		if err != nil {
@@ -314,7 +314,7 @@ func HandleListGRARegulatoryFrameworks(db database.DB, coreClient *serviceclient
 		} else {
 			// Fallback for test/offline mode
 			var tRows []map[string]any
-			if _dbErr := db.QueryRowsCursor(database.TblTenants, "country_of_operation", "tenant_id", tenantID, database.ParseCursorPage(r), &tRows); _dbErr != nil {
+			if _dbErr := db.QueryRowsCursor(database.TblSystTenants, "country_of_operation", "tenant_id", tenantID, database.ParseCursorPage(r), &tRows); _dbErr != nil {
 				slog.Error("db operation failed", "method", "QueryRows", "error", _dbErr)
 			}
 			if len(tRows) > 0 {
@@ -385,7 +385,7 @@ func HandleListGRAComplianceObligations(db database.DB, coreClient *serviceclien
 		} else {
 			// Fallback for test/offline mode
 			var tRows []map[string]any
-			if _dbErr := db.QueryRowsCursor(database.TblTenants, "country_of_operation", "tenant_id", tenantID, database.ParseCursorPage(r), &tRows); _dbErr != nil {
+			if _dbErr := db.QueryRowsCursor(database.TblSystTenants, "country_of_operation", "tenant_id", tenantID, database.ParseCursorPage(r), &tRows); _dbErr != nil {
 				slog.Error("db operation failed", "method", "QueryRows", "error", _dbErr)
 			}
 			if len(tRows) > 0 {

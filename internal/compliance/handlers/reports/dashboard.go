@@ -124,7 +124,7 @@ func HandleGetContractsClaims(db database.DB) http.HandlerFunc {
 
 		runConcurrent(r.Context(), []dbQuery{
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblEBCLContracts, database.ColsNeufaEbclContracts, "tenant_id", tenantID, &contracts)
+				return db.QueryRowsCtx(r.Context(), database.TblCoreEbcl, database.ColsNeufaEbclContracts, "tenant_id", tenantID, &contracts)
 			}},
 			{fn: func() error {
 				return db.QueryRowsCtx(r.Context(), database.TblContractExecs, database.ColsNeufaEbclContractExecutions, "tenant_id", tenantID, &executions)
@@ -157,10 +157,10 @@ func HandleGetEscrowClaims(db database.DB) http.HandlerFunc {
 
 		runConcurrent(r.Context(), []dbQuery{
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblEscrowTransactions, database.ColsAocsEscrowTransactions, "tenant_id", tenantID, &history)
+				return db.QueryRowsCtx(r.Context(), database.TblCoreEscrowTxns, database.ColsAocsEscrowTransactions, "tenant_id", tenantID, &history)
 			}},
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblHITLDecisions, database.ColsHitlDecisions, "tenant_id", tenantID, &decisions)
+				return db.QueryRowsCtx(r.Context(), database.TblCoreHitl, database.ColsHitlDecisions, "tenant_id", tenantID, &decisions)
 			}},
 		})
 
@@ -223,10 +223,10 @@ func HandleGetActivitiesClaims(db database.DB) http.HandlerFunc {
 
 		runConcurrent(r.Context(), []dbQuery{
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblActivities, database.ColsIAActivity, "tenant_id", tenantID, &act)
+				return db.QueryRowsCtx(r.Context(), database.TblCoreDispatches, database.ColsIAActivity, "tenant_id", tenantID, &act)
 			}},
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblHITLDecisions, database.ColsHitlDecisions, "tenant_id", tenantID, &approvals)
+				return db.QueryRowsCtx(r.Context(), database.TblCoreHitl, database.ColsHitlDecisions, "tenant_id", tenantID, &approvals)
 			}},
 		})
 
@@ -308,7 +308,7 @@ func HandleGetRLHCClaims(db database.DB) http.HandlerFunc {
 				return db.QueryRowsCtx(r.Context(), database.TblRLHCClusters, database.ColsQcoreRlhcCorrectionClusters, "tenant_id", tenantID, &clusters)
 			}},
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblHITLDecisions, database.ColsHitlDecisions, "tenant_id", tenantID, &feedback)
+				return db.QueryRowsCtx(r.Context(), database.TblCoreHitl, database.ColsHitlDecisions, "tenant_id", tenantID, &feedback)
 			}},
 		})
 
@@ -338,11 +338,11 @@ func HandleGetSecurityClaims(db database.DB) http.HandlerFunc {
 
 		runConcurrent(r.Context(), []dbQuery{
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblAlerts, database.ColsSentiAlerts, "tenant_id", tenantID, &attacks)
+				return db.QueryRowsCtx(r.Context(), database.TblSharAlerts, database.ColsSentiAlerts, "tenant_id", tenantID, &attacks)
 			}},
 			// nolint:tenant_filter — SuperAdmin dashboard: platform-wide event stream
 			{fn: func() error {
-				return db.QueryRowsWithin90Days(database.TblPlatformEvents, database.ColsPlatformEvents, tenantID, &traffic)
+				return db.QueryRowsWithin90Days(database.TblCoreEvents, database.ColsPlatformEvents, tenantID, &traffic)
 			}},
 		})
 
@@ -373,11 +373,11 @@ func HandleGetDLPClaims(db database.DB) http.HandlerFunc {
 
 		runConcurrent(r.Context(), []dbQuery{
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblAlerts, database.ColsSentiAlerts, "tenant_id", tenantID, &statusRows)
+				return db.QueryRowsCtx(r.Context(), database.TblSharAlerts, database.ColsSentiAlerts, "tenant_id", tenantID, &statusRows)
 			}},
 			{fn: func() error {
 				// N-3 FIX: was "", "" (no tenant filter) — leaked all tenants' DLP integrations.
-				return db.QueryRowsCtx(r.Context(), database.TblSentiDLPIntegrations, database.ColsSentiDlpIntegrations, "tenant_id", tenantID, &integrations)
+				return db.QueryRowsCtx(r.Context(), database.TblSharDlpIntegrations, database.ColsSentiDlpIntegrations, "tenant_id", tenantID, &integrations)
 			}},
 			{fn: func() error {
 				// B-D2 FIX: was querying core_ebcl (EBCL contracts ≠ marketplace).
@@ -417,15 +417,15 @@ func HandleGetAccessClaims(db database.DB) http.HandlerFunc {
 		runConcurrent(r.Context(), []dbQuery{
 			// nolint:tenant_filter — SuperAdmin RBAC view: cross-tenant permission data
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblRolePermissions, database.ColsAocsDepartmentPermissions, "", "", &permissions)
+				return db.QueryRowsCtx(r.Context(), database.TblSystRolePerms, database.ColsAocsDepartmentPermissions, "", "", &permissions)
 			}},
 			// nolint:tenant_filter — SuperAdmin RBAC view: cross-tenant roles
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblPlatformRoles, database.ColsAocsPlatformRoles, "", "", &roles)
+				return db.QueryRowsCtx(r.Context(), database.TblSystRoles, database.ColsAocsPlatformRoles, "", "", &roles)
 			}},
 			// nolint:tenant_filter — SuperAdmin RBAC view: cross-tenant departments
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblPlatformDepartments, database.ColsAocsPlatformDepartments, "", "", &departments)
+				return db.QueryRowsCtx(r.Context(), database.TblSystDepartments, database.ColsAocsPlatformDepartments, "", "", &departments)
 			}},
 		})
 
@@ -451,7 +451,7 @@ func HandleGetSovereigntyClaims(db database.DB) http.HandlerFunc {
 
 		runConcurrent(r.Context(), []dbQuery{
 			// nolint:tenant_filter — SuperAdmin dashboard: platform-wide tenant listing
-			{fn: func() error { return db.QueryRowsCtx(r.Context(), database.TblTenants, database.ColsAocsTenants, "", "", &tenants) }},
+			{fn: func() error { return db.QueryRowsCtx(r.Context(), database.TblSystTenants, database.ColsAocsTenants, "", "", &tenants) }},
 			// nolint:tenant_filter — SuperAdmin: platform configuration (not tenant-scoped)
 			{fn: func() error {
 				return db.QueryRowsCtx(r.Context(), database.TblPlatformConfig, database.ColsAocsPlatformConfig, "category", "sovereign", &configs)
@@ -485,10 +485,10 @@ func HandleGetAnalyticsClaims(db database.DB) http.HandlerFunc {
 
 		runConcurrent(r.Context(), []dbQuery{
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblAgents, "agent_id,trust_score,risk_tier,behavioral_drift,status", "tenant_id", tenantID, &agt)
+				return db.QueryRowsCtx(r.Context(), database.TblCoreAgents, "agent_id,trust_score,risk_tier,behavioral_drift,status", "tenant_id", tenantID, &agt)
 			}},
 			{fn: func() error {
-				return db.QueryRowsWithin90Days(database.TblPlatformEvents, database.ColsPlatformEvents, tenantID, &interactions)
+				return db.QueryRowsWithin90Days(database.TblCoreEvents, database.ColsPlatformEvents, tenantID, &interactions)
 			}},
 			// B-NEW FIX: was a duplicate core_events query (same table, same filter as interactions).
 			// Replaced with qcore_evidence_records to give distinct metrics data for the analytics dashboard.
@@ -515,7 +515,7 @@ func HandleGetAnalyticsClaims(db database.DB) http.HandlerFunc {
 		}
 
 		respond.JSON(w, http.StatusOK, map[string]any{
-			database.TblAgents:  orEmpty(agt),
+			database.TblCoreAgents:  orEmpty(agt),
 			"interactions": orEmpty(interactions),
 			"metrics":      orEmpty(metrics),
 			"kpis": map[string]any{
@@ -552,7 +552,7 @@ func HandleGetFederationClaims(db database.DB) http.HandlerFunc {
 			}},
 			// nolint:tenant_filter — SuperAdmin dashboard: platform-wide event stream
 			{fn: func() error {
-				return db.QueryRowsGlobalWithin90Days(database.TblPlatformEvents, database.ColsPlatformEvents, &growth)
+				return db.QueryRowsGlobalWithin90Days(database.TblCoreEvents, database.ColsPlatformEvents, &growth)
 			}},
 		})
 
@@ -606,7 +606,7 @@ func HandleGetFedGovClaims(db database.DB) http.HandlerFunc {
 			}},
 			// jury/committee members are stored as distinct reviewer entries in core_hitl
 			{fn: func() error {
-				return db.QueryRowsCompound(database.TblHITLDecisions, database.ColsHitlDecisions, "decision_type", "JURY", "tenant_id", tenantID, &members)
+				return db.QueryRowsCompound(database.TblCoreHitl, database.ColsHitlDecisions, "decision_type", "JURY", "tenant_id", tenantID, &members)
 			}},
 		})
 

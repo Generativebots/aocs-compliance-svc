@@ -106,7 +106,7 @@ func HandleResolveBulkHITL(db database.DB, coreClients ...*serviceclient.Client)
 			} else {
 				// Fallback: direct DB when coreClient is not wired
 				err := db.UpdateRowCompound(
-					database.TblHITLDecisions,
+					database.TblCoreHitl,
 					"decision_id", decisionID,
 					"tenant_id", tenantID,
 					map[string]any{

@@ -105,7 +105,7 @@ func runSybilScan(ctx context.Context, db database.DB) {
 			}); _dbErr != nil {
 				slog.Error("db.InsertRow failed (best-effort)", "error", _dbErr)
 			}
-			if _dbErr := db.InsertRow(database.TblSentiIDSEvents, map[string]interface{}{
+			if _dbErr := db.InsertRow(database.TblSharIdsEvents, map[string]interface{}{
 				"tenant_id":    tenantID,
 				"signature_id": "SYBIL_IP_CLUSTER",
 				"source_ip":    ip,

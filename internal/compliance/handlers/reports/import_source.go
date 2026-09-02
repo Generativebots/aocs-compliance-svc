@@ -29,7 +29,7 @@ func HandleGetImportSource(db database.DB) http.HandlerFunc {
 			return
 		}
 		var rows []map[string]any
-		if dbErr := db.QueryRowsCompound(database.TblCatalog,
+		if dbErr := db.QueryRowsCompound(database.TblExtcCatalog,
 			"catalog_id,name,tool_type,credential_config,status,last_sync_at,tenant_id,created_at",
 			"catalog_id", id, "tenant_id", tenantID, &rows); dbErr != nil || len(rows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "import source not found")
@@ -78,7 +78,7 @@ func HandleUpdateImportSource(db database.DB) http.HandlerFunc {
 			return
 		}
 		// Scope update to calling tenant to prevent cross-tenant write.
-		if dbErr := db.UpdateRowCompound(database.TblCatalog, "catalog_id", id, "tenant_id", tenantID, updates); dbErr != nil {
+		if dbErr := db.UpdateRowCompound(database.TblExtcCatalog, "catalog_id", id, "tenant_id", tenantID, updates); dbErr != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "update import source", dbErr)
 			return
 		}
@@ -100,7 +100,7 @@ func HandleDeleteImportSource(db database.DB) http.HandlerFunc {
 		if !idOk {
 			return
 		}
-		if dbErr := db.SoftDeleteRowCompound(database.TblCatalog, "catalog_id", id, "tenant_id", tenantID); dbErr != nil {
+		if dbErr := db.SoftDeleteRowCompound(database.TblExtcCatalog, "catalog_id", id, "tenant_id", tenantID); dbErr != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "delete import source", dbErr)
 			return
 		}

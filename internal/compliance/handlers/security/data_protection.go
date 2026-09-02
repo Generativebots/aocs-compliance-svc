@@ -67,7 +67,7 @@ func (s *DLPStore) LoadFromDB() {
 	} else {
 		// Fallback: direct DB access only when coreClient is unavailable (e.g. test mode)
 		// nolint:tenant_filter — startup hydration: load ALL tenant PID monitors
-		if err := s.db.QueryRowsCtx(context.Background(), database.TblEnforcementActions, "metadata", "action_type", "dlp_pid_monitor", &rows); err != nil {
+		if err := s.db.QueryRowsCtx(context.Background(), database.TblCoreEnforcementActions, "metadata", "action_type", "dlp_pid_monitor", &rows); err != nil {
 			return
 		}
 	}

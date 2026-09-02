@@ -149,7 +149,7 @@ func runResourceGraphScan(ctx context.Context, db database.DB) {
 
 	// 1. Agent nodes
 	// M40: agent_type moved to core_agent_config — must read vw_agent_full (JOIN view).
-	// Reading TblAgents directly returns NULL agent_type → broken graph topology.
+	// Reading TblCoreAgents directly returns NULL agent_type → broken graph topology.
 	var agents []struct {
 		AgentID   string `json:"agent_id"`
 		TenantID  string `json:"tenant_id"`
@@ -228,7 +228,7 @@ func runResourceGraphScan(ctx context.Context, db database.DB) {
 			PolicyID string `json:"policy_id"`
 			TenantID string `json:"tenant_id"`
 		}
-		if err := db.QueryRowsCtx(ctx, database.TblHITLDecisions, "agent_id,policy_id,tenant_id",
+		if err := db.QueryRowsCtx(ctx, database.TblCoreHitl, "agent_id,policy_id,tenant_id",
 			"tenant_id", tid, &decisions); err != nil {
 			slog.Error("policy binding edges (via hitl_decisions) query failed", "tenant_id", tid, "error", err)
 			continue

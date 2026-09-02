@@ -213,7 +213,7 @@ func HandleGetComplianceSIEMConfig(db database.DB) http.HandlerFunc {
 			return
 		}
 		var rows []map[string]any
-		if err := db.QueryRowsCursor(database.TblTenantCredentials, database.ColsSiemConfigs, "tenant_id", tenantID, database.CursorPage{Limit: 200}, &rows); err != nil || len(rows) == 0 {
+		if err := db.QueryRowsCursor(database.TblCoreTenantCreds, database.ColsSiemConfigs, "tenant_id", tenantID, database.CursorPage{Limit: 200}, &rows); err != nil || len(rows) == 0 {
 			respond.OK(w, map[string]any{"tenant_id": tenantID, "webhook_url": "", "format": "CEF", "enabled": false})
 			return
 		}
@@ -244,7 +244,7 @@ func HandleUpdateComplianceSIEMConfig(db database.DB) http.HandlerFunc {
 		// L0-E CAT-D FIX: existence check determines INSERT vs UPDATE path.
 		// If this read fails and we default to INSERT, we get a duplicate-key error on every call.
 		// Role enrichment: non-critical — if this fails, user response is returned without roles.
-		readErr := db.QueryRowsCursor(database.TblTenantCredentials, "tenant_id", "tenant_id", tenantID, database.CursorPage{Limit: 200}, &ex)
+		readErr := db.QueryRowsCursor(database.TblCoreTenantCreds, "tenant_id", "tenant_id", tenantID, database.CursorPage{Limit: 200}, &ex)
 		if readErr != nil {
 			slog.Error("HandleUpsertSIEMConfig: existence check failed", "tenant_id", tenantID, "error", readErr)
 			respond.ErrorWithCode(w, http.StatusServiceUnavailable, respond.ErrCodeUnavailable, "SIEM config temporarily unavailable — retry")
@@ -275,7 +275,7 @@ func HandleTestSIEMWebhook(db database.DB) http.HandlerFunc {
 			return
 		}
 		var rows []map[string]any
-		if err := db.QueryRowsCursor(database.TblTenantCredentials, database.ColsSiemConfigs, "tenant_id", tenantID, database.CursorPage{Limit: 200}, &rows); err != nil || len(rows) == 0 {
+		if err := db.QueryRowsCursor(database.TblCoreTenantCreds, database.ColsSiemConfigs, "tenant_id", tenantID, database.CursorPage{Limit: 200}, &rows); err != nil || len(rows) == 0 {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "no SIEM config found")
 			return
 		}
@@ -344,7 +344,7 @@ func HandleCreateCaseExportJob(db database.DB) http.HandlerFunc {
 			return
 		}
 		jobID := generatePlatformID()
-		if err := db.InsertRow(database.TblExportJobs, map[string]any{
+		if err := db.InsertRow(database.TblCoreJobs, map[string]any{
 			"job_id": jobID, "tenant_id": tenantID, "format": body.Format,
 			"report_type": body.ReportType, "status": "PENDING",
 		}); err != nil {

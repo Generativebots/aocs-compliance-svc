@@ -45,10 +45,10 @@ func HandleListAgentTelemetry(db database.DB) http.HandlerFunc {
 		var err error
 
 		if agentID != "" {
-			err = db.QueryRowsCompound(database.TblAgentTelemetry, cols,
+			err = db.QueryRowsCompound(database.TblCoreAgentTelemetry, cols,
 				"tenant_id", tenantID, "agent_id", agentID, &rows)
 		} else {
-			err = db.QueryRowsLimited(database.TblAgentTelemetry, cols,
+			err = db.QueryRowsLimited(database.TblCoreAgentTelemetry, cols,
 				"tenant_id", tenantID, pp, &rows)
 		}
 		if err != nil {
@@ -91,7 +91,7 @@ func HandleGetAgentConfig(db database.DB) http.HandlerFunc {
 		}
 
 		var rows []map[string]any
-		if err := db.QueryRowsCompound(database.TblAgentConfig, database.ColsAgentConfig,
+		if err := db.QueryRowsCompound(database.TblCoreAgentConfig, database.ColsAgentConfig,
 			"tenant_id", tenantID, "agent_id", agentID, &rows); err != nil {
 			slog.Error("HandleGetAgentConfig: query failed",
 				"tenant_id", tenantID, "agent_id", agentID, "error", err)

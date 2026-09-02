@@ -42,7 +42,7 @@ func HandleGetTrustTaxClaims(db database.DB) http.HandlerFunc {
 					"event_type", "FEDERATION_TAX", "tenant_id", tenantID, &taxes)
 			}},
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblGovernanceConfig, database.ColsAocsTenantGovernanceConfig, "tenant_id", tenantID, &configRows)
+				return db.QueryRowsCtx(r.Context(), database.TblCoreGovConfig, database.ColsAocsTenantGovernanceConfig, "tenant_id", tenantID, &configRows)
 			}},
 		})
 
@@ -92,7 +92,7 @@ func HandleGetImpactClaims(db database.DB) http.HandlerFunc {
 				return db.QueryRowsCtx(r.Context(), database.TblQCoreBizImpact, impactCols, "tenant_id", tenantID, &allImpact)
 			}},
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblNexusComplianceReports, database.ColsNexusComplianceReports, "tenant_id", tenantID, &reports)
+				return db.QueryRowsCtx(r.Context(), database.TblSharComplianceReports, database.ColsNexusComplianceReports, "tenant_id", tenantID, &reports)
 			}},
 		})
 
@@ -148,7 +148,7 @@ func HandleGetGovernanceTestingClaims(db database.DB) http.HandlerFunc {
 				return db.QueryRowsCtx(r.Context(), database.TblQCorePolicies, database.ColsQcorePolicies, "tenant_id", tenantID, &tests)
 			}},
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblNexusComplianceReports, database.ColsNexusComplianceReports, "tenant_id", tenantID, &coverage)
+				return db.QueryRowsCtx(r.Context(), database.TblSharComplianceReports, database.ColsNexusComplianceReports, "tenant_id", tenantID, &coverage)
 			}},
 		})
 
@@ -183,7 +183,7 @@ func HandleGetMarketplaceAnalyticsClaims(db database.DB) http.HandlerFunc {
 
 		runConcurrent(r.Context(), []dbQuery{
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblNexusLedger, database.ColsNufaMarketplaceRevenuePayouts, "buyer_tenant_id", tenantID, &revenue)
+				return db.QueryRowsCtx(r.Context(), database.TblSharLedger, database.ColsNufaMarketplaceRevenuePayouts, "buyer_tenant_id", tenantID, &revenue)
 			}},
 			{fn: func() error {
 				return db.QueryRowsCtx(r.Context(), database.TblConnectorInstalls, database.ColsNufaMarketplaceInstallations, "tenant_id", tenantID, &billing)
@@ -222,10 +222,10 @@ func HandleGetTrifactorClaims(db database.DB) http.HandlerFunc {
 
 		runConcurrent(r.Context(), []dbQuery{
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblEscrowTransactions, database.ColsAocsEscrowTransactions, "tenant_id", tenantID, &history)
+				return db.QueryRowsCtx(r.Context(), database.TblCoreEscrowTxns, database.ColsAocsEscrowTransactions, "tenant_id", tenantID, &history)
 			}},
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblHITLDecisions, database.ColsHitlDecisions, "tenant_id", tenantID, &decisions)
+				return db.QueryRowsCtx(r.Context(), database.TblCoreHitl, database.ColsHitlDecisions, "tenant_id", tenantID, &decisions)
 			}},
 		})
 
@@ -313,13 +313,13 @@ func HandleGetSanctionSummary(db database.DB) http.HandlerFunc {
 		// during outages. Operators saw clean dashboard during most dangerous periods.
 		dataUnavailable := false
 		if tenantID != "" {
-			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblComplianceCases, database.ColsComplianceCases, "tenant_id", tenantID, &actions); _dbErr != nil {
+			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreCompliance, database.ColsComplianceCases, "tenant_id", tenantID, &actions); _dbErr != nil {
 				slog.Error("X-08: compliance actions DB query failed — dashboard will show DATA_UNAVAILABLE",
 					"tenant_id", tenantID, "err", _dbErr)
 				dataUnavailable = true
 			}
 		} else {
-			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblComplianceCases, database.ColsComplianceCases, "tenant_id", tenantID, &actions); _dbErr != nil {
+			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreCompliance, database.ColsComplianceCases, "tenant_id", tenantID, &actions); _dbErr != nil {
 				slog.Error("X-08: compliance actions DB query failed (no tenant filter) — dashboard will show DATA_UNAVAILABLE", "err", _dbErr)
 				dataUnavailable = true
 			}
@@ -392,11 +392,11 @@ func HandleGetViolationSummary(db database.DB) http.HandlerFunc {
 			CreatedAt  string  `json:"created_at"`
 		}
 		if tenantID != "" {
-			if _dbErr := db.QueryRowsCompound(database.TblComplianceCases, database.ColsComplianceCases, "action_type", "compliance_violation", "tenant_id", tenantID, &actions); _dbErr != nil {
+			if _dbErr := db.QueryRowsCompound(database.TblCoreCompliance, database.ColsComplianceCases, "action_type", "compliance_violation", "tenant_id", tenantID, &actions); _dbErr != nil {
 				slog.Error("db operation failed", "method", "QueryRowsCompound", "error", _dbErr)
 			}
 		} else {
-			if _dbErr := db.QueryRowsCompoundCtx(r.Context(), database.TblComplianceCases, database.ColsComplianceCases, "action_type", "compliance_violation", "tenant_id", tenantID, &actions); _dbErr != nil {
+			if _dbErr := db.QueryRowsCompoundCtx(r.Context(), database.TblCoreCompliance, database.ColsComplianceCases, "action_type", "compliance_violation", "tenant_id", tenantID, &actions); _dbErr != nil {
 				slog.Error("db operation failed", "method", "QueryRows", "error", _dbErr)
 			}
 		}

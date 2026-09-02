@@ -32,7 +32,7 @@ func HandleListNexusTrends(db database.DB) http.HandlerFunc {
 			return
 		}
 		var events []map[string]any
-		if _dbErr := db.QueryRowsWithin90Days(database.TblPlatformEvents, "event_type,created_at", tenantID, &events); _dbErr != nil {
+		if _dbErr := db.QueryRowsWithin90Days(database.TblCoreEvents, "event_type,created_at", tenantID, &events); _dbErr != nil {
 			slog.Error("QueryRowsWithin90Days failed", "error", _dbErr)
 		}
 		// Aggregate by day
@@ -68,12 +68,12 @@ func HandleListNexusUsage(db database.DB) http.HandlerFunc {
 			return
 		}
 		var escrow []map[string]any
-		if _dbErr := db.QueryRowsWithin90Days(database.TblEscrowTransactions, "amount,status,created_at", tenantID, &escrow); _dbErr != nil {
+		if _dbErr := db.QueryRowsWithin90Days(database.TblCoreEscrowTxns, "amount,status,created_at", tenantID, &escrow); _dbErr != nil {
 			slog.Error("QueryRowsWithin90Days failed", "error", _dbErr)
 		}
 		var staking []map[string]any
 		// nexus_staking_ledger → nexus_ledger (Wave-9 consolidation). entry_type replaces event_type.
-		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblNexusLedger, "amount,entry_type,created_at", "tenant_id", tenantID, &staking); _dbErr != nil {
+		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblSharLedger, "amount,entry_type,created_at", "tenant_id", tenantID, &staking); _dbErr != nil {
 			slog.Error("QueryRows failed", "error", _dbErr)
 		}
 		totalEscrow, totalStaking := 0.0, 0.0
@@ -202,7 +202,7 @@ func HandleStreamNexusRealtime(db database.DB) http.HandlerFunc {
 			return
 		}
 		var events []map[string]any
-		if _dbErr := db.QueryRowsCursor(database.TblPlatformEvents,
+		if _dbErr := db.QueryRowsCursor(database.TblCoreEvents,
 			"event_type,action,severity,agent_id,created_at",
 			"tenant_id", tenantID, database.ParseCursorPage(r), &events); _dbErr != nil {
 			slog.Error("QueryRowsLimited failed", "error", _dbErr)
@@ -240,7 +240,7 @@ func HandleGetMonitorGeoSpread(db database.DB) http.HandlerFunc {
 		}
 		// core_events has no top-level ip_address column — it lives in payload JSON.
 		var events []map[string]any
-		if _dbErr := db.QueryRowsWithin90Days(database.TblPlatformEvents, "event_type,payload,created_at", tenantID, &events); _dbErr != nil {
+		if _dbErr := db.QueryRowsWithin90Days(database.TblCoreEvents, "event_type,payload,created_at", tenantID, &events); _dbErr != nil {
 			slog.Error("QueryRowsWithin90Days failed", "error", _dbErr)
 		}
 		byIP := map[string]int{}
@@ -280,7 +280,7 @@ func HandleGetMonitorDecisionQuality(db database.DB) http.HandlerFunc {
 			return
 		}
 		var decisions []map[string]any
-		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblHITLDecisions, "decision_id,status,sla_breach_at,created_at", "tenant_id", tenantID, &decisions); _dbErr != nil {
+		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreHitl, "decision_id,status,sla_breach_at,created_at", "tenant_id", tenantID, &decisions); _dbErr != nil {
 			slog.Error("QueryRows failed", "error", _dbErr)
 		}
 		total := len(decisions)
@@ -324,13 +324,13 @@ func HandleSearchMonitor(db database.DB) http.HandlerFunc {
 		eventType := r.URL.Query().Get("event_type")
 		var events []map[string]any
 		if eventType != "" {
-			if _dbErr := db.QueryRowsWithin90DaysCompound(database.TblPlatformEvents,
+			if _dbErr := db.QueryRowsWithin90DaysCompound(database.TblCoreEvents,
 				"event_type,action,severity,agent_id,created_at",
 				tenantID, "event_type", eventType, &events); _dbErr != nil {
 				slog.Error("QueryRowsWithin90DaysCompound failed", "error", _dbErr)
 			}
 		} else {
-			if _dbErr := db.QueryRowsLimitedWithWindow(database.TblPlatformEvents,
+			if _dbErr := db.QueryRowsLimitedWithWindow(database.TblCoreEvents,
 				"event_type,action,severity,agent_id,created_at",
 				"tenant_id", tenantID, 90, database.PageParams{Limit: 100}, &events); _dbErr != nil {
 				slog.Error("QueryRowsLimitedWithWindow failed", "error", _dbErr)
@@ -365,7 +365,7 @@ func HandleListMonitorTrends(db database.DB) http.HandlerFunc {
 			return
 		}
 		var alerts []map[string]any
-		if _dbErr := db.QueryRowsWithin90Days(database.TblAlerts, "alert_type,severity,created_at", tenantID, &alerts); _dbErr != nil {
+		if _dbErr := db.QueryRowsWithin90Days(database.TblSharAlerts, "alert_type,severity,created_at", tenantID, &alerts); _dbErr != nil {
 			slog.Error("QueryRowsWithin90Days failed", "error", _dbErr)
 		}
 		byDay := map[string]int{}
@@ -452,7 +452,7 @@ func HandleGetIntelForecast(db database.DB) http.HandlerFunc {
 			slog.Error("QueryRowsWithin90Days failed", "error", _dbErr)
 		}
 		var verdicts []map[string]any
-		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblVerdicts, "verdict_id,outcome,created_at", "tenant_id", tenantID, &verdicts); _dbErr != nil {
+		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreVerdicts, "verdict_id,outcome,created_at", "tenant_id", tenantID, &verdicts); _dbErr != nil {
 			slog.Error("QueryRows failed", "error", _dbErr)
 		}
 		total := 0.0

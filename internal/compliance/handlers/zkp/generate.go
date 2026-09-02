@@ -371,7 +371,7 @@ func HandleGenerateZKPProof(db database.DB) http.HandlerFunc {
 		var prevRows []struct {
 			ChallengeID string `json:"challenge_id"`
 		}
-		if err := db.QueryRowsCompound(database.TblSentiZKPVerifications, "challenge_id",
+		if err := db.QueryRowsCompound(database.TblSharZkpVerify, "challenge_id",
 			"agent_id", req.AgentID, "tenant_id", tenantID, &prevRows); err == nil && len(prevRows) > 0 {
 			previousCommitment = prevRows[len(prevRows)-1].ChallengeID
 		}
@@ -428,7 +428,7 @@ func HandleGenerateZKPProof(db database.DB) http.HandlerFunc {
 			record.ExecutionID = &req.ExecutionID
 		}
 
-		if err := db.InsertRow(database.TblSentiZKPVerifications, record); err != nil {
+		if err := db.InsertRow(database.TblSharZkpVerify, record); err != nil {
 			slog.Error("GenerateZKPProof: persist failed (non-fatal)", "agent_id", req.AgentID, "error", err)
 			// Non-fatal: return proof even if DB write fails
 		}

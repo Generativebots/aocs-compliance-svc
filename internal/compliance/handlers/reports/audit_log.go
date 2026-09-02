@@ -84,10 +84,10 @@ func HandleAdminListGovernanceAuditLogs(db database.DB) http.HandlerFunc {
 			result = []map[string]any{}
 			var fbErr error
 			if caseID != "" {
-				fbErr = db.QueryRowsCompound(database.TblPlatformEvents, database.ColsPlatformEvent,
+				fbErr = db.QueryRowsCompound(database.TblCoreEvents, database.ColsPlatformEvent,
 					"tenant_id", tenantID, "entity_id", caseID, &result)
 			} else {
-				fbErr = db.QueryRowsCtx(r.Context(), database.TblPlatformEvents, database.ColsPlatformEvent,
+				fbErr = db.QueryRowsCtx(r.Context(), database.TblCoreEvents, database.ColsPlatformEvent,
 					"tenant_id", tenantID, &result)
 			}
 			if fbErr != nil {
@@ -142,7 +142,7 @@ func HandleListCaseEvents(db database.DB) http.HandlerFunc {
 
 		// (cases are stored as entity_type=HITL_CASE / entity_id=case_id in platform events).
 		var result []map[string]any
-		if err := db.QueryRowsWithin90DaysCompound(database.TblPlatformEvents, database.ColsPlatformEvent, tenantID, "entity_id", caseID, &result); err != nil {
+		if err := db.QueryRowsWithin90DaysCompound(database.TblCoreEvents, database.ColsPlatformEvent, tenantID, "entity_id", caseID, &result); err != nil {
 			slog.Error("list case events failed", "error", err, "case_id", caseID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to query case events", nil)
 			return
@@ -169,7 +169,7 @@ func HandleListEntropyAuditLogs(db database.DB) http.HandlerFunc {
 		}
 
 		var result []map[string]any
-		if err := db.QueryRowsWithin90Days(database.TblPlatformEvents, database.ColsPlatformEvent, tenantID, &result); err != nil {
+		if err := db.QueryRowsWithin90Days(database.TblCoreEvents, database.ColsPlatformEvent, tenantID, &result); err != nil {
 			slog.Error("list entropy audit logs failed", "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to query entropy audit logs", nil)
 			return

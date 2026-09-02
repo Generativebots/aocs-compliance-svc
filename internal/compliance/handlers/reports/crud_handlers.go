@@ -200,7 +200,7 @@ func HandleUpdateAgentROIMetric(db database.DB) http.HandlerFunc {
 // Append-only log — no update/delete
 
 func HandleListAgentStatusTimeline(db database.DB) http.HandlerFunc {
-	return sysListHandler(database.TblAgentStatusTimeline, "*", db)
+	return sysListHandler(database.TblCoreAgentStatus, "*", db)
 }
 func HandleCreateAgentStatusEvent(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -214,7 +214,7 @@ func HandleCreateAgentStatusEvent(db database.DB) http.HandlerFunc {
 		body["recorded_at"] = time.Now().UTC()
 		if _, ok := requireField(w, body, "agent_id"); !ok { return }
 		if _, ok := requireField(w, body, "new_status"); !ok { return }
-		if err := db.InsertRow(database.TblAgentStatusTimeline, body); err != nil {
+		if err := db.InsertRow(database.TblCoreAgentStatus, body); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "record status event failed", err)
 			return
 		}
@@ -589,7 +589,7 @@ func HandleCreateKillSwitchEntry(db database.DB) http.HandlerFunc {
 		body["updated_at"] = time.Now().UTC()
 		if _, ok := requireField(w, body, "subject_id"); !ok { return }
 		if _, ok := requireField(w, body, "reason"); !ok { return }
-		if err := db.InsertRow(database.TblKillSwitchEntries, body); err != nil {
+		if err := db.InsertRow(database.TblCoreKillSwitch, body); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "create kill switch failed", err)
 			return
 		}
@@ -604,7 +604,7 @@ func HandleDeactivateKillSwitch(db database.DB) http.HandlerFunc {
 		id, idOk := respond.MustGetPathParam(w, r, "id")
 		if !idOk { return }
 		patch := map[string]any{"is_active": false, "updated_at": time.Now().UTC()}
-		if err := db.UpdateRowCompound(database.TblKillSwitchEntries, "tenant_id", tenantID, "entry_id", id, patch); err != nil {
+		if err := db.UpdateRowCompound(database.TblCoreKillSwitch, "tenant_id", tenantID, "entry_id", id, patch); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "deactivation failed", err)
 			return
 		}

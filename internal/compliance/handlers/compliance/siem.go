@@ -26,7 +26,7 @@ func HandleDeleteSIEMConfig(db database.DB) http.HandlerFunc {
 		}
 		// Check config exists first
 		var existing []map[string]any
-		if dbErr := db.QueryRowsCtx(r.Context(), database.TblTenantCredentials, database.ColsSiemConfigs, "tenant_id", tenantID, &existing); dbErr != nil || len(existing) == 0 {
+		if dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreTenantCreds, database.ColsSiemConfigs, "tenant_id", tenantID, &existing); dbErr != nil || len(existing) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "no SIEM config found for tenant")
 			return
 		}

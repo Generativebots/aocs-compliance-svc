@@ -45,7 +45,7 @@ func HandleGetDocument(db database.DB) http.HandlerFunc {
 		// F-ADMIN-02 FIX: was QueryRowsCtx with only document_id — any tenant knowing a
 		// document_id could read another tenant's document. Added tenant_id compound filter.
 		var docs []map[string]any
-		if err := db.QueryRowsCompound(database.TblTenantDocuments, database.ColsTenantDocument,
+		if err := db.QueryRowsCompound(database.TblCoreTenantDocs, database.ColsTenantDocument,
 			"document_id", docID, "tenant_id", tenantID, &docs); err != nil || len(docs) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "document not found")
 			return
@@ -53,7 +53,7 @@ func HandleGetDocument(db database.DB) http.HandlerFunc {
 
 		// Also get intents extracted from this document
 		var intents []map[string]any
-		if err := db.QueryRowsCtx(r.Context(), database.TblIAProcessIntents, database.ColsIAIntent, "tenant_id", tenantID, &intents); err != nil {
+		if err := db.QueryRowsCtx(r.Context(), database.TblCoreProcessIntents, database.ColsIAIntent, "tenant_id", tenantID, &intents); err != nil {
 			slog.Error("GetDocument: failed to load extracted intents", "document_id", docID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to load extracted intents", nil)
 			return
@@ -77,7 +77,7 @@ func HandleListRelationships(db database.DB) http.HandlerFunc {
 		}
 
 		var rels []map[string]any
-		if err := db.QueryRowsCtx(r.Context(), database.TblDocumentConnectors, database.ColsIAResourceRel, "tenant_id", tenantID, &rels); err != nil {
+		if err := db.QueryRowsCtx(r.Context(), database.TblConrDocumentConnectors, database.ColsIAResourceRel, "tenant_id", tenantID, &rels); err != nil {
 			slog.Error("ListRelationships failed", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to list relationships", nil)
 			return
@@ -125,7 +125,7 @@ func HandleCreateRelationship(db database.DB) http.HandlerFunc {
 			"label":             req.Label,
 		}
 		// created_at DEFAULT NOW() — DB handles
-		if err := db.InsertRow(database.TblDocumentConnectors, row); err != nil {
+		if err := db.InsertRow(database.TblConrDocumentConnectors, row); err != nil {
 			slog.Error("CreateRelationship failed", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to create relationship", nil)
 			return
@@ -234,7 +234,7 @@ func HandleImportSourceExtract(db database.DB) http.HandlerFunc {
 		// 1. Look up the import source
 		// F-ADMIN-02 FIX: was QueryRowsCtx with only source_id — cross-tenant access possible.
 		var sources []map[string]any
-		if err := db.QueryRowsCompound(database.TblTenantDocuments, database.ColsImportSource,
+		if err := db.QueryRowsCompound(database.TblCoreTenantDocs, database.ColsImportSource,
 			"source_id", sourceID, "tenant_id", tenantID, &sources); err != nil || len(sources) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "import source not found")
 			return
@@ -251,7 +251,7 @@ func HandleImportSourceExtract(db database.DB) http.HandlerFunc {
 		}
 
 		// 2. Update sync status to IN_PROGRESS
-		if err := db.UpdateRowCompound(database.TblTenantDocuments, "source_id", sourceID, "tenant_id", tenantID, map[string]any{
+		if err := db.UpdateRowCompound(database.TblCoreTenantDocs, "source_id", sourceID, "tenant_id", tenantID, map[string]any{
 			"status":            "IN_PROGRESS",
 			"status_changed_at": time.Now().UTC().Format(time.RFC3339),
 		}); err != nil {
@@ -279,7 +279,7 @@ func HandleImportSourceExtract(db database.DB) http.HandlerFunc {
 				if errMsg != "" {
 					upd["sync_error"] = errMsg
 				}
-				if err := db.UpdateRowCompound(database.TblTenantDocuments, "source_id", sourceID, "tenant_id", tenantID, upd); err != nil {
+				if err := db.UpdateRowCompound(database.TblCoreTenantDocs, "source_id", sourceID, "tenant_id", tenantID, upd); err != nil {
 					slog.Error("Failed to update import source status",
 						"source_id", sourceID, "status", status, "error", err)
 				}
@@ -370,7 +370,7 @@ func HandleImportSourceExtract(db database.DB) http.HandlerFunc {
 							intent["tenant_id"] = tenantID
 							intent["source_id"] = sourceID
 							intent["extraction_id"] = extractionID
-							if insErr := db.InsertRow(database.TblIAProcessIntents, intent); insErr != nil {
+							if insErr := db.InsertRow(database.TblCoreProcessIntents, intent); insErr != nil {
 								slog.Error("APE: intent insert failed", "extraction_id", extractionID, "error", insErr)
 							}
 						}
