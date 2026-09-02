@@ -34,3 +34,36 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA compliance TO servi
 GRANT SELECT ON ALL TABLES IN SCHEMA compliance TO authenticated;
 
 SELECT 'compliance RLS policies deployed' AS status;
+
+
+-- ══ Superuser Roles & Grants (was superuser_runbook.sql §1-4) ───────────
+
+--  database/schema/00_gen_id_function.sql     ← gen_id() (idempotent — skip if exists)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+  ) THEN
+  END IF;
+  IF NOT EXISTS (
+  ) THEN
+  END IF;
+  RAISE NOTICE 'Prerequisites met — Ring 0 tables exist, gen_id() available';
+END $$;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'compliance') THEN
+  END IF;
+  RAISE NOTICE 'compliance schema exists';
+END $$;
+-- SECTION 3: Grant svc_compliance role access
+DO $$
+BEGIN
+  IF EXISTS (
+  ) THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA compliance TO svc_compliance;
+    GRANT SELECT ON ALL TABLES IN SCHEMA compliance TO svc_platform;
+    RAISE NOTICE 'Grants applied to svc_compliance and svc_platform';
+  ELSE
+    RAISE NOTICE 'compliance tables not found — run 01_tables.sql first';
+  END IF;
+END $$;

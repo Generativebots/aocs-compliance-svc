@@ -87,7 +87,9 @@ func main() {
 
 	// P-16 FIX: Start daily Sybil detection worker.
 	// Was implemented in sybil_resistance_worker.go but never started — patent test P-16
-	// requires shar_trust to have rows created at daily 03:00 UTC.
+	// requires core_trust_events (cross_org=true rows) to be created at daily 03:00 UTC.
+	// NOTE: shar_trust was merged into core_trust_events — TblSybilRiskAssess now resolves
+	// to "core_trust_events". Rows written with cross_org=false (sybil = single-tenant concern).
 	hsecurity.StartSybilDetectionWorker(svc.BgCtx, db)
 	slog.Info("P-16: SybilDetectionWorker started — daily 03:00 UTC sybil scan")
 

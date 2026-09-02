@@ -1,4 +1,43 @@
 -- =============================================================================
+-- 00_compliance_schema.sql — aocs-compliance-svc
+-- =============================================================================
+-- Creates the compliance schema and grants.
+-- Run BEFORE any other compliance schema files.
+-- Run AFTER Ring 0 (aocs-system-svc) schema is deployed.
+--
+-- Why compliance schema (not public)?
+--   - Clean separation: compliance tables never pollute the Ring 0 public schema
+--   - Supabase RLS policies are schema-scoped
+--   - The Go DATABASE_URL includes search_path=compliance,public so both schemas
+--     are visible: compliance.* for own tables, public.syst_tenants for Ring 0 FKs
+-- =============================================================================
+
+-- Create compliance schema
+CREATE SCHEMA IF NOT EXISTS compliance;
+
+-- Grant schema usage to service roles
+GRANT USAGE ON SCHEMA compliance TO postgres, anon, authenticated, service_role;
+GRANT USAGE ON SCHEMA compliance TO svc_platform;
+
+-- Create svc_compliance role (if it doesn't exist)
+DO $$ BEGIN
+    CREATE ROLE svc_compliance NOLOGIN NOINHERIT;
+    COMMENT ON ROLE svc_compliance IS
+        'Ring 3 (PAID) — aocs-compliance-svc. ZKP, DLP, compliance cases, evidence vault. '
+        'Runtime deps: Ring 0 (aocs-system for tenant data) + Ring 1 (aocs-core for agent data).';
+EXCEPTION WHEN duplicate_object THEN
+    RAISE NOTICE 'Role svc_compliance already exists — skipping';
+END $$;
+
+GRANT USAGE ON SCHEMA compliance TO svc_compliance;
+
+-- Set default search_path for compliance role
+ALTER ROLE svc_compliance SET search_path TO compliance, public;
+
+SELECT 'compliance schema created' AS status;
+
+-- ── Ring 3 Compliance Tables ────────────────────────────────────
+-- =============================================================================
 -- 01_tables.sql — aocs-compliance-svc
 -- compliance schema — compliance cases, evidence, ZKP, DLP, reports
 -- =============================================================================
@@ -326,3 +365,73 @@ CREATE POLICY IF NOT EXISTS collusion_ip_service_role_only ON compliance.core_an
 CREATE POLICY IF NOT EXISTS notification_rules_tenant ON public.syst_tenants
     FOR ALL TO authenticated
     USING (tenant_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'tenant_id'));
+
+-- ── Ring 2 → Ring 3 Migrations ───────────────────────────────────────────────
+-- Tables below were moved from ocx-core-svc Ring 2 to aocs-compliance-svc Ring 3.
+-- They belong in the compliance schema because compliance-svc owns all violation,
+-- obligation, exception, and risk data. The public.core_* names are retained for
+-- backward FK compatibility during the transition period.
+
+CREATE TABLE IF NOT EXISTS core_policy_violations (
+    violation_id        TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
+    policy_id           TEXT NOT NULL,
+    agent_id            TEXT,
+    execution_id        TEXT,
+    violation_type      TEXT NOT NULL,
+    severity            TEXT NOT NULL CHECK (severity = ANY (ARRAY['LOW','MEDIUM','HIGH','CRITICAL'])),
+    description         TEXT,
+    evidence            JSONB DEFAULT '{}',
+    remediation         TEXT,
+    status              TEXT NOT NULL DEFAULT 'OPEN' CHECK (status = ANY (ARRAY['OPEN','ACKNOWLEDGED','REMEDIATED','WAIVED','CLOSED'])),
+    detected_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolved_at         TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS core_regulatory_obligations (
+    obligation_id       TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
+    framework           TEXT NOT NULL,
+    control_id          TEXT NOT NULL,
+    title               TEXT NOT NULL,
+    description         TEXT,
+    obligation_type     TEXT NOT NULL,
+    status              TEXT NOT NULL DEFAULT 'PENDING' CHECK (status = ANY (ARRAY['PENDING','IN_PROGRESS','COMPLIANT','NON_COMPLIANT','WAIVED'])),
+    due_date            TIMESTAMPTZ,
+    owner               TEXT,
+    evidence_refs       JSONB DEFAULT '[]',
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS core_policy_exceptions (
+    exception_id        TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
+    policy_id           TEXT NOT NULL,
+    agent_id            TEXT,
+    exception_type      TEXT NOT NULL,
+    justification       TEXT NOT NULL,
+    approved_by         TEXT,
+    expires_at          TIMESTAMPTZ,
+    status              TEXT NOT NULL DEFAULT 'PENDING' CHECK (status = ANY (ARRAY['PENDING','APPROVED','REJECTED','EXPIRED'])),
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS core_gra_risk_assessments (
+    gra_risk_assessment_id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
+    framework_id        TEXT,
+    risk_level          TEXT NOT NULL CHECK (risk_level = ANY (ARRAY['LOW','MEDIUM','HIGH','CRITICAL'])),
+    subject_type        TEXT NOT NULL,
+    subject_id          TEXT NOT NULL,
+    assessment_date     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    score               NUMERIC(5,2),
+    findings            JSONB DEFAULT '{}',
+    reviewer            TEXT,
+    status              TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status = ANY (ARRAY['DRAFT','UNDER_REVIEW','APPROVED','CLOSED'])),
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

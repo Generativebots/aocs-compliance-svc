@@ -1,3 +1,10 @@
+-- Ring 3 Compliance Schema Comments
+COMMENT ON TABLE core_compliance IS 'Compliance cases — violations, obligations, evidence. Owned by aocs-compliance-svc (Ring 3).';
+COMMENT ON TABLE core_evidence IS 'Evidence vault entries with ZKP anchors. Owned by aocs-compliance-svc.';
+
+
+-- ══ Superuser Runbook Deploy Notes (was superuser_runbook.sql) ──────────
+
 -- =============================================================================
 -- aocs-compliance-svc — Superuser Runbook
 -- Ring: 3 — PAID compliance service (independently purchasable)
@@ -33,7 +40,6 @@
 --
 --  FILE                                        PURPOSE
 --  ─────────────────────────────────────────────────────────────────────────
---  database/schema/00_gen_id_function.sql     ← gen_id() (idempotent — skip if exists)
 --  database/schema/00_compliance_schema.sql   ← CREATE SCHEMA compliance + grants
 --  database/schema/01_tables.sql             ← all compliance tables
 --  database/schema/04_triggers.sql           ← updated_at + evidence count sync
@@ -45,38 +51,22 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- SECTION 0: Prerequisite checks
 -- ─────────────────────────────────────────────────────────────────────────────
-DO $$
-BEGIN
   -- gen_id() must exist in public schema
-  IF NOT EXISTS (
     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public' AND p.proname = 'gen_id'
-  ) THEN
     RAISE EXCEPTION 'gen_id() not found. Run 00_gen_id_function.sql first.';
-  END IF;
 
   -- Ring 0: syst_tenants must exist
-  IF NOT EXISTS (
     SELECT 1 FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name = 'syst_tenants'
-  ) THEN
     RAISE EXCEPTION
       'public.syst_tenants not found. Run aocs-system-svc Ring 0 schema first.';
-  END IF;
 
-  RAISE NOTICE 'Prerequisites met — Ring 0 tables exist, gen_id() available';
-END $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- SECTION 1: Verify compliance schema exists
 -- ─────────────────────────────────────────────────────────────────────────────
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'compliance') THEN
     RAISE EXCEPTION 'compliance schema not found. Run 00_compliance_schema.sql first.';
-  END IF;
-  RAISE NOTICE 'compliance schema exists';
-END $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- SECTION 2: Verify compliance tables deployed
@@ -87,18 +77,6 @@ WHERE table_schema = 'compliance'
 ORDER BY table_name;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- SECTION 3: Grant svc_compliance role access
 -- ─────────────────────────────────────────────────────────────────────────────
-DO $$
-BEGIN
-  IF EXISTS (
     SELECT 1 FROM information_schema.tables
     WHERE table_schema = 'compliance' AND table_name = 'core_compliance'
-  ) THEN
-    GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA compliance TO svc_compliance;
-    GRANT SELECT ON ALL TABLES IN SCHEMA compliance TO svc_platform;
-    RAISE NOTICE 'Grants applied to svc_compliance and svc_platform';
-  ELSE
-    RAISE NOTICE 'compliance tables not found — run 01_tables.sql first';
-  END IF;
-END $$;

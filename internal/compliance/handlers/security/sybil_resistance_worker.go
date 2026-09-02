@@ -1,6 +1,7 @@
 // sybil_detection_worker.go — Part 24 Worker #9: SybilDetectionWorker
 // Runs daily at 03:00 UTC; scans core_agents for correlated IP clusters
-// and writes shar_trust + senti_ids_events for flagged agents.
+// and writes core_trust_events (cross_org=false) + core_ids_events for flagged agents.
+// Table migration: shar_trust → core_trust_events, shar_ids_events → core_ids_events.
 package security
 
 import (
@@ -101,6 +102,7 @@ func runSybilScan(ctx context.Context, db database.DB) {
 				"detection_method":  "IP_CLUSTER_DAILY_SCAN",
 				"correlated_agents": agents,
 				"source_ip":         ip,
+				"cross_org":         false, // sybil scan is single-tenant; cross_org=true reserved for federation
 				"assessed_at": time.Now().UTC(),
 			}); _dbErr != nil {
 				slog.Error("db.InsertRow failed (best-effort)", "error", _dbErr)
