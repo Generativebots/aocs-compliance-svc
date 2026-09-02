@@ -83,9 +83,9 @@ func registerComplianceEvidenceRoutes(
 	api.HandleFunc("/evidence/{id}", auth.RequireAccess(pc, "analytics", "read", middleware.RequireValidPathVars("id")(evaluation.HandleGetEvidence(db)))).Methods("GET")
 	// HITLMutationGuard checks aocs_evidence_records.hitl_case_id; blocks mutation if case is open.
 	api.HandleFunc("/evidence/{id}", auth.RequireAccess(pc, "analytics", "write",
-		middleware.HITLMutationGuard(db, "aocs_evidence_records", "evidence_id")(analytics.HandleUpdateEvidence(db)))).Methods("PUT")
+		middleware.HITLMutationGuard(db, "core_evidence", "evidence_id")(analytics.HandleUpdateEvidence(db)))).Methods("PUT")
 	api.HandleFunc("/evidence/{id}", auth.RequireAccess(pc, "analytics", "delete",
-		middleware.HITLMutationGuard(db, "aocs_evidence_records", "evidence_id")(analytics.HandleDeleteEvidence(db)))).Methods("DELETE")
+		middleware.HITLMutationGuard(db, "core_evidence", "evidence_id")(analytics.HandleDeleteEvidence(db)))).Methods("DELETE")
 	api.HandleFunc("/evidence/{id}/attest", auth.RequireAccess(pc, "analytics", "write", middleware.RequireValidPathVars("id")(evaluation.HandleAttestEvidence(db)))).Methods("POST")
 	api.HandleFunc("/evidence/{id}/chain", auth.RequireAccess(pc, "analytics", "read", middleware.RequireValidPathVars("id")(analytics.HandleVerifyChain(db)))).Methods("GET")
 	api.HandleFunc("/evidence-attestations", auth.RequireAccess(pc, "analytics", "read", evaluation.HandleListEvidenceAttestations(db))).Methods("GET")

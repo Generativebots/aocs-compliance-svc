@@ -21,7 +21,7 @@ import (
 	"github.com/ocx/shared/respond"
 )
 
-const tblCaseEvents = "aocs_case_events"
+const tblCaseEvents = "core_events"
 
 const colsCaseEvents = `event_id, case_id, case_type, tenant_id,
 	event_type, from_status, to_status,
