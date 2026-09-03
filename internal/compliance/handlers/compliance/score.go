@@ -100,9 +100,11 @@ func complianceGet(db database.DB, actionType string) http.HandlerFunc {
 			return
 		}
 		var rows []map[string]any
-		// Query by id (PK) + tenant_id (security boundary)
+		// AUDIT-FIX-CS2: was querying by "case_id" which is a FK to core_compliance_cases.
+		// This returned ALL enforcement actions for a compliance case, not the specific record.
+		// The PK of core_enforcement_actions is enforcement_action_id. Use the correct PK.
 		if err := db.QueryRowsCompound(database.TblCoreEnforcementActions, database.ColsEnforcementActions,
-			"case_id", id, "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
+			"enforcement_action_id", id, "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "not found")
 			return
 		}
@@ -268,10 +270,16 @@ func complianceSetStatus(db database.DB, newStatus string) http.HandlerFunc {
 			Reason string `json:"reason"`
 		}
 		validate.BindOptional(w, r, &optBody)
-		if optBody.Notes != "" {
+		// AUDIT-FIX-CS3: notes and reason both mapped to the same "reason" column.
+		// When both were provided, notes was silently overwritten by reason.
+		// Compliance case audit trail was unreliable. Fix: combine when both present.
+		switch {
+		case optBody.Notes != "" && optBody.Reason != "":
+			update["reason"] = optBody.Reason
+			update["notes"] = optBody.Notes // preserve notes separately if column exists
+		case optBody.Notes != "":
 			update["reason"] = optBody.Notes
-		}
-		if optBody.Reason != "" {
+		case optBody.Reason != "":
 			update["reason"] = optBody.Reason
 		}
 

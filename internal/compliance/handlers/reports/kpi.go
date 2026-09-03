@@ -7,7 +7,6 @@ package reports
 import (
 	"log/slog"
 	"math"
-	"math/rand"
 	"net/http"
 	"sort"
 	"strconv"
@@ -45,8 +44,12 @@ func HandleListAnalyticsKPIs(db database.DB, coreClients ...*serviceclient.Clien
 		}
 
 		var agt []map[string]any
-		// added is_frozen to SELECT so frozenAgents count is not always 0
-		if err := db.QueryRowsCursor(database.TblCoreAgents, "agent_id, trust_score, status, risk_tier, is_frozen", "tenant_id", tenantID, database.ParseCursorPage(r), &agt); err != nil {
+		// AUDIT-FIX-KPI-C1: was ParseCursorPage(r) which defaults to 100 rows.
+		// Computing fleet-wide KPI averages over only 100 of potentially 10,000 agents
+		// gives wrong totalAgents, avgTrust, frozenAgents, and highRisk counts.
+		// Use a fixed large page (5000) for KPI; pagination applies to agent listings only.
+		const maxKPIAgents = 5000
+		if err := db.QueryRowsCursor(database.TblCoreAgents, "agent_id, trust_score, status, risk_tier, is_frozen", "tenant_id", tenantID, database.CursorPage{Limit: maxKPIAgents}, &agt); err != nil {
 			slog.Error("HandleListAnalyticsKPIs: agents query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "load agent KPIs", err)
 			return
@@ -61,7 +64,11 @@ func HandleListAnalyticsKPIs(db database.DB, coreClients ...*serviceclient.Clien
 		var trustScores []float64
 		if totalAgents > 0 {
 			for _, a := range agt {
-				if ts, ok := a["trust_score"].(float64); ok {
+				// AUDIT-FIX-KPI-C2: pgx maps PostgreSQL NUMERIC to string in map[string]any.
+				// The .(float64) assertion always failed — trustScores was always empty —
+				// avgTrust and variance were always 0.0 on the compliance KPI dashboard.
+				// parseNumericKPI handles both float64 and string representations.
+				if ts := parseNumericKPI(a["trust_score"]); ts > 0 {
 					trustScores = append(trustScores, ts)
 				}
 				if s, ok := a["status"].(string); ok && s == "ACTIVE" {
@@ -70,7 +77,7 @@ func HandleListAnalyticsKPIs(db database.DB, coreClients ...*serviceclient.Clien
 				if frozen, ok := a["is_frozen"].(bool); ok && frozen {
 					frozenAgents++
 				}
-				if rt, ok := a["risk_tier"].(string); ok && (rt == "HIGH" || rt == "CRITICAL") {
+				if rt, ok := a["risk_tier"].(string); ok && (rt == "HIGH" || rt == "CRITICAL" || rt == "high" || rt == "critical") {
 					highRisk++
 				}
 			}
@@ -96,43 +103,20 @@ func HandleListAnalyticsKPIs(db database.DB, coreClients ...*serviceclient.Clien
 		homogeneityScore := 1.0 - math.Min(1.0, trustVariance*10)
 		homogeneityAlert := homogeneityScore > 0.95 && totalAgents > 3
 
-		// Threat 8 — Differential Privacy: add Laplace noise to counts so that
-		// an adversary cannot diff KPI responses to fingerprint individual agents.
-		// Sensitivity=1 (adding/removing one agent changes counts by 1), epsilon=1.0.
-		// Noise is symmetric, bounded to ±3 counts, and only applied to non-trivial fleets.
-		applyNoise := totalAgents > 5 // noise is only meaningful for non-trivial fleets
-		laplace := func(sensitivity, epsilon float64) float64 {
-			// Laplace distribution via inverse CDF: X = -b*sign(U)*ln(1-2|U|), b = sens/eps
-			b := sensitivity / epsilon
-			u := rand.Float64() - 0.5 //nolint:gosec — DP noise, not security-critical
-			if u == 0 {
-				return 0
-			}
-			sign := 1.0
-			if u < 0 {
-				sign = -1.0
-			}
-			return -b * sign * math.Log(1-2*math.Abs(u))
-		}
-		// Helper: apply noise and clamp to non-negative integer
-		noisy := func(v int) int {
-			if !applyNoise {
-				return v
-			}
-			noised := float64(v) + laplace(1.0, 1.0)
-			// Clamp noise to [-3, +3] to preserve utility
-			noised = math.Min(float64(v)+3, math.Max(float64(v)-3, noised))
-			if noised < 0 {
-				return 0
-			}
-			return int(math.Round(noised))
-		}
-
+		// AUDIT-FIX-KPI-C3: Differential Privacy noise was applied to INTERNAL compliance
+		// dashboard counts (totalAgents, frozenAgents, highRisk, activeAgents).
+		// DP noise is ONLY for external analytics exports to prevent fingerprinting.
+		// On an INTERNAL compliance dashboard, noisy counts are DANGEROUS:
+		// a tenant with 3 frozen agents MUST see exactly 3, not a random 0–6.
+		// Compliance officers make enforcement decisions based on these numbers.
+		// Remove the laplace() and noisy() functions — never apply noise to internal views.
+		// The math/rand import is no longer needed and will cause a compile error if left.
 		// platform_events.payload JSONB may contain duration_ms.
 		// PostgREST only accepts plain column names in select= — JSONB extraction
 		// expressions like (payload->>'duration_ms')::float cause a 42703 error.
 		// Instead, fetch the payload column and extract duration_ms in Go.
 		avgLatencyMs := 0.0
+		p50LatencyMs := 0.0
 		p95LatencyMs := 0.0
 		{
 			type payloadRow struct {
@@ -199,24 +183,32 @@ func HandleListAnalyticsKPIs(db database.DB, coreClients ...*serviceclient.Clien
 					p95Idx = len(latencies) - 1
 				}
 				p95LatencyMs = latencies[p95Idx]
-			} else if totalAgents > 0 {
-				// Synthetic fallback: estimate from agent count (10ms base + 2ms/agent)
-				avgLatencyMs = 10.0 + float64(totalAgents)*2.0
-				p95LatencyMs = avgLatencyMs * 2.0
+				// Compute true P50
+				n := len(latencies)
+				if n%2 == 1 {
+					p50LatencyMs = latencies[n/2]
+				} else {
+					p50LatencyMs = (latencies[n/2-1] + latencies[n/2]) / 2.0
+				}
+				// AUDIT-FIX-KPI-C4: removed synthetic latency fallback ("10ms + agents*2ms").
+				// When no event data exists, latency fields are 0 — not fabricated.
 			}
 		}
 
 		resp := map[string]any{
 			"tenant_id":     tenantID,
-			"total_agents":  noisy(totalAgents), // DP-noised
-			"active_agents": noisy(activeAgents),
-			"frozen_agents": noisy(frozenAgents),
-			"high_risk":     noisy(highRisk),
+			// AUDIT-FIX-KPI-C3: removed noisy() wrapping — no DP noise on internal compliance dashboard.
+			"total_agents":  totalAgents,
+			"active_agents": activeAgents,
+			"frozen_agents": frozenAgents,
+			"high_risk":     highRisk,
 			"avg_trust":     avgTrust,
 			"avg_latency_ms": avgLatencyMs,
-			"latency_p50":    avgLatencyMs, // alias for frontend compat
+			// AUDIT-FIX-KPI-C5: latency_p50 was aliased to avgLatencyMs (wrong).
+			// P50 is the median, not the mean. True P50 computed above.
+			"latency_p50":    p50LatencyMs,
 			"p95_latency_ms": p95LatencyMs,
-			"latency_p95":    p95LatencyMs, // alias for frontend compat
+			"latency_p95":    p95LatencyMs,
 			// Threat 5 — fleet homogeneity metrics
 			"trust_variance":    trustVariance,
 			"homogeneity_score": homogeneityScore,
@@ -225,7 +217,7 @@ func HandleListAnalyticsKPIs(db database.DB, coreClients ...*serviceclient.Clien
 			"data_as_of": dataAsOf.Format(time.RFC3339Nano),
 			// Threat 7 — processing mode context
 			"processing_mode":  processingMode,
-			"dp_noise_applied": applyNoise,
+			"dp_noise_applied": false, // noise never applied to compliance internal views
 		}
 
 		if homogeneityAlert {
@@ -674,4 +666,24 @@ func HandleGetEvaluationVault(db database.DB, coreClients ...*serviceclient.Clie
 			"timestamp":   time.Now().UTC().Format(time.RFC3339),
 		})
 	}
+}
+
+// parseNumericKPI converts a PostgreSQL NUMERIC value (which pgx may return as
+// string in map[string]any) to float64. Returns 0 on failure.
+// AUDIT-FIX-KPI-C2: trust_score is NUMERIC in the DB — pgx maps it to string,
+// causing .(float64) assertions to silently fail and return 0 for all agents.
+func parseNumericKPI(v any) float64 {
+	switch n := v.(type) {
+	case float64:
+		return n
+	case string:
+		if f, err := strconv.ParseFloat(strings.TrimSpace(n), 64); err == nil {
+			return f
+		}
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
+	}
+	return 0
 }
