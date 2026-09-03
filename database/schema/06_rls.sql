@@ -10,7 +10,7 @@ ALTER TABLE compliance.core_evidence              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE compliance.shar_dlp_integrations            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE compliance.nexus_compliance_reports     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE compliance.core_compliance_comments           ENABLE ROW LEVEL SECURITY;
-ALTER TABLE compliance.shar_trust  ENABLE ROW LEVEL SECURITY;
+-- shar_trust: removed from RLS — table merged into core_trust_events.
 
 -- Tenant isolation policy (applies to all compliance tables)
 -- Superadmin bypass + tenant isolation pattern (same as Ring 0)
@@ -18,7 +18,8 @@ DO $$ DECLARE t TEXT; BEGIN
   FOREACH t IN ARRAY ARRAY[
     'core_compliance','core_compliance','core_evidence',
     'core_evidence','shar_dlp_integrations','nexus_compliance_reports',
-    'core_compliance_comments','shar_trust'
+    'core_compliance_comments'
+    -- shar_trust removed: merged into core_trust_events
   ] LOOP
     EXECUTE format('DROP POLICY IF EXISTS superadmin_all ON compliance.%I', t);
     EXECUTE format('CREATE POLICY superadmin_all ON compliance.%I USING ((auth.jwt()->>''app_metadata''->>''is_super_admin'')::boolean = true)', t);

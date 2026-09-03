@@ -105,6 +105,8 @@ func main() {
 	//     sensitive cryptographic endpoints only (/nonce/validate, /sybil/check,
 	//     /security/attacks). These are more expensive to compute and more
 	//     attractive attack targets, so they get a stricter inner limit.
+	// T1 FIX: Transform JSON response keys from snake_case → camelCase.
+	svc.API.Use(middleware.CamelCaseResponse())
 	complianceRL := security.NewAttackRateLimiter(500, time.Minute)
 	svc.API.Use(middleware.AttackRateLimiterMiddleware(complianceRL))
 	// Per-tenant token bucket (50 req/s, burst 100) — defense-in-depth layer.

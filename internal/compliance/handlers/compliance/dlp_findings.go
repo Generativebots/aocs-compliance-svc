@@ -22,8 +22,9 @@ import (
 	"github.com/ocx/shared/validate"
 )
 
-// senti_dlp_integrations PK is dlp_integration_id — alias to dlp_policy_id for API compat.
-const colsDLPFinding = "dlp_integration_id AS dlp_policy_id,tenant_id,name,status,created_at,updated_at"
+// P1-1 FIX: shar_dlp_integrations DDL uses 'id' as PK (not dlp_integration_id).
+// Aliased to dlp_policy_id for API backward compatibility.
+const colsDLPFinding = "id AS dlp_policy_id,tenant_id,policy_name,policy_type,provider,status AS status,is_active,created_at,updated_at"
 
 // HandleListDLPFindings — GET /dlp/findings
 func HandleListDLPFindings(db database.DB) http.HandlerFunc {

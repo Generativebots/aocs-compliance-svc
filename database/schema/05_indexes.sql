@@ -32,8 +32,7 @@ CREATE INDEX IF NOT EXISTS idx_comp_controls_tenant ON compliance.core_complianc
 CREATE INDEX IF NOT EXISTS idx_comp_controls_fw     ON compliance.core_compliance (framework);
 CREATE INDEX IF NOT EXISTS idx_comp_controls_status ON compliance.core_compliance (status);
 
-CREATE INDEX IF NOT EXISTS idx_comp_sybil_tenant    ON compliance.shar_trust (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_comp_sybil_date      ON compliance.shar_trust (assessed_at DESC);
+-- shar_trust indexes removed: table merged into core_trust_events.
 
 SELECT 'compliance indexes created' AS status;
 
@@ -53,9 +52,7 @@ CREATE INDEX IF NOT EXISTS idx_dlp_findings_case_id    ON compliance.shar_dlp_in
 CREATE INDEX IF NOT EXISTS idx_evidence_control_id     ON compliance.core_evidence (control_id);
 CREATE INDEX IF NOT EXISTS idx_evidence_prev_id        ON compliance.core_evidence (prev_evidence_id);
 
--- shar_trust (daily worker reads per-tenant, ordered by time)
-CREATE INDEX IF NOT EXISTS idx_sybil_assessments_tenant
-    ON compliance.shar_trust (tenant_id, assessed_at DESC);
+-- shar_trust compound index removed: table merged into core_trust_events.
 
 -- core_evidence (ZKP batch jobs join on all three)
 CREATE INDEX IF NOT EXISTS idx_zkp_proofs_tenant     ON compliance.core_evidence (tenant_id);

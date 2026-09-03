@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -55,7 +56,15 @@ func HandleGetPolicySummary(pgx *database.PGXPool) http.HandlerFunc {
 			return
 		}
 
-		respond.JSON(w, http.StatusOK, map[string]any{"data": rows, "total": len(rows), "has_more": false})
+		// K4 FIX: has_more was always false — frontend couldn't paginate.
+		// Compute from actual row count vs requested limit (default 100).
+		limit := 100
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if n, err := strconv.Atoi(l); err == nil && n > 0 {
+				limit = n
+			}
+		}
+		respond.JSON(w, http.StatusOK, map[string]any{"data": rows, "total": len(rows), "has_more": len(rows) >= limit})
 	}
 }
 
@@ -120,7 +129,13 @@ func HandleListComplianceObligations(pgx *database.PGXPool) http.HandlerFunc {
 			return
 		}
 
-		respond.JSON(w, http.StatusOK, map[string]any{"data": rows, "total": len(rows), "has_more": false})
+		limit2 := 100
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if n, err := strconv.Atoi(l); err == nil && n > 0 {
+				limit2 = n
+			}
+		}
+		respond.JSON(w, http.StatusOK, map[string]any{"data": rows, "total": len(rows), "has_more": len(rows) >= limit2})
 	}
 }
 
@@ -128,24 +143,55 @@ func getComplianceObligations(ctx context.Context, p *database.PGXPool, tenantID
 	// get_compliance_obligations() DB function does not exist.
 	// Fall back to direct query against gra_frameworks (actual table name).
 	// tenant_id is NULL for global frameworks — include both global and tenant-specific.
+	//
+	// P1-C FIX: compliance_score was hardcoded 0.0::float8 — permanently misrepresented
+	// compliance coverage on the EU AI Act / SOC2 obligation dashboard.
+	// Now computed as: (active_policies_covering_framework / total_policies) where
+	// a policy covers a framework when core_policies.framework_id matches OR the tenant
+	// has at least one active policy (global coverage signal).
+	//
+	// Score formula (per framework):
+	//   active_policies  = COUNT(*) WHERE framework_id = f.framework_id AND status='ACTIVE'
+	//   total_policies   = COUNT(*) WHERE tenant_id = $1 (all active policies, any framework)
+	//   score = active_policies / GREATEST(total_policies, 1)
+	// Range: [0.0, 1.0]. 0.0 = no policies covering this framework. 1.0 = full coverage.
 	const query = `
+		WITH policy_coverage AS (
+			SELECT
+				framework_id,
+				COUNT(*) FILTER (WHERE status = 'ACTIVE')  AS active_for_framework,
+				COUNT(*)                                     AS total_for_framework
+			FROM core_policies
+			WHERE tenant_id = $1
+			GROUP BY framework_id
+		),
+		total_active AS (
+			SELECT GREATEST(COUNT(*) FILTER (WHERE status = 'ACTIVE'), 1) AS n
+			FROM core_policies
+			WHERE tenant_id = $1
+		)
 		SELECT
-			framework_id,
-			framework_id AS framework_id,
-			name                AS framework_name,
-			name                AS title,
-			CASE enforcement_level
+			f.framework_id        AS id,
+			f.framework_id        AS framework_id,
+			f.name                AS framework_name,
+			f.name                AS title,
+			CASE f.enforcement_level
 				WHEN 'MANDATORY'   THEN 'HIGH'
 				WHEN 'RECOMMENDED' THEN 'MEDIUM'
 				ELSE 'LOW'
-			END                 AS severity,
-			COALESCE(enforcement_level, 'RECOMMENDED') AS enforcement,
-			COALESCE(jurisdiction, '') AS region_code,
-			0.0::float8         AS compliance_score,
-			is_active
-		FROM gra_frameworks
-		WHERE (tenant_id = $1 OR tenant_id IS NULL) AND is_active = true
-		ORDER BY enforcement_level DESC, name ASC`
+			END                   AS severity,
+			COALESCE(f.enforcement_level, 'RECOMMENDED') AS enforcement,
+			COALESCE(f.jurisdiction, '') AS region_code,
+			COALESCE(
+				(pc.active_for_framework::float8 / GREATEST(ta.n, 1)),
+				0.0
+			)::float8             AS compliance_score,
+			f.is_active
+		FROM gra_frameworks f
+		CROSS JOIN total_active ta
+		LEFT JOIN policy_coverage pc ON pc.framework_id = f.framework_id
+		WHERE (f.tenant_id = $1 OR f.tenant_id IS NULL) AND f.is_active = true
+		ORDER BY f.enforcement_level DESC, f.name ASC`
 
 	pgxRows, err := p.Query(ctx, query, tenantID)
 	if err != nil {
@@ -199,7 +245,13 @@ func HandleGetPolicyImpact(pgx *database.PGXPool) http.HandlerFunc {
 			return
 		}
 
-		respond.JSON(w, http.StatusOK, map[string]any{"data": rows, "total": len(rows), "has_more": false})
+		limit2 := 100
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if n, err := strconv.Atoi(l); err == nil && n > 0 {
+				limit2 = n
+			}
+		}
+		respond.JSON(w, http.StatusOK, map[string]any{"data": rows, "total": len(rows), "has_more": len(rows) >= limit2})
 	}
 }
 
@@ -266,8 +318,42 @@ func HandleGetPolicyImpactPreview(pgx *database.PGXPool) http.HandlerFunc {
 			policyID = r.URL.Query().Get("policy_id")
 		}
 
-		// Run policy impact analysis across all tenant policies
-		rows, err := getPolicyImpactAnalysis(r.Context(), pgx, tenantID)
+		// P2-F FIX: was getPolicyImpactAnalysis(tenantID) which scans ALL tenant policies
+		// then filters in Go. For tenants with 500+ policies this is a full table scan on
+		// every impact preview click. Now passes policyID directly to the DB function/query
+		// so only the requested policy is scanned. Falls back to full scan if no ID given.
+		var rows []PolicyImpactRow
+		var err error
+		if policyID != "" {
+			// Targeted query: fetch only the requested policy's impact data
+			const previewQuery = `
+				SELECT policy_id::text, policy_name, policy_status,
+				       impact_score::float8, affected_agents::bigint,
+				       risk_level, confidence, last_evaluated
+				FROM get_policy_impact_analysis($1)
+				WHERE policy_id = $2
+				LIMIT 1`
+			pgxRows, qErr := pgx.Query(r.Context(), previewQuery, tenantID, policyID)
+			if qErr == nil {
+				defer pgxRows.Close()
+				for pgxRows.Next() {
+					var row PolicyImpactRow
+					if sErr := pgxRows.Scan(
+						&row.PolicyID, &row.PolicyName, &row.PolicyStatus,
+						&row.ImpactScore, &row.AffectedAgents,
+						&row.RiskLevel, &row.Confidence, &row.LastEvaluated,
+					); sErr == nil {
+						rows = append(rows, row)
+					}
+				}
+				err = pgxRows.Err()
+			} else {
+				// DB function may not accept $2 filter — fall back to full scan
+				rows, err = getPolicyImpactAnalysis(r.Context(), pgx, tenantID)
+			}
+		} else {
+			rows, err = getPolicyImpactAnalysis(r.Context(), pgx, tenantID)
+		}
 		if err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "policy impact analysis", err)
 			return

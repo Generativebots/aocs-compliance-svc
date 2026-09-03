@@ -269,7 +269,7 @@ ALTER TABLE public.syst_tenants
 -- Palantir standard: every mutable table must have an updated_at column with auto-trigger.
 ALTER TABLE compliance.core_compliance_comments    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE compliance.shar_dlp_integrations     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-ALTER TABLE compliance.shar_trust ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+-- shar_trust: removed — table was merged into core_trust_events (cross_org=true flag). No ALTER needed.
 ALTER TABLE compliance.core_evidence       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE compliance.platform_signing_keys ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
@@ -290,9 +290,7 @@ CREATE OR REPLACE TRIGGER trg_dlp_findings_updated_at
     BEFORE UPDATE ON compliance.shar_dlp_integrations
     FOR EACH ROW EXECUTE FUNCTION compliance.set_updated_at();
 
-CREATE OR REPLACE TRIGGER trg_sybil_assessments_updated_at
-    BEFORE UPDATE ON compliance.shar_trust
-    FOR EACH ROW EXECUTE FUNCTION compliance.set_updated_at();
+-- trg_sybil_assessments_updated_at: removed — compliance.shar_trust was merged into core_trust_events.
 
 CREATE OR REPLACE TRIGGER trg_zkp_proofs_updated_at
     BEFORE UPDATE ON compliance.core_evidence
@@ -356,7 +354,7 @@ CREATE POLICY IF NOT EXISTS notification_rules_tenant ON public.syst_tenants
 -- obligation, exception, and risk data. The public.core_* names are retained for
 -- backward FK compatibility during the transition period.
 
-CREATE TABLE IF NOT EXISTS core_policy_violations (
+CREATE TABLE IF NOT EXISTS compliance.core_policy_violations (
     violation_id        TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     policy_id           TEXT NOT NULL,
@@ -374,7 +372,7 @@ CREATE TABLE IF NOT EXISTS core_policy_violations (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS core_regulatory_obligations (
+CREATE TABLE IF NOT EXISTS compliance.core_regulatory_obligations (
     obligation_id       TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     framework           TEXT NOT NULL,
@@ -390,7 +388,7 @@ CREATE TABLE IF NOT EXISTS core_regulatory_obligations (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS core_policy_exceptions (
+CREATE TABLE IF NOT EXISTS compliance.core_policy_exceptions (
     exception_id        TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     policy_id           TEXT NOT NULL,
@@ -404,7 +402,7 @@ CREATE TABLE IF NOT EXISTS core_policy_exceptions (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS core_gra_risk_assessments (
+CREATE TABLE IF NOT EXISTS compliance.core_gra_risk_assessments (
     gra_risk_assessment_id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     framework_id        TEXT,
