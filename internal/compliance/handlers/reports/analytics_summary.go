@@ -137,14 +137,26 @@ WHERE tenant_id = $1 AND created_at >= $2`
 			gate = gs[0]
 		}
 
-		// 3. Compliance posture score (latest record per tenant)
+		// 3. Compliance posture score — normalised per active agent
+		// P3-4 FIX: was AVG(score) over all core_compliance rows.
+		// If only 10 of 100 agents have records, AVG ignores the 90 uncovered agents.
+		// Fix: score = SUM(score) / GREATEST(total_active_agents, 1)
+		// where total_active_agents comes from core_agents (Ring 2) for this tenant.
+		// An agent with no compliance record counts as 0.0 (uncovered = non-compliant).
 		type complianceRow struct {
 			Score float64 `json:"score"`
 		}
 		const complianceSQL = `
-SELECT COALESCE(AVG(score), 0)::float8 AS score
-FROM core_compliance
-WHERE tenant_id = $1`
+SELECT
+  COALESCE(
+    SUM(c.score) / GREATEST(
+      (SELECT COUNT(*) FROM core_agents WHERE tenant_id = $1 AND status = 'ACTIVE'),
+      1
+    ),
+    0
+  )::float8 AS score
+FROM core_compliance c
+WHERE c.tenant_id = $1`
 
 		var cr []complianceRow
 		if _qErr := db.QueryRawCtx(r.Context(), complianceSQL, &cr, tenantID); _qErr != nil {

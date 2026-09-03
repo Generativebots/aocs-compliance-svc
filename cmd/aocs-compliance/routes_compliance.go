@@ -33,6 +33,12 @@ func registerIntelComplianceRoutes(
 	// ── Evidence/ZKP/GRA delegated ────────────────────────────────────────────
 	registerComplianceEvidenceRoutes(api, db, pc, pgx, coreClient)
 
+	// ── Studio palette manifest — called by aocs-studio-svc ringclient ────────
+	// GET /compliance/palette-manifest — no DB, no auth guard (internal VPC only).
+	// Returns the static list of compliance pipeline nodes for the Studio canvas.
+	// Available flag is set by studio-svc based on the tenant's FeatureCompliance claim.
+	api.HandleFunc("/compliance/palette-manifest", compliance.HandleGetPaletteManifest()).Methods("GET")
+
 	// ── Violations ────────────────────────────────────────────────────────────
 	api.HandleFunc("/violations", auth.RequireAccess(pc, "compliance", "read", compliance.HandleListViolations(db))).Methods("GET")
 	api.HandleFunc("/violations", auth.RequireAccess(pc, "compliance", "write", compliance.HandleCreateViolation(db))).Methods("POST")
