@@ -37,13 +37,7 @@ import (
 // Impact: reduces the 12s repeated fetches to <5ms on cache hit.
 var verdictCache = ttlcache.New[string, []byte](30 * time.Second)
 
-func HandleGetAlert(db database.DB) http.HandlerFunc {
-	return crudGetHandler(db, database.TblSharAlerts, "alert_id")
-}
 
-// HandleDeleteAlert — DELETE /api/v1/alerts/{id}
-// HandleFleetDeploymentStatus — PATCH /api/v1/ops/fleet/{id}/status
-// Updates the deployment status field (e.g. RUNNING → STOPPED).
 func HandleFleetDeploymentStatus(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if respond.RequireDB(w, db) {
@@ -220,21 +214,49 @@ func HandleListEntitlements(db database.DB) http.HandlerFunc {
 //   - ?agent_id=<uuid>               — scope to a specific agent
 //
 // database.TblCoreEvents (the canonical audit event store).
+//
+// TENANT ISOLATION (defense in depth):
+//   SuperAdmin: ?tenant_id= filters to a specific tenant; omit for all-tenant scan.
+//   Tenant user: JWT tenant_id ALWAYS overrides any ?tenant_id= query param.
+//               A tenant can never read another tenant's audit events.
+//   This check is enforced HERE regardless of what the route guard says.
 func HandleListAllAuditLog(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if respond.RequireDB(w, db) {
 			return
 		}
 
+		// ── SECURITY: Resolve tenant scope from JWT, not from query param ──────
+		// auth.MustGetTenantID enforces JWT is present and valid. isSuperAdmin is
+		// read from the JWT app_metadata claim — no DB roundtrip.
+		// Non-superadmin callers are ALWAYS scoped to their JWT tenant_id
+		// regardless of any ?tenant_id= param they supply.
+		jwtTenantID, ok := auth.MustGetTenantID(w, r)
+		if !ok {
+			return // MustGetTenantID already wrote 401
+		}
+		isSuperAdmin := auth.IsSuperAdmin(r.Context())
+
+		tenantFilter := r.URL.Query().Get("tenant_id")
+		if !isSuperAdmin {
+			// Normal tenant user: ALWAYS scope to JWT tenant_id — override any param.
+			if tenantFilter != "" && tenantFilter != jwtTenantID {
+				slog.Warn("SECURITY: HandleListAllAuditLog tenant_id param override — scoped to JWT tenant",
+					"jwt_tenant", jwtTenantID, "param_tenant", tenantFilter,
+					"remote_addr", r.RemoteAddr)
+			}
+			tenantFilter = jwtTenantID
+		}
+		// SuperAdmin: honour optional ?tenant_id= or do cross-tenant scan.
+
 		eventType := r.URL.Query().Get("event_type")
 		entityType := r.URL.Query().Get("entity_type")
-		tenantFilter := r.URL.Query().Get("tenant_id")
 		agentFilter := r.URL.Query().Get("agent_id")
 
 		var result []map[string]any
 		var err error
 
-		// Use the most selective compound filter available; all paths use 90-day window
+		// Use the most selective compound filter available; all paths use 90-day window.
 		switch {
 		case eventType != "" && tenantFilter != "":
 			err = db.QueryRowsWithin90DaysCompound(database.TblCoreEvents, database.ColsPlatformEvent,
@@ -245,12 +267,14 @@ func HandleListAllAuditLog(db database.DB) http.HandlerFunc {
 		case tenantFilter != "":
 			err = db.QueryRowsWithin90Days(database.TblCoreEvents, database.ColsPlatformEvent,
 				tenantFilter, &result)
-		case eventType != "":
-			// event_type-only filter: use global 90-day scan (superadmin, no tenant scope)
+		case isSuperAdmin:
+			// SuperAdmin full scan — 90-day window.
 			err = db.QueryRowsGlobalWithin90Days(database.TblCoreEvents, database.ColsPlatformEvent, &result)
 		default:
-			// Superadmin full scan — 90-day window replaces unbounded PostgREST scan
-			err = db.QueryRowsGlobalWithin90Days(database.TblCoreEvents, database.ColsPlatformEvent, &result)
+			// Should never reach here — tenantFilter is always set for non-superadmins above.
+			respond.ErrorWithCode(w, http.StatusForbidden, respond.ErrCodeForbidden,
+				"tenant_id could not be resolved from JWT")
+			return
 		}
 
 		if err != nil {
@@ -517,8 +541,22 @@ func HandleGetJuryPoolModel(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing path parameter: id")
 			return
 		}
+
+		// SECURITY: extract tenant from JWT before any DB call.
+		// Compound filter (jury_pool_id + tenant_id) prevents cross-tenant IDOR:
+		// a caller who knows another tenant's jury_pool_id gets 404, not the record.
+		tenantID, ok := auth.MustGetTenantID(w, r)
+		if !ok {
+			return
+		}
+
 		var rows []map[string]any
-		if err := db.QueryRowsCursor(database.TblJuryPools, "jury_pool_id, tenant_id, name,pool_type,config,is_active,model_data,created_at,updated_at", "jury_pool_id", id, database.ParseCursorPage(r), &rows); err != nil || len(rows) == 0 {
+		if err := db.QueryRowsCompound(
+			database.TblJuryPools,
+			"jury_pool_id, tenant_id, name, pool_type, config, is_active, model_data, created_at, updated_at",
+			"jury_pool_id", id, "tenant_id", tenantID,
+			&rows,
+		); err != nil || len(rows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "jury pool model not found")
 			return
 		}
@@ -556,6 +594,19 @@ func HandleGetJuryPoolModel(db database.DB) http.HandlerFunc {
 func HandleFlagAuditLogEntry(db database.DB, pgxPool *database.PGXPool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if respond.RequireDB(w, db) {
+			return
+		}
+
+		// SECURITY: SuperAdmin only — enforce here regardless of route guard.
+		// Flagging alters platform audit integrity; only superadmins may do this.
+		// auth.MustGetTenantID is called first to guarantee a valid JWT is present
+		// before any privileged check (prevents unauthenticated access).
+		if _, ok := auth.MustGetTenantID(w, r); !ok {
+			return
+		}
+		if !auth.IsSuperAdmin(r.Context()) {
+			respond.ErrorWithCode(w, http.StatusForbidden, respond.ErrCodeForbidden,
+				"superadmin role required to flag audit log entries")
 			return
 		}
 

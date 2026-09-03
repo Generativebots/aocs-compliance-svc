@@ -46,7 +46,10 @@ func crudListAllHandler(db database.DB, table string) http.HandlerFunc {
 }
 
 func crudGetHandler(db database.DB, table, pk string) http.HandlerFunc {
-	return factory.GetByID(factory.Cfg{Table: table, SelectCols: "*", PKField: pk})(db)
+	// TenantScoped:true — factory.GetByID fetches by PK then verifies row.tenant_id == JWT tenant.
+	// Without this, any authenticated user can read any record across all tenants
+	// by guessing or enumerating IDs (IDOR / cross-tenant object access).
+	return factory.GetByID(factory.Cfg{Table: table, SelectCols: "*", PKField: pk, TenantScoped: true})(db)
 }
 
 func crudUpdateHandler(db database.DB, table, pk string) http.HandlerFunc {
