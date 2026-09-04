@@ -23,7 +23,8 @@ import (
 
 	// Handler packages
 	hcompliance "github.com/ocx/compliance/internal/compliance/handlers/compliance"
-	hsecurity "github.com/ocx/compliance/internal/compliance/handlers/security"
+	hsecurity   "github.com/ocx/compliance/internal/compliance/handlers/security"
+	"github.com/ocx/compliance/internal/compliance/propagation"
 
 	// Infrastructure
 	"github.com/ocx/shared/infra/config"
@@ -92,6 +93,16 @@ func main() {
 	// to "core_trust_events". Rows written with cross_org=false (sybil = single-tenant concern).
 	hsecurity.StartSybilDetectionWorker(svc.BgCtx, db)
 	slog.Info("P-16: SybilDetectionWorker started — daily 03:00 UTC sybil scan")
+
+	// ── Layer 2 Cross-Ring Propagation Consumers ─────────────────────────────
+	// Palantir 3-layer model: Ring 3 subscribes to Ring 0 and Ring 2 domain events.
+	//   - TENANT_PROVISIONED → UPSERT compliance.tenant_baselines (OBSERVE mode)
+	//   - TENANT_DELETED     → UPDATE compliance records (soft tombstone)
+	//   - AGENT_REGISTERED   → UPSERT compliance.agent_evidence_vault
+	// All consumers use idempotency log (compliance.idempotency_log) to prevent
+	// duplicate processing on Pub/Sub redelivery.
+	propagation.StartCompliancePropagationConsumers(svc.BgCtx, db, os.Getenv("GCP_PROJECT_ID"))
+	slog.Info("cross-ring propagation consumers started (TENANT_PROVISIONED, TENANT_DELETED, AGENT_REGISTERED)")
 
 	// ── DLP Store ───────────────────────────────────────────────────────────
 	dlpStore := hsecurity.NewDLPStore(db, coreClient)

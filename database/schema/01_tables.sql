@@ -417,3 +417,67 @@ CREATE INDEX IF NOT EXISTS idx_compliance_cases_agent_id
     ON compliance.compliance_cases (agent_id);
 CREATE INDEX IF NOT EXISTS idx_compliance_cases_severity
     ON compliance.compliance_cases (tenant_id, severity, created_at DESC) WHERE severity IS NOT NULL;
+
+-- ============================================================================
+-- § CROSS-RING PROPAGATION — Layer 2 & Layer 3 Infrastructure (Ring 3)
+-- ============================================================================
+
+-- ── compliance.tenant_baselines — seeded by TENANT_PROVISIONED ──────────────
+-- Every tenant gets a compliance baseline row on provisioning.
+-- Ring 0 TENANT_PROVISIONED → compliance UPSERT here.
+-- Conflict key: (tenant_id) — idempotent on redelivery.
+CREATE TABLE IF NOT EXISTS compliance.tenant_baselines (
+    baseline_id     TEXT        PRIMARY KEY DEFAULT gen_id(),
+    tenant_id       TEXT        NOT NULL,
+    jurisdiction    TEXT,                               -- from syst_tenants.jurisdiction
+    frameworks      JSONB       NOT NULL DEFAULT '[]',  -- regulatory frameworks active
+    enforcement_mode TEXT       NOT NULL DEFAULT 'OBSERVE'
+                        CHECK (enforcement_mode IN ('OBSERVE','ENFORCE','AUDIT')),
+    seeded_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_compliance_baseline_tenant UNIQUE (tenant_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_compliance_baseline_tenant
+    ON compliance.tenant_baselines (tenant_id);
+
+-- ── compliance.agent_evidence_vault — seeded by AGENT_REGISTERED ────────────
+-- Per-agent evidence registry seeded when a new agent is registered in Ring 2.
+-- Ring 2 AGENT_REGISTERED → compliance UPSERT here.
+-- All evidence items (ZKP proofs, DLP scans) reference this anchor row.
+CREATE TABLE IF NOT EXISTS compliance.agent_evidence_vault (
+    vault_id        TEXT        PRIMARY KEY DEFAULT gen_id(),
+    tenant_id       TEXT        NOT NULL,
+    agent_id        TEXT        NOT NULL,               -- soft ref: Ring 2 core_agents.agent_id
+    agent_name      TEXT,
+    vault_status    TEXT        NOT NULL DEFAULT 'ACTIVE'
+                        CHECK (vault_status IN ('ACTIVE','FROZEN','RETIRED')),
+    evidence_count  INTEGER     NOT NULL DEFAULT 0,
+    last_evidence_at TIMESTAMPTZ,
+    seeded_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_vault_agent_tenant UNIQUE (agent_id, tenant_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vault_tenant
+    ON compliance.agent_evidence_vault (tenant_id, vault_status);
+CREATE INDEX IF NOT EXISTS idx_vault_agent
+    ON compliance.agent_evidence_vault (agent_id);
+
+-- ── compliance.idempotency_log — Layer 2 consumer guard ─────────────────────
+CREATE TABLE IF NOT EXISTS compliance.idempotency_log (
+    message_id      TEXT        PRIMARY KEY,
+    topic           TEXT        NOT NULL,
+    tenant_id       TEXT,
+    agent_id        TEXT,
+    handler         TEXT        NOT NULL,
+    result          TEXT        NOT NULL DEFAULT 'OK',
+    processed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+COMMENT ON TABLE compliance.tenant_baselines IS
+    'Ring 3 compliance baseline seeded by TENANT_PROVISIONED event. '
+    'UPSERT (tenant_id) ensures idempotency on Pub/Sub redelivery.';
+COMMENT ON TABLE compliance.agent_evidence_vault IS
+    'Ring 3 evidence vault anchor seeded by AGENT_REGISTERED event. '
+    'All ZKP proofs and DLP scan results reference this row.';
