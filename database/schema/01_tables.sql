@@ -286,7 +286,7 @@ CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 -- backward FK compatibility during the transition period.
 
 CREATE TABLE IF NOT EXISTS compliance.core_policy_violations (
-    violation_id        TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    violation_id        TEXT PRIMARY KEY DEFAULT gen_id(),
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     policy_id           TEXT NOT NULL,
     agent_id            TEXT,
@@ -304,7 +304,7 @@ CREATE TABLE IF NOT EXISTS compliance.core_policy_violations (
 );
 
 CREATE TABLE IF NOT EXISTS compliance.core_regulatory_obligations (
-    obligation_id       TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    obligation_id       TEXT PRIMARY KEY DEFAULT gen_id(),
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     framework           TEXT NOT NULL,
     control_id          TEXT NOT NULL,
@@ -320,7 +320,7 @@ CREATE TABLE IF NOT EXISTS compliance.core_regulatory_obligations (
 );
 
 CREATE TABLE IF NOT EXISTS compliance.core_policy_exceptions (
-    exception_id        TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    exception_id        TEXT PRIMARY KEY DEFAULT gen_id(),
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     policy_id           TEXT NOT NULL,
     agent_id            TEXT,
@@ -334,7 +334,7 @@ CREATE TABLE IF NOT EXISTS compliance.core_policy_exceptions (
 );
 
 CREATE TABLE IF NOT EXISTS compliance.core_gra_risk_assessments (
-    gra_risk_assessment_id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    gra_risk_assessment_id TEXT PRIMARY KEY DEFAULT gen_id(),
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     framework_id        TEXT,
     risk_level          TEXT NOT NULL CHECK (risk_level = ANY (ARRAY['LOW','MEDIUM','HIGH','CRITICAL'])),
