@@ -67,6 +67,7 @@ func (jc *JuryClient) Close() error {
 func (jc *JuryClient) AuditIntent(
 	ctx context.Context,
 	tenantID, txID, agentID, toolName string,
+	intentID, departmentID string,
 	params map[string]any,
 ) (*AuditResponse, error) {
 	req := &AuditRequest{
@@ -74,7 +75,11 @@ func (jc *JuryClient) AuditIntent(
 		AgentID:       agentID,
 		ToolName:      toolName,
 		Parameters:    params,
-		Context:       map[string]any{},
+		// G2 FIX: intent-scoped ML policy rules require intentID and departmentID.
+		Context: map[string]any{
+			"intent_id":     intentID,
+			"department_id": departmentID,
+		},
 	}
 
 	if tenantID != "" {
@@ -123,10 +128,12 @@ func (jc *JuryClient) AuditIntent(
 
 // TryAuditIntent attempts to create a client, audit, and close in one shot.
 // tenantID is passed to AuditIntent for FA-47 gRPC metadata propagation.
+// intentID and departmentID are passed for G2 FIX intent-scoped ML policy rules.
 // Returns graceful fallback on connection failure.
 func TryAuditIntent(
 	ctx context.Context,
 	addr, tenantID, txID, agentID, toolName string,
+	intentID, departmentID string,
 	params map[string]any,
 ) *AuditResponse {
 	client, err := NewJuryClient(addr)
@@ -144,7 +151,7 @@ func TryAuditIntent(
 	}
 	defer client.Close()
 
-	resp, err := client.AuditIntent(ctx, tenantID, txID, agentID, toolName, params)
+	resp, err := client.AuditIntent(ctx, tenantID, txID, agentID, toolName, intentID, departmentID, params)
 	if err != nil {
 		return &AuditResponse{
 			TransactionID: txID,

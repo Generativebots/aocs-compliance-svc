@@ -49,16 +49,16 @@ func NewJuryClientAdapter(client *JuryClient) (*JuryClientAdapter, error) {
 
 // AuditIntent implements contracts.IntentAuditor.
 //
-// Parameter order: tenantID, txID, agentID, toolName, params.
-// This order is fixed by the IntentAuditor interface (contracts/contracts.go).
-// Callers must verify argument order at the call site.
+// Parameter order: tenantID, txID, agentID, toolName, intentID, departmentID, params.
+// intentID and departmentID were added in G2 FIX so the Jury can apply intent-scoped ML policy rules.
 func (a *JuryClientAdapter) AuditIntent(
 	ctx context.Context,
 	tenantID, txID, agentID, toolName string,
+	intentID, departmentID string,
 	params map[string]any,
 ) (*contracts.IntentAuditResponse, error) {
 	start := time.Now()
-	resp, err := a.client.AuditIntent(ctx, tenantID, txID, agentID, toolName, params)
+	resp, err := a.client.AuditIntent(ctx, tenantID, txID, agentID, toolName, intentID, departmentID, params)
 	latency := time.Since(start)
 
 	if err != nil {

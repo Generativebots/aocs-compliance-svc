@@ -270,6 +270,8 @@ func buildEscalateFuncFromClient(client *JuryClient) EscalateFunc {
 			msg.DecisionID,
 			msg.AgentID,
 			"escalate_case",
+			"", // intentID — not available on escalation path
+			"", // departmentID — not available on escalation path
 			map[string]any{
 				"reason":       msg.Reason,
 				"gate_id":      msg.GateID,
