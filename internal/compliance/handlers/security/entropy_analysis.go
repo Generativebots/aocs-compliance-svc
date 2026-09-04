@@ -232,7 +232,7 @@ func HandleUpdateEntropyEvent(db database.DB) http.HandlerFunc {
 		var req struct {
 			VarianceScore float64 `json:"varianceScore"`
 		}
-		respond.LimitBody(r)
+	// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &req) {
 			return
 		}

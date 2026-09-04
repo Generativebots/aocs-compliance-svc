@@ -122,7 +122,7 @@ func HandleRejectJuror(db database.DB) http.HandlerFunc {
 			Reason  string `json:"reason"`
 			JurorID string `json:"juror_id"`
 		}
-		respond.LimitBody(r)
+	// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &body) {
 			return
 		}

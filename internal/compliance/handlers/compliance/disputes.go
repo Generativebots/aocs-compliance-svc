@@ -121,7 +121,7 @@ func HandleCreateDispute(db database.DB) http.HandlerFunc {
 		}
 		respond.LimitBody(r)
 		var body CreateDisputeRequest
-		respond.LimitBody(r)
+	// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &body) {
 			return
 		}
@@ -175,7 +175,7 @@ func HandleResolveDispute(db database.DB) http.HandlerFunc {
 			Verdict    string `json:"verdict"`    // UPHELD | OVERTURNED
 			Resolution string `json:"resolution"` // human-readable explanation
 		}
-		respond.LimitBody(r)
+	// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &body) {
 			return
 		}

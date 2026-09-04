@@ -118,7 +118,7 @@ func HandleCasesSubmitJuryVote(db database.DB, coreClient *serviceclient.Client)
 		}
 		respond.LimitBody(r)
 		var body CasesSubmitJuryVoteRequest
-		respond.LimitBody(r)
+	// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &body) {
 			return
 		}

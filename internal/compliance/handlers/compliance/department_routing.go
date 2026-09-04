@@ -73,7 +73,7 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 		respond.LimitBody(r)
 
 		var req DepartmentRouteRequest
-		respond.LimitBody(r)
+	// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &req) {
 			return
 		}

@@ -125,7 +125,7 @@ func HandleValidateNonce(nonce *security.NonceStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		respond.LimitBody(r)
 		var req NonceValidateRequest
-		respond.LimitBody(r)
+	// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &req) {
 			return
 		}

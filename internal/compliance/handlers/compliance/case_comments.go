@@ -38,7 +38,7 @@ func HandleCreateCaseComment(db database.DB) http.HandlerFunc {
 		}
 		respond.LimitBody(r)
 		var body AddCaseCommentRequest
-		respond.LimitBody(r)
+	// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &body) {
 			return
 		}

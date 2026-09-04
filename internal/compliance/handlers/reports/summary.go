@@ -39,7 +39,7 @@ func HandleGetAnalyticsQuery(db database.DB) http.HandlerFunc {
 		respond.LimitBody(r)
 
 		var body AnalyticsQueryRequest2
-		respond.LimitBody(r)
+	// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &body) {
 			return
 		}
@@ -448,7 +448,7 @@ func HandleCreateExport(db database.DB) http.HandlerFunc {
 			return
 		}
 		respond.LimitBody(r)
-		respond.LimitBody(r)
+	// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		var req struct {
 			Format     string         `json:"format"      validate:"required"`
 			EntityType string         `json:"entity_type"`
