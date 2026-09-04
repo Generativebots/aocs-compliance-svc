@@ -33,6 +33,13 @@ ALTER TABLE compliance.core_gra_risk_assessments    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE compliance.core_gra_risk_assessments    FORCE  ROW LEVEL SECURITY;
 ALTER TABLE compliance.compliance_cases             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE compliance.compliance_cases             FORCE  ROW LEVEL SECURITY;
+-- GAP-RLS-01 FIX: new tables from cross-ring propagation work
+ALTER TABLE compliance.tenant_baselines             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE compliance.tenant_baselines             FORCE  ROW LEVEL SECURITY;
+ALTER TABLE compliance.agent_evidence_vault         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE compliance.agent_evidence_vault         FORCE  ROW LEVEL SECURITY;
+ALTER TABLE compliance.idempotency_log              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE compliance.idempotency_log              FORCE  ROW LEVEL SECURITY;
 
 -- ── Tenant isolation + superadmin bypass (all tenant-scoped tables) ──────────
 DO $$ DECLARE t TEXT; BEGIN
@@ -48,7 +55,9 @@ DO $$ DECLARE t TEXT; BEGIN
     'core_regulatory_obligations',
     'core_policy_exceptions',
     'core_gra_risk_assessments',
-    'compliance_cases'
+    'compliance_cases',
+    'tenant_baselines',
+    'agent_evidence_vault'
   ] LOOP
     EXECUTE format('DROP POLICY IF EXISTS superadmin_all ON compliance.%I', t);
     EXECUTE format(
@@ -64,6 +73,12 @@ DO $$ DECLARE t TEXT; BEGIN
     );
   END LOOP;
 END $$;
+
+-- ── idempotency_log — service_role only (internal dedup table, no auth access) ─
+DROP POLICY IF EXISTS idempotency_log_service_role ON compliance.idempotency_log;
+CREATE POLICY idempotency_log_service_role ON compliance.idempotency_log
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
 
 -- ── platform_signing_keys — superadmin only (no tenant_id column) ────────────
 DROP POLICY IF EXISTS signing_keys_superadmin_only ON compliance.platform_signing_keys;
