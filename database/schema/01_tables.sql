@@ -187,7 +187,9 @@ CREATE TABLE IF NOT EXISTS compliance.shar_dlp_integrations (
     status              TEXT        NOT NULL DEFAULT 'OPEN'
                             CHECK (status IN ('OPEN','ACKNOWLEDGED','RESOLVED','FALSE_POSITIVE')),
     metadata            JSONB       NOT NULL DEFAULT '{}',
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- H5: updated_at required for incremental sync (Palantir standard)
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- ── compliance.nexus_compliance_reports ──────────────────────────────────────
@@ -223,7 +225,9 @@ CREATE TABLE IF NOT EXISTS compliance.core_compliance_comments (
     author_id       TEXT        NOT NULL,
     content         TEXT        NOT NULL,
     is_internal     BOOLEAN     NOT NULL DEFAULT FALSE,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- H5: updated_at required for incremental sync (Palantir standard)
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- ── compliance.shar_trust ───────────────────────────────────
@@ -237,8 +241,13 @@ CREATE TABLE IF NOT EXISTS compliance.platform_signing_keys (
     public_key  TEXT        NOT NULL,
     private_key TEXT        NOT NULL,
     is_active   BOOLEAN     NOT NULL DEFAULT TRUE,
+    -- H6: explicit ON DELETE for FK (Palantir standard)
+    superseded_by   TEXT        REFERENCES compliance.platform_signing_keys (key_id) ON DELETE SET NULL
+                                    CONSTRAINT platform_signing_keys_superseded_by_fkey,
     rotated_at  TIMESTAMPTZ,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- H5: updated_at required for incremental sync
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uidx_platform_signing_keys_active
@@ -259,94 +268,16 @@ CREATE TABLE IF NOT EXISTS compliance.core_anomaly_detection (
 CREATE INDEX IF NOT EXISTS idx_collusion_ip_tenant
     ON compliance.core_anomaly_detection (tenant_id);
 
--- ── DBA Audit Fixes (2026-09-02) ──────────────────────────────────────────────
--- M2: Add default values to prevent null compliance fields
-ALTER TABLE public.syst_tenants
-    ALTER COLUMN data_residency_region SET DEFAULT 'us-central1',
-    ALTER COLUMN last_config_changed_by SET DEFAULT 'SYSTEM';
 
--- H5: Add updated_at to compliance tables missing it (required for incremental sync + ETL)
--- Palantir standard: every mutable table must have an updated_at column with auto-trigger.
-ALTER TABLE compliance.core_compliance_comments    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-ALTER TABLE compliance.shar_dlp_integrations     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
--- shar_trust: removed — table was merged into core_trust_events (cross_org=true flag). No ALTER needed.
-ALTER TABLE compliance.core_evidence       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-ALTER TABLE compliance.platform_signing_keys ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-
--- Auto-update trigger function (shared within compliance schema)
-CREATE OR REPLACE FUNCTION compliance.set_updated_at()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-$$;
-
-CREATE OR REPLACE TRIGGER trg_case_comments_updated_at
-    BEFORE UPDATE ON compliance.core_compliance_comments
-    FOR EACH ROW EXECUTE FUNCTION compliance.set_updated_at();
-
-CREATE OR REPLACE TRIGGER trg_dlp_findings_updated_at
-    BEFORE UPDATE ON compliance.shar_dlp_integrations
-    FOR EACH ROW EXECUTE FUNCTION compliance.set_updated_at();
-
--- trg_sybil_assessments_updated_at: removed — compliance.shar_trust was merged into core_trust_events.
-
-CREATE OR REPLACE TRIGGER trg_zkp_proofs_updated_at
-    BEFORE UPDATE ON compliance.core_evidence
-    FOR EACH ROW EXECUTE FUNCTION compliance.set_updated_at();
-
-CREATE OR REPLACE TRIGGER trg_signing_keys_updated_at
-    BEFORE UPDATE ON compliance.platform_signing_keys
-    FOR EACH ROW EXECUTE FUNCTION compliance.set_updated_at();
-
--- H6: Add explicit ON DELETE to FK columns missing it
--- Palantir standard: every FK must declare ON DELETE behaviour explicitly.
-ALTER TABLE compliance.platform_signing_keys
-    DROP CONSTRAINT IF EXISTS platform_signing_keys_superseded_by_fkey,
-    ADD CONSTRAINT platform_signing_keys_superseded_by_fkey
-        FOREIGN KEY (superseded_by)
-        REFERENCES compliance.platform_signing_keys (key_id)
-        ON DELETE SET NULL;
-
--- H6 (system): syst_departments.parent_id
-ALTER TABLE public.syst_departments
-    DROP CONSTRAINT IF EXISTS ocx_departments_parent_id_fkey,
-    ADD CONSTRAINT ocx_platform_departments_parent_id_fkey
-        FOREIGN KEY (parent_id)
-        REFERENCES public.syst_departments (department_id)
-        ON DELETE SET NULL;
-
--- syst_audit: NOT NULL on tenant_id (data isolation)
-ALTER TABLE public.syst_audit ALTER COLUMN tenant_id SET NOT NULL;
-
--- Compound index for dashboard query pattern (tenant_id, created_at DESC)
-CREATE INDEX IF NOT EXISTS idx_ocx_audit_log_tenant_time
-    ON public.syst_audit (tenant_id, created_at DESC);
-
--- syst_tenants + syst_tenants indexes
-CREATE INDEX IF NOT EXISTS idx_notification_rules_tenant ON public.syst_tenants (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_tenant_config_tenant      ON public.syst_tenants (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_platform_depts_parent     ON public.syst_departments (parent_id);
-
--- M5: pg_stat_statements for slow query identification (Google/Palantir monitoring standard)
+-- ── DBA Audit Fixes (applied 2026-09-04) ─────────────────────────────────────────────
+-- M2: syst_tenants defaults (data_residency_region, last_config_changed_by) → folded
+--     inline into aocs-system-svc/database/schema/01_tables.sql
+-- H5: updated_at columns → folded inline into each compliance CREATE TABLE above
+-- H6: platform_signing_keys superseded_by FK → folded inline into CREATE TABLE above
+-- H6 (system): syst_departments.parent_id FK → folded inline into aocs-system-svc
+-- RLS (compliance tables): moved to 06_rls.sql
+-- NOTE: pg_stat_statements extension should be created by a superuser separately.
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
-
--- RLS on new security-critical tables
-ALTER TABLE compliance.core_anomaly_detection ENABLE ROW LEVEL SECURITY;
-ALTER TABLE compliance.platform_signing_keys    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.syst_tenants      ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY IF NOT EXISTS signing_keys_superadmin_only ON compliance.platform_signing_keys
-    FOR ALL TO authenticated
-    USING ((current_setting('request.jwt.claims', true)::jsonb ->> 'is_superadmin')::boolean = true);
-
-CREATE POLICY IF NOT EXISTS collusion_ip_service_role_only ON compliance.core_anomaly_detection
-    FOR ALL TO service_role USING (true) WITH CHECK (true);
-
-CREATE POLICY IF NOT EXISTS notification_rules_tenant ON public.syst_tenants
-    FOR ALL TO authenticated
-    USING (tenant_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'tenant_id'));
 
 -- ── Ring 2 → Ring 3 Migrations ───────────────────────────────────────────────
 -- Tables below were moved from ocx-core-svc Ring 2 to aocs-compliance-svc Ring 3.
@@ -417,3 +348,72 @@ CREATE TABLE IF NOT EXISTS compliance.core_gra_risk_assessments (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- ── compliance.compliance_cases ──────────────────────────────────────────────
+-- Moved from extc_compliance_cases in ocx-extension-svc (2026-09-04).
+-- This is a Ring 3 PAID feature (FeatureCompliance guard).
+-- FKs to Ring 2 (agent_id, hitl_decision_id, enforcement_action_id) are TEXT-only
+-- (no hard FK) — enforced at application layer. Cross-DB FK forbidden.
+CREATE TABLE IF NOT EXISTS compliance.compliance_cases (
+    case_id             TEXT        PRIMARY KEY DEFAULT public.gen_id(),
+    tenant_id           TEXT        NOT NULL REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
+    -- Ring 2 TEXT references (no hard FK — cross-DB boundary)
+    agent_id            TEXT,
+    enforcement_action_id TEXT,
+    hitl_decision_id    TEXT,
+    policy_id           TEXT,
+    platform_config_id  TEXT,
+    assessment_id       TEXT,
+    -- Case fields
+    case_type           TEXT        NOT NULL DEFAULT 'COMPLIANCE'
+                            CHECK (case_type = ANY (ARRAY['COMPLIANCE','DISPUTE','ESCALATION','AUDIT','GOVERNANCE','RISK','SECURITY','FRAUD'])),
+    status              TEXT        NOT NULL DEFAULT 'OPEN'
+                            CHECK (status = ANY (ARRAY['OPEN','INVESTIGATING','RESOLVED','CLOSED','ARCHIVED'])),
+    severity            TEXT        NOT NULL DEFAULT 'MEDIUM'
+                            CHECK (severity = ANY (ARRAY['LOW','MEDIUM','HIGH','CRITICAL'])),
+    title               TEXT        NOT NULL,
+    description         TEXT,
+    evidence_ids        JSONB       NOT NULL DEFAULT '[]',
+    remediations        JSONB       NOT NULL DEFAULT '[]',
+    case_comments       JSONB       NOT NULL DEFAULT '[]',
+    -- Assignment
+    assigned_to         TEXT,
+    assigned_at         TIMESTAMPTZ,
+    required_votes      INTEGER     NOT NULL DEFAULT 1,
+    -- Lifecycle
+    sla_breach_at       TIMESTAMPTZ,
+    closed_at           TIMESTAMPTZ,
+    closed_by           TEXT,
+    decision            TEXT,
+    retired_at          TIMESTAMPTZ,
+    -- Deduplication
+    dedup_key           TEXT,
+    -- Additional refs
+    gra_case_id         TEXT,
+    dispute_id          TEXT,
+    violation_id        TEXT,
+    violated_policy_id  TEXT,
+    final_reputation_score NUMERIC,
+    jurisdiction        TEXT,
+    is_internal         BOOLEAN     NOT NULL DEFAULT FALSE,
+    duration            INTERVAL,
+    -- Audit
+    metadata            JSONB       NOT NULL DEFAULT '{}',
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+COMMENT ON TABLE compliance.compliance_cases IS
+    'Ring 3 (FeatureCompliance): Compliance cases moved from ocx-extension-svc/extc_compliance_cases. '
+    'Requires FeatureCompliance in tenant JWT. All Ring 2 FKs are TEXT-only (cross-DB boundary).';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_compliance_cases_dedup
+    ON compliance.compliance_cases (dedup_key) WHERE dedup_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_compliance_cases_tenant_status
+    ON compliance.compliance_cases (tenant_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_compliance_cases_type
+    ON compliance.compliance_cases (tenant_id, case_type, status);
+CREATE INDEX IF NOT EXISTS idx_compliance_cases_agent_id
+    ON compliance.compliance_cases (agent_id);
+CREATE INDEX IF NOT EXISTS idx_compliance_cases_severity
+    ON compliance.compliance_cases (tenant_id, severity, created_at DESC) WHERE severity IS NOT NULL;
