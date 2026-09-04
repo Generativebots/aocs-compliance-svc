@@ -233,7 +233,12 @@ func HandleCreateReport(db database.DB) http.HandlerFunc {
 		if req.EndDate == "" {
 			req.EndDate = now.Format(time.RFC3339)
 		}
+		// BUG FIX: Return the generated report_id so clients can navigate to/poll the report.
+		// Previously returning {"status":"created"} with no ID was a usability gap —
+		// clients had no way to reference the newly created report.
+		reportID := generatePlatformID()
 		row := map[string]any{
+			"compliance_report_id": reportID,
 			"tenant_id":    tenantID,
 			"report_type":  req.ReportType,
 			"title":        req.Title,
@@ -246,7 +251,11 @@ func HandleCreateReport(db database.DB) http.HandlerFunc {
 			respond.InternalError(w, http.StatusInternalServerError, "failed to create report", nil)
 			return
 		}
-		respond.JSON(w, http.StatusCreated, map[string]string{"status": "created"})
+		respond.JSON(w, http.StatusCreated, map[string]any{
+			"status":    "created",
+			"report_id": reportID,
+			"type":      req.ReportType,
+		})
 	}
 }
 
@@ -583,9 +592,10 @@ func HandleListDashboards(db database.DB) http.HandlerFunc {
 
 		dashboards := make([]map[string]any, 0, len(result))
 		for _, cfg := range result {
+			// BUG FIX: column is "record_key" not "key" — fix list response
 			dashboards = append(dashboards, map[string]any{
-				"id":          cfg["key"],
-				"name":        cfg["key"],
+				"id":          cfg["record_key"],
+				"name":        cfg["record_key"],
 				"description": "",
 				"widgets": []map[string]any{
 					{
@@ -630,8 +640,9 @@ func HandleGetDashboard(db database.DB) http.HandlerFunc {
 			return
 		}
 		var rows []map[string]any
+		// BUG FIX: column is "record_key" not "key"
 		if _dbErr := db.QueryRowsCompound(database.TblPlatformConfig, database.ColsAocsPlatformConfig,
-			"category", "dashboard_"+tenantID, "key", dashID, &rows); _dbErr != nil {
+			"category", "dashboard_"+tenantID, "record_key", dashID, &rows); _dbErr != nil {
 			slog.Error("db.QueryRowsCompound failed (best-effort)", "error", _dbErr)
 		}
 		if len(rows) == 0 {
@@ -737,12 +748,14 @@ func HandleUpdateDashboard(db database.DB) http.HandlerFunc {
 			"widgets":     req.Widgets,
 			"settings":    req.Settings,
 		}
+		// BUG FIX: column is "record_value" (NOT "value") — matches CreateDashboard
 		patch := map[string]any{
-			"value": dashContent,
+			"record_value": dashContent,
 		}
 		// Propagate update errors to client instead of silently swallowing.
+		// BUG FIX: column is "record_key" (NOT "key") — matches the CreateDashboard insert
 		if err := db.UpdateRowCompound(database.TblPlatformConfig,
-			"category", "dashboard_"+tenantID, "key", dashID, patch); err != nil {
+			"category", "dashboard_"+tenantID, "record_key", dashID, patch); err != nil {
 			slog.Error("UpdateDashboard failed", "dashboard_id", dashID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to update dashboard", nil)
 			return

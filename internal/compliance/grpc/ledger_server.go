@@ -75,7 +75,8 @@ func (s *LedgerServer) RecordEvidence(ctx context.Context, req *pb.RecordEvidenc
 			},
 			"updated_at": now,
 		}
-		if uerr := s.DB.UpdateRowCompoundCtx(context.Background(), database.TblCoreEvidence,
+		// CTX-FIX: use the RPC request ctx (not Background) so cancellation propagates
+		if uerr := s.DB.UpdateRowCompoundCtx(ctx, database.TblCoreEvidence,
 			"entity_id", req.DecisionId, "tenant_id", req.TenantId, updates); uerr != nil {
 			slog.Error("LedgerServer.RecordEvidence: upsert failed",
 				"entity_id", req.DecisionId, "tenant_id", req.TenantId, "err", uerr)
@@ -164,13 +165,19 @@ func (s *LedgerServer) GetEvidence(ctx context.Context, req *pb.GetEvidenceReque
 	}
 
 	row := rows[0]
-	decisionID, _ := row["decision_id"].(string)
-	evStatus, _ := row["status"].(string)
-	hash, _ := row["hash"].(string)
+	// BUG FIX: columns queried are "evidence_id, entity_id, chain_data, updated_at"
+	// — "decision_id", "status", "hash" don't exist as top-level columns; they
+	// live inside chain_data JSONB. Read them correctly.
+	entityID, _ := row["entity_id"].(string)
+	var storedHash, evStatus string
+	if cd, ok := row["chain_data"].(map[string]any); ok {
+		storedHash, _ = cd["hash"].(string)
+		evStatus, _ = cd["status"].(string)
+	}
 
 	return &pb.GetEvidenceResponse{
-		DecisionId: decisionID,
+		DecisionId: entityID, // entity_id is the decision FK
 		Status:     evStatus,
-		Hash:       hash,
+		Hash:       storedHash,
 	}, nil
 }

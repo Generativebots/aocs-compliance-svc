@@ -368,11 +368,22 @@ func HandleGenerateZKPProof(db database.DB) http.HandlerFunc {
 		// Chain linkage — link this proof to the previous one for this agent+tenant
 		// creating a Merkle-linked evidence chain.
 		var previousCommitment string
+		// BUG FIX: QueryRowsCompound has no ORDER BY — prevRows order is non-deterministic.
+		// Use QueryRowsCompoundCtx and sort by issued_at to always chain from the newest proof.
 		var prevRows []struct {
 			ChallengeID string `json:"challenge_id"`
+			IssuedAt    string `json:"issued_at"`
 		}
-		if err := db.QueryRowsCompound(database.TblSharZkpVerify, "challenge_id",
+		if err := db.QueryRowsCompoundCtx(r.Context(), database.TblSharZkpVerify, "challenge_id,issued_at",
 			"agent_id", req.AgentID, "tenant_id", tenantID, &prevRows); err == nil && len(prevRows) > 0 {
+			// Sort ascending by issued_at — last entry is the most recent proof to chain from.
+			for i := 0; i < len(prevRows)-1; i++ {
+				for j := i + 1; j < len(prevRows); j++ {
+					if prevRows[j].IssuedAt < prevRows[i].IssuedAt {
+						prevRows[i], prevRows[j] = prevRows[j], prevRows[i]
+					}
+				}
+			}
 			previousCommitment = prevRows[len(prevRows)-1].ChallengeID
 		}
 		chainHash := ""

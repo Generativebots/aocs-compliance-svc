@@ -57,7 +57,7 @@ func HandleDLPScan(store *DLPStore) http.HandlerFunc {
 		}
 
 		var req DLPScanRequest
-		respond.LimitBody(r)
+		// GATE-06 FIX: removed — LimitBodyLarge already set the limit above
 		if !validate.Bind(w, r, &req) {
 			return
 		}
@@ -292,7 +292,7 @@ func HandleDLPMonitorPID(store *DLPStore) http.HandlerFunc {
 		}
 
 		var req MonitorPIDRequest
-		respond.LimitBody(r)
+		// GATE-06 FIX: removed duplicate LimitBody — already called above
 		if !validate.Bind(w, r, &req) {
 			return
 		}
@@ -465,7 +465,7 @@ func HandleCreateDLPIntegration(store *DLPStore) http.HandlerFunc {
 		}
 
 		var intg DLPIntegration
-		respond.LimitBody(r)
+		// GATE-06 FIX: removed duplicate LimitBody — already called above
 		if !validate.Bind(w, r, &intg) {
 			return
 		}
