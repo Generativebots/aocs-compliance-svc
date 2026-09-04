@@ -24,6 +24,20 @@ import (
 // Matches the PostgreSQL gen_id() function in V013__functions.sql
 func generatePlatformID() string { return idgen.GenID() }
 
+// verifyEvidenceHash recomputes sha256(payload) and compares against the stored hash.
+// GAP-P3 FIX: evidence GET handlers now verify the hash chain on every read.
+// Returns (integrityOK bool, storedHash string, computedHash string).
+// A blank stored hash means the record pre-dates hash chain (legacy) — treated as ok.
+func verifyEvidenceHash(rec database.QCoreEvidenceRecord) (integrityOK bool, stored, computed string) {
+	if rec.Hash == "" {
+		return true, "", "" // pre-chain legacy record — no hash to verify
+	}
+	payloadBytes := []byte(rec.Payload)
+	sum := sha256.Sum256(payloadBytes)
+	computed = hex.EncodeToString(sum[:])
+	return rec.Hash == computed, rec.Hash, computed
+}
+
 func HandleListEvidence(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if respond.RequireDB(w, db) {
@@ -61,7 +75,35 @@ func HandleListEvidence(db database.DB) http.HandlerFunc {
 		if records == nil {
 			records = []database.QCoreEvidenceRecord{}
 		}
-		respond.OK(w, records)
+
+		// GAP-P3 FIX: inline tamper detection on list.
+		// Records with hash mismatch are flagged — never silently returned.
+		type evidenceWithIntegrity struct {
+			database.QCoreEvidenceRecord
+			IntegrityOK    bool   `json:"integrity_ok"`
+			TamperDetected bool   `json:"tamper_detected,omitempty"`
+		}
+		result := make([]evidenceWithIntegrity, 0, len(records))
+		tamperedCount := 0
+		for _, rec := range records {
+			ok, stored, computed := verifyEvidenceHash(rec)
+			if !ok {
+				tamperedCount++
+				slog.Error("SECURITY: evidence tamper detected on LIST",
+					"evidence_id", rec.ID, "tenant_id", tenantID,
+					"stored_hash", stored, "computed_hash", computed)
+			}
+			result = append(result, evidenceWithIntegrity{
+				QCoreEvidenceRecord: rec,
+				IntegrityOK:         ok,
+				TamperDetected:      !ok,
+			})
+		}
+		if tamperedCount > 0 {
+			slog.Error("SECURITY: tampered evidence records found in tenant vault",
+				"tenant_id", tenantID, "tampered_count", tamperedCount, "total", len(records))
+		}
+		respond.OK(w, result)
 	}
 }
 
@@ -210,7 +252,23 @@ func HandleGetEvidence(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "evlt not found")
 			return
 		}
-		respond.OK(w, result[0])
+		rec := result[0]
+
+		// GAP-P3 FIX: verify hash on every GET — tamper-evidence is meaningless if only written.
+		// If hash mismatch: log SECURITY alert and return 409 Conflict with tamper details.
+		integrityOK, stored, computed := verifyEvidenceHash(rec)
+		if !integrityOK {
+			slog.Error("SECURITY: evidence tamper detected on GET",
+				"evidence_id", id, "tenant_id", tenantID,
+				"stored_hash", stored, "computed_hash", computed)
+			respond.ErrorWithCode(w, http.StatusConflict, "TAMPER_DETECTED",
+				"evidence record integrity check failed — content hash mismatch")
+			return
+		}
+		respond.OK(w, map[string]any{
+			"evidence":     rec,
+			"integrity_ok": true,
+		})
 	}
 }
 

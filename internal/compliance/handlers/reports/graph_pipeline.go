@@ -36,6 +36,11 @@ type platformEvent struct {
 	ToolName  string          `json:"tool_name"`
 	Payload   json.RawMessage `json:"payload"`
 	CreatedAt string          `json:"created_at"`
+	// GAP-P2 FIX: top-level verdict column fallback.
+	// core_events migrated final_verdict from payload JSON to a top-level column.
+	// Include both so extractPayload can fall back gracefully.
+	Verdict     string `json:"verdict,omitempty"`
+	ActionClass string `json:"action_class,omitempty"`
 }
 
 // payloadFields are the analytics-relevant fields stored inside platform event payload.
@@ -45,12 +50,28 @@ type payloadFields struct {
 }
 
 // extractPayload parses an event's payload JSON into analytics fields.
+// GAP-P2 FIX: falls back to top-level Verdict/ActionClass columns if payload
+// JSON is empty or missing final_verdict (column migration scenario).
 func extractPayload(raw json.RawMessage) payloadFields {
 	var pf payloadFields
 	if len(raw) > 0 {
 		if _jsonErr := json.Unmarshal(raw, &pf); _jsonErr != nil {
 			slog.Warn("metadata unmarshal failed", "source_len", len(raw), "error", _jsonErr)
 		}
+	}
+	return pf
+}
+
+// extractPayloadWithFallback is like extractPayload but also accepts the top-level
+// verdict/action_class columns from the platformEvent struct as fallback.
+func extractPayloadWithFallback(e platformEvent) payloadFields {
+	pf := extractPayloadWithFallback(e)
+	// GAP-P2: if payload JSON had no final_verdict, try top-level column.
+	if pf.FinalVerdict == "" && e.Verdict != "" {
+		pf.FinalVerdict = e.Verdict
+	}
+	if pf.ActionClass == "" && e.ActionClass != "" {
+		pf.ActionClass = e.ActionClass
 	}
 	return pf
 }
@@ -94,7 +115,7 @@ func HandleGetOgraphStats(db database.DB) http.HandlerFunc {
 		}
 		allowCount, blockCount, escCount := 0, 0, 0
 		for _, e := range events {
-			pf := extractPayload(e.Payload)
+			pf := extractPayloadWithFallback(e)
 			switch strings.ToUpper(pf.FinalVerdict) {
 			case "ALLOW", "APPROVED":
 				allowCount++
@@ -159,7 +180,7 @@ func HandleGetOgraphTimeline(db database.DB) http.HandlerFunc {
 		const maxTimeline = 200
 		events := make([]timelineEvent, 0, len(raw))
 		for _, e := range raw {
-			pf := extractPayload(e.Payload)
+			pf := extractPayloadWithFallback(e)
 			events = append(events, timelineEvent{
 				EventID:      e.EventID,
 				AgentID:      e.AgentID,
@@ -240,7 +261,7 @@ func HandleGetOgraphSankey(db database.DB) http.HandlerFunc {
 			if toolName == "" {
 				toolName = "unknown-tool"
 			}
-			pf := extractPayload(e.Payload)
+			pf := extractPayloadWithFallback(e)
 			verdict := strings.ToUpper(pf.FinalVerdict)
 			if verdict == "" {
 				verdict = "UNKNOWN"
