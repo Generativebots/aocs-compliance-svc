@@ -240,4 +240,26 @@ func registerIntelComplianceRoutes(
 	api.HandleFunc("/admin/parsed-documents",
 		auth.RequireAccess(pc, "compliance", "read",
 			compliance.HandleAdminListParsedDocuments(db))).Methods("GET")
+
+	// ── compliance.compliance_cases — investigative case store (C1 FIX 2026-09-04) ──
+	// DISTINCT from /compliance/cases which backs core_hitl (HITL decisions in ocx-core-svc).
+	// These routes manage the compliance-module's own investigation case tracking.
+	api.HandleFunc("/compliance/investigation-cases",
+		auth.RequireAccess(pc, "compliance", "read",
+			compliance.HandleListComplianceCases(db))).Methods("GET")
+	api.HandleFunc("/compliance/investigation-cases",
+		auth.RequireAccess(pc, "compliance", "write",
+			compliance.HandleCreateComplianceCase(db))).Methods("POST")
+	api.HandleFunc("/compliance/investigation-cases/{id}",
+		auth.RequireAccess(pc, "compliance", "read",
+			middleware.RequireValidPathVars("id")(compliance.HandleGetComplianceCase(db)))).Methods("GET")
+	api.HandleFunc("/compliance/investigation-cases/{id}/status",
+		auth.RequireAccess(pc, "compliance", "write",
+			middleware.RequireValidPathVars("id")(compliance.HandleUpdateComplianceCaseStatus(db)))).Methods("PATCH")
+	api.HandleFunc("/compliance/investigation-cases/{id}/assign",
+		auth.RequireAccess(pc, "compliance", "write",
+			middleware.RequireValidPathVars("id")(compliance.HandleAssignComplianceCase(db)))).Methods("POST")
+	api.HandleFunc("/compliance/investigation-cases/{id}/comments",
+		auth.RequireAccess(pc, "compliance", "write",
+			middleware.RequireValidPathVars("id")(compliance.HandleAddComplianceCaseComment(db)))).Methods("POST")
 }
