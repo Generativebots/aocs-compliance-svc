@@ -77,7 +77,7 @@ func HandleListRelationships(db database.DB) http.HandlerFunc {
 		}
 
 		var rels []map[string]any
-		if err := db.QueryRowsCtx(r.Context(), database.TblConrDocumentConnectors, database.ColsIAResourceRel, "tenant_id", tenantID, &rels); err != nil {
+		if err := db.QueryRowsCtx(r.Context(), database.TblConrRagSources, database.ColsIAResourceRel, "tenant_id", tenantID, &rels); err != nil {
 			slog.Error("ListRelationships failed", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to list relationships", nil)
 			return
@@ -125,7 +125,7 @@ func HandleCreateRelationship(db database.DB) http.HandlerFunc {
 			"label":             req.Label,
 		}
 		// created_at DEFAULT NOW() — DB handles
-		if err := db.InsertRow(database.TblConrDocumentConnectors, row); err != nil {
+		if err := db.InsertRow(database.TblConrRagSources, row); err != nil {
 			slog.Error("CreateRelationship failed", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to create relationship", nil)
 			return

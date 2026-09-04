@@ -220,7 +220,7 @@ func HandleGetResourceGraph(db database.DB) http.HandlerFunc {
 			defer wg.Done()
 			var rels []map[string]any
 			// Query using the actual PK column and alias it as "id" for mapStr compatibility.
-			if err := db.QueryRowsCtx(r.Context(), database.TblConrDocumentConnectors, "document_connector_id AS id,connector_type,display_name,status", "tenant_id", tenantID, &rels); err != nil {
+			if err := db.QueryRowsCtx(r.Context(), database.TblConrRagSources, "connector_id AS id,connector_type,display_name,status", "tenant_id", tenantID, &rels); err != nil {
 				slog.Error("HandleGetResourceGraph: QueryRows resource_relationships failed (non-fatal)", "error", err)
 				// Non-fatal — continue without relationship edges
 				return
@@ -436,8 +436,8 @@ func HandleListDocuments(db database.DB) http.HandlerFunc {
 		// X-21 FIX: was _ = (silent drop) — security teams saw empty graph on DB failure
 		// and believed no connected data sources existed, skipping critical reviews.
 		var dataUnavailable bool
-		if connErr := db.QueryRowsCtx(r.Context(), database.TblConrDocumentConnectors,
-			"document_connector_id,connector_type,display_name,status,last_sync_at,documents_synced,sync_enabled",
+		if connErr := db.QueryRowsCtx(r.Context(), database.TblConrRagSources,
+			"connector_id,connector_type,display_name,status,last_sync_at,documents_synced,sync_enabled",
 			"tenant_id", tenantID, &connectors); connErr != nil {
 			slog.Error("X-21: resource graph connector query FAILED — graph will show empty connectors. Security teams may skip connector review.",
 				"tenant_id", tenantID, "err", connErr)
@@ -450,7 +450,7 @@ func HandleListDocuments(db database.DB) http.HandlerFunc {
 		// Build connector lookup: connector_id -> connector row
 		connMap := make(map[string]map[string]any, len(connectors))
 		for _, c := range connectors {
-			if id, ok := c["document_connector_id"].(string); ok && id != "" {
+			if id, ok := c["connector_id"].(string); ok && id != "" {
 				connMap[id] = c
 			}
 		}
@@ -497,15 +497,15 @@ func HandleSyncConnectorDocuments(db database.DB) http.HandlerFunc {
 
 		// Load connector record
 		var connectors []map[string]any
-		if err := db.QueryRowsCtx(r.Context(), database.TblConrDocumentConnectors,
-			"document_connector_id,connector_type,display_name,config,auth_config,status",
+		if err := db.QueryRowsCtx(r.Context(), database.TblConrRagSources,
+			"connector_id,connector_type,display_name,config,auth_config,status",
 			"tenant_id", tenantID, &connectors); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "failed to load connectors", nil)
 			return
 		}
 		var connector map[string]any
 		for _, c := range connectors {
-			if id, _ := c["document_connector_id"].(string); id == connectorID {
+			if id, _ := c["connector_id"].(string); id == connectorID {
 				connector = c
 				break
 			}
@@ -550,8 +550,8 @@ func HandleSyncConnectorDocuments(db database.DB) http.HandlerFunc {
 			}
 			// Repository pattern: update connector status via typed method, never raw SQL in handlers
 			if _wErr := db.UpdateRowCompound(
-				database.TblConrDocumentConnectors,
-				"document_connector_id", cid,
+				database.TblConrRagSources,
+				"connector_id", cid,
 				"tenant_id", tid,
 				map[string]any{
 					"last_sync_status": status,
@@ -559,7 +559,7 @@ func HandleSyncConnectorDocuments(db database.DB) http.HandlerFunc {
 				},
 			); _wErr != nil {
 				slog.Error("SILENT_DROP_FIXED: UpdateRowCompound",
-					"table", database.TblConrDocumentConnectors, "file", "aocs-intel/handlers/analytics/resource_graph.go", "err", _wErr)
+					"table", database.TblConrRagSources, "file", "reports/resource_graph.go", "err", _wErr)
 			}
 		}(syncCtx, tenantID, connectorID, connType, displayName, connector)
 
