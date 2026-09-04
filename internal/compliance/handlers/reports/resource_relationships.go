@@ -147,7 +147,6 @@ func HandleBindPolicy(db database.DB) http.HandlerFunc {
 
 		respond.LimitBody(r)
 		var body BindPolicyRequest
-		respond.LimitBody(r)
 		if !validate.Bind(w, r, &body) {
 			return
 		}
