@@ -66,7 +66,7 @@ func NewComplianceRepositoryFromQuerier(q ComplianceQuerier) *ComplianceReposito
 func (r *ComplianceRepository) ListReports(ctx context.Context, tenantID string) ([]ComplianceReport, error) {
 	const q = `
 		SELECT id, tenant_id, report_type, status, generated_at, summary, created_at, updated_at
-		FROM shar_compliance_reports
+		FROM core_compliance_reports
 		WHERE tenant_id = $1
 		ORDER BY created_at DESC`
 
@@ -97,7 +97,7 @@ func (r *ComplianceRepository) ListReports(ctx context.Context, tenantID string)
 func (r *ComplianceRepository) GetReportByID(ctx context.Context, tenantID, id string) (*ComplianceReport, error) {
 	const q = `
 		SELECT id, tenant_id, report_type, status, generated_at, summary, created_at, updated_at
-		FROM shar_compliance_reports
+		FROM core_compliance_reports
 		WHERE tenant_id = $1 AND id = $2`
 
 	var cr ComplianceReport
@@ -118,7 +118,7 @@ func (r *ComplianceRepository) GetReportByID(ctx context.Context, tenantID, id s
 func (r *ComplianceRepository) CreateReport(ctx context.Context, cr ComplianceReport) (*ComplianceReport, error) {
 	now := time.Now().UTC()
 	const q = `
-		INSERT INTO shar_compliance_reports
+		INSERT INTO core_compliance_reports
 		  (id, tenant_id, report_type, status, summary, created_at, updated_at, created_by)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
 		RETURNING id, tenant_id, report_type, status, generated_at, summary, created_at, updated_at`
@@ -144,7 +144,7 @@ func (r *ComplianceRepository) CreateReport(ctx context.Context, cr ComplianceRe
 // updated_at is trigger-managed; updated_by stamps the actor.
 func (r *ComplianceRepository) MarkReportGenerated(ctx context.Context, id string, summary map[string]any) error {
 	const q = `
-		UPDATE shar_compliance_reports
+		UPDATE core_compliance_reports
 		SET status = 'GENERATED', generated_at=NOW(), summary=$1, updated_by='system.compliance'
 		WHERE id=$2`
 	_, err := r.db.Exec(ctx, q, summary, id)

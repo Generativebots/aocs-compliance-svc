@@ -13,8 +13,8 @@ ALTER TABLE compliance.core_evidence                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE compliance.core_evidence                FORCE  ROW LEVEL SECURITY;
 ALTER TABLE compliance.core_evidence_anchors        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE compliance.core_evidence_anchors        FORCE  ROW LEVEL SECURITY;
-ALTER TABLE compliance.shar_dlp_integrations        ENABLE ROW LEVEL SECURITY;
-ALTER TABLE compliance.shar_dlp_integrations        FORCE  ROW LEVEL SECURITY;
+ALTER TABLE compliance.core_dlp_integrations        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE compliance.core_dlp_integrations        FORCE  ROW LEVEL SECURITY;
 ALTER TABLE compliance.nexus_compliance_reports     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE compliance.nexus_compliance_reports     FORCE  ROW LEVEL SECURITY;
 ALTER TABLE compliance.core_compliance_comments     ENABLE ROW LEVEL SECURITY;
@@ -48,7 +48,7 @@ DO $$ DECLARE t TEXT; BEGIN
     'core_compliance_obligations',
     'core_evidence',
     'core_evidence_anchors',
-    'shar_dlp_integrations',
+    'core_dlp_integrations',
     'nexus_compliance_reports',
     'core_compliance_comments',
     'core_policy_violations',

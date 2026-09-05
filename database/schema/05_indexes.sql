@@ -20,9 +20,9 @@ CREATE INDEX IF NOT EXISTS idx_comp_zkp_tenant      ON compliance.core_evidence 
 CREATE INDEX IF NOT EXISTS idx_comp_zkp_status      ON compliance.core_evidence (verification_status);
 CREATE INDEX IF NOT EXISTS idx_comp_zkp_batch       ON compliance.core_evidence (batch_id);
 
-CREATE INDEX IF NOT EXISTS idx_comp_dlp_tenant      ON compliance.shar_dlp_integrations (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_comp_dlp_severity    ON compliance.shar_dlp_integrations (severity);
-CREATE INDEX IF NOT EXISTS idx_comp_dlp_status      ON compliance.shar_dlp_integrations (status);
+CREATE INDEX IF NOT EXISTS idx_comp_dlp_tenant      ON compliance.core_dlp_integrations (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_comp_dlp_severity    ON compliance.core_dlp_integrations (severity);
+CREATE INDEX IF NOT EXISTS idx_comp_dlp_status      ON compliance.core_dlp_integrations (status);
 
 CREATE INDEX IF NOT EXISTS idx_comp_reports_tenant  ON compliance.nexus_compliance_reports (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_comp_reports_type    ON compliance.nexus_compliance_reports (report_type);
@@ -44,9 +44,9 @@ SELECT 'compliance indexes created' AS status;
 CREATE INDEX IF NOT EXISTS idx_case_comments_case_id   ON compliance.core_compliance_comments (case_id);
 CREATE INDEX IF NOT EXISTS idx_case_comments_tenant_id ON compliance.core_compliance_comments (tenant_id);
 
--- shar_dlp_integrations
-CREATE INDEX IF NOT EXISTS idx_dlp_findings_tenant_id  ON compliance.shar_dlp_integrations (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_dlp_findings_case_id    ON compliance.shar_dlp_integrations (case_id);
+-- core_dlp_integrations
+CREATE INDEX IF NOT EXISTS idx_dlp_findings_tenant_id  ON compliance.core_dlp_integrations (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_dlp_findings_case_id    ON compliance.core_dlp_integrations (case_id);
 
 -- core_evidence chain traversal
 CREATE INDEX IF NOT EXISTS idx_evidence_control_id     ON compliance.core_evidence (control_id);

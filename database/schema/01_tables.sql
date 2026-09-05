@@ -165,9 +165,9 @@ CREATE TABLE IF NOT EXISTS compliance.core_evidence_anchors (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ── compliance.shar_dlp_integrations ─────────────────────────────────────────────
+-- ── compliance.core_dlp_integrations ─────────────────────────────────────────────
 -- Data Loss Prevention scan results.
-CREATE TABLE IF NOT EXISTS compliance.shar_dlp_integrations (
+CREATE TABLE IF NOT EXISTS compliance.core_dlp_integrations (
     finding_id          TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,

@@ -22,7 +22,7 @@ import (
 	"github.com/ocx/shared/validate"
 )
 
-// P1-1 FIX: shar_dlp_integrations DDL uses 'id' as PK (not dlp_integration_id).
+// P1-1 FIX: core_dlp_integrations DDL uses 'id' as PK (not dlp_integration_id).
 // Aliased to dlp_policy_id for API backward compatibility.
 const colsDLPFinding = "id AS dlp_policy_id,tenant_id,policy_name,policy_type,provider,status AS status,is_active,created_at,updated_at"
 
