@@ -1,57 +1,18 @@
 -- =============================================================================
--- 00_compliance_schema.sql — aocs-compliance-svc
--- =============================================================================
--- Creates the compliance schema and grants.
--- Run BEFORE any other compliance schema files.
--- Run AFTER Ring 0 (aocs-system-svc) schema is deployed.
---
--- Why compliance schema (not public)?
---   - Clean separation: compliance tables never pollute the Ring 0 public schema
---   - Supabase RLS policies are schema-scoped
---   - The Go DATABASE_URL includes search_path=compliance,public so both schemas
---     are visible: compliance.* for own tables, public.syst_tenants for Ring 0 FKs
--- =============================================================================
-
--- Create compliance schema
-CREATE SCHEMA IF NOT EXISTS compliance;
-
--- Grant schema usage to service roles
-GRANT USAGE ON SCHEMA compliance TO postgres, anon, authenticated, service_role;
-GRANT USAGE ON SCHEMA compliance TO svc_platform;
-
--- Create svc_compliance role (if it doesn't exist)
-DO $$ BEGIN
-    CREATE ROLE svc_compliance NOLOGIN NOINHERIT;
-    COMMENT ON ROLE svc_compliance IS
-        'Ring 3 (PAID) — aocs-compliance-svc. ZKP, DLP, compliance cases, evidence vault. '
-        'Runtime deps: Ring 0 (aocs-system for tenant data) + Ring 1 (aocs-core for agent data).';
-EXCEPTION WHEN duplicate_object THEN
-    RAISE NOTICE 'Role svc_compliance already exists — skipping';
-END $$;
-
-GRANT USAGE ON SCHEMA compliance TO svc_compliance;
-
--- Set default search_path for compliance role
-ALTER ROLE svc_compliance SET search_path TO compliance, public;
-
-SELECT 'compliance schema created' AS status;
-
--- ── Ring 3 Compliance Tables ────────────────────────────────────
--- =============================================================================
 -- 01_tables.sql — aocs-compliance-svc
--- compliance schema — compliance cases, evidence, ZKP, DLP, reports
--- =============================================================================
--- Run AFTER: 00_compliance_schema.sql
--- Schema: compliance (all tables prefixed with compliance schema)
--- FK to Ring 0 tables: public.syst_tenants (cross-schema FK, same Supabase DB)
--- FK to Ring 1 tables: TEXT-only (cross-schema, DEFERRABLE, app-level enforced)
+-- All tables land in the PUBLIC schema (Architecture Decision 2026-09-05 Decision #2).
+-- compliance.* schema prefix REMOVED — tables prefixed compl_* to avoid Ring 2 collisions.
+-- FK to Ring 0: public.syst_tenants (same Supabase DB)
+-- FK to Ring 2: TEXT-only (no hard FK — cross-ring boundary)
+-- Run AFTER: Ring 0 (aocs-system-svc) migrations
 -- =============================================================================
 
--- ── compliance.core_compliance ─────────────────────────────────────────
+
+-- ── compl_records ─────────────────────────────────────────
 -- Primary compliance case tracking table.
 -- Links to Ring 1 via TEXT IDs (agent_id, hitl_decision_id, policy_id).
 -- These are TEXT-only — no hard FK to Ring 1 tables (different schema boundary).
-CREATE TABLE IF NOT EXISTS compliance.core_compliance (
+CREATE TABLE IF NOT EXISTS compl_records (
     case_id             TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
@@ -86,8 +47,8 @@ CREATE TABLE IF NOT EXISTS compliance.core_compliance (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ── compliance.core_compliance ──────────────────────────────────────
-CREATE TABLE IF NOT EXISTS compliance.core_compliance_obligations (
+-- ── compl_records ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS compl_obligations (
     control_id          TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
@@ -107,14 +68,14 @@ CREATE TABLE IF NOT EXISTS compliance.core_compliance_obligations (
     UNIQUE (tenant_id, framework, control_ref)
 );
 
--- ── compliance.core_evidence ─────────────────────────────────────────────────
+-- ── compl_evidence ─────────────────────────────────────────────────
 -- Evidence vault: ZKP proofs, DLP findings, audit screenshots, SOC2 artifacts.
-CREATE TABLE IF NOT EXISTS compliance.core_evidence (
+CREATE TABLE IF NOT EXISTS compl_evidence (
     evidence_id         TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
-    case_id             TEXT        REFERENCES compliance.core_compliance(case_id) ON DELETE SET NULL,
-    control_id          TEXT        REFERENCES compliance.core_compliance(control_id) ON DELETE SET NULL,
+    case_id             TEXT        REFERENCES compl_records(case_id) ON DELETE SET NULL,
+    control_id          TEXT        REFERENCES compl_records(control_id) ON DELETE SET NULL,
     -- Ring 1 TEXT references
     agent_id            TEXT,
     execution_id        TEXT,
@@ -128,7 +89,7 @@ CREATE TABLE IF NOT EXISTS compliance.core_evidence (
     signature           TEXT,       -- Ed25519 signature (persisted — not ephemeral)
     signing_key_id      TEXT,       -- References public.platform_signing_keys.key_id
     chain_hash          TEXT,       -- Merkle chain hash (links to previous entry)
-    prev_evidence_id    TEXT        REFERENCES compliance.core_evidence(evidence_id),
+    prev_evidence_id    TEXT        REFERENCES compl_evidence(evidence_id),
     collected_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     collected_by        TEXT        NOT NULL DEFAULT 'system',
     expires_at          TIMESTAMPTZ,
@@ -139,14 +100,14 @@ CREATE TABLE IF NOT EXISTS compliance.core_evidence (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ── compliance.core_evidence ────────────────────────────────────────────────
+-- ── compl_evidence ────────────────────────────────────────────────
 -- Zero-Knowledge Proof records. Cryptographic proof that a governance action occurred.
-CREATE TABLE IF NOT EXISTS compliance.core_evidence_anchors (
+CREATE TABLE IF NOT EXISTS compl_evidence_anchors (
     proof_id            TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
-    evidence_id         TEXT        REFERENCES compliance.core_evidence(evidence_id),
-    case_id             TEXT        REFERENCES compliance.core_compliance(case_id),
+    evidence_id         TEXT        REFERENCES compl_evidence(evidence_id),
+    case_id             TEXT        REFERENCES compl_records(case_id),
     -- Ring 1 TEXT references
     agent_id            TEXT,
     execution_id        TEXT,
@@ -165,13 +126,13 @@ CREATE TABLE IF NOT EXISTS compliance.core_evidence_anchors (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ── compliance.core_dlp_integrations ─────────────────────────────────────────────
+-- ── compl_dlp_integrations ─────────────────────────────────────────────
 -- Data Loss Prevention scan results.
-CREATE TABLE IF NOT EXISTS compliance.core_dlp_integrations (
+CREATE TABLE IF NOT EXISTS compl_dlp_integrations (
     finding_id          TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
-    case_id             TEXT        REFERENCES compliance.core_compliance(case_id) ON DELETE SET NULL,
+    case_id             TEXT        REFERENCES compl_records(case_id) ON DELETE SET NULL,
     -- Ring 1 TEXT references
     agent_id            TEXT,
     execution_id        TEXT,
@@ -192,9 +153,9 @@ CREATE TABLE IF NOT EXISTS compliance.core_dlp_integrations (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ── compliance.nexus_compliance_reports ──────────────────────────────────────
+-- ── compl_reports ──────────────────────────────────────
 -- Daily generated compliance reports (SOC2, EU AI Act, GRC summaries).
-CREATE TABLE IF NOT EXISTS compliance.nexus_compliance_reports (
+CREATE TABLE IF NOT EXISTS compl_reports (
     report_id           TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
@@ -217,10 +178,10 @@ CREATE TABLE IF NOT EXISTS compliance.nexus_compliance_reports (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ── compliance.core_compliance_comments ────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS compliance.core_compliance_comments (
+-- ── compl_case_comments ────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS compl_case_comments (
     comment_id      TEXT        PRIMARY KEY DEFAULT public.gen_id(),
-    case_id         TEXT        NOT NULL REFERENCES compliance.core_compliance(case_id) ON DELETE CASCADE,
+    case_id         TEXT        NOT NULL REFERENCES compl_records(case_id) ON DELETE CASCADE,
     tenant_id       TEXT        NOT NULL REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     author_id       TEXT        NOT NULL,
     content         TEXT        NOT NULL,
@@ -235,14 +196,14 @@ CREATE TABLE IF NOT EXISTS compliance.core_compliance_comments (
 -- shar_trust removed: merged into core_trust_events with cross_org=true flag.
 -- See ocx-shared-go/infra/database/models_tables.go TblSharTrust.
 
-CREATE TABLE IF NOT EXISTS compliance.platform_signing_keys (
+CREATE TABLE IF NOT EXISTS compl_signing_keys (
     key_id      TEXT        PRIMARY KEY DEFAULT public.gen_id('sk'),
     key_type    TEXT        NOT NULL DEFAULT 'ed25519',
     public_key  TEXT        NOT NULL,
     private_key TEXT        NOT NULL,
     is_active   BOOLEAN     NOT NULL DEFAULT TRUE,
     -- H6: explicit ON DELETE for FK (Palantir standard)
-    superseded_by   TEXT        REFERENCES compliance.platform_signing_keys (key_id) ON DELETE SET NULL
+    superseded_by   TEXT        REFERENCES compl_signing_keys (key_id) ON DELETE SET NULL
                                     CONSTRAINT platform_signing_keys_superseded_by_fkey,
     rotated_at  TIMESTAMPTZ,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -251,13 +212,13 @@ CREATE TABLE IF NOT EXISTS compliance.platform_signing_keys (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uidx_platform_signing_keys_active
-    ON compliance.platform_signing_keys (key_type)
+    ON compl_signing_keys (key_type)
     WHERE is_active = TRUE;
 
--- ── compliance.core_anomaly_detection ───────────────────────────────────────
+-- ── compl_anomaly ───────────────────────────────────────
 -- S3 Fix (Palantir Gap): Cross-pod sybil collusion tracking.
 -- CollusionStore.RecordAgentOnIP() upserts here for cross-pod shared state.
-CREATE TABLE IF NOT EXISTS compliance.core_anomaly_detection (
+CREATE TABLE IF NOT EXISTS compl_anomaly (
     tenant_id   TEXT        NOT NULL REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     ip_address  TEXT        NOT NULL,
     agent_ids   JSONB       NOT NULL DEFAULT '[]',
@@ -266,7 +227,7 @@ CREATE TABLE IF NOT EXISTS compliance.core_anomaly_detection (
 );
 
 CREATE INDEX IF NOT EXISTS idx_collusion_ip_tenant
-    ON compliance.core_anomaly_detection (tenant_id);
+    ON compl_anomaly (tenant_id);
 
 
 -- ── DBA Audit Fixes (applied 2026-09-04) ─────────────────────────────────────────────
@@ -277,7 +238,7 @@ CREATE INDEX IF NOT EXISTS idx_collusion_ip_tenant
 -- H6 (system): syst_departments.parent_id FK → folded inline into aocs-system-svc
 -- RLS (compliance tables): moved to 06_rls.sql
 -- NOTE: pg_stat_statements extension should be created by a superuser separately.
-CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+-- NOTE: pg_stat_statements extension should be created by a superuser separately.
 
 -- ── Ring 2 → Ring 3 Migrations ───────────────────────────────────────────────
 -- Tables below were moved from ocx-core-svc Ring 2 to aocs-compliance-svc Ring 3.
@@ -285,7 +246,7 @@ CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 -- obligation, exception, and risk data. The public.core_* names are retained for
 -- backward FK compatibility during the transition period.
 
-CREATE TABLE IF NOT EXISTS compliance.core_policy_violations (
+CREATE TABLE IF NOT EXISTS compl_policy_violations (
     violation_id        TEXT PRIMARY KEY DEFAULT gen_id(),
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     policy_id           TEXT NOT NULL,
@@ -303,7 +264,7 @@ CREATE TABLE IF NOT EXISTS compliance.core_policy_violations (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS compliance.core_regulatory_obligations (
+CREATE TABLE IF NOT EXISTS compl_regulatory (
     obligation_id       TEXT PRIMARY KEY DEFAULT gen_id(),
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     framework           TEXT NOT NULL,
@@ -319,7 +280,7 @@ CREATE TABLE IF NOT EXISTS compliance.core_regulatory_obligations (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS compliance.core_policy_exceptions (
+CREATE TABLE IF NOT EXISTS compl_policy_exceptions (
     exception_id        TEXT PRIMARY KEY DEFAULT gen_id(),
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     policy_id           TEXT NOT NULL,
@@ -333,7 +294,7 @@ CREATE TABLE IF NOT EXISTS compliance.core_policy_exceptions (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS compliance.core_gra_risk_assessments (
+CREATE TABLE IF NOT EXISTS compl_risk_assessments (
     gra_risk_assessment_id TEXT PRIMARY KEY DEFAULT gen_id(),
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     framework_id        TEXT,
@@ -349,12 +310,12 @@ CREATE TABLE IF NOT EXISTS compliance.core_gra_risk_assessments (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ── compliance.compliance_cases ──────────────────────────────────────────────
+-- ── compl_cases ──────────────────────────────────────────────
 -- Moved from extc_compliance_cases in ocx-extension-svc (2026-09-04).
 -- This is a Ring 3 PAID feature (FeatureCompliance guard).
 -- FKs to Ring 2 (agent_id, hitl_decision_id, enforcement_action_id) are TEXT-only
 -- (no hard FK) — enforced at application layer. Cross-DB FK forbidden.
-CREATE TABLE IF NOT EXISTS compliance.compliance_cases (
+CREATE TABLE IF NOT EXISTS compl_cases (
     case_id             TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT        NOT NULL REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     -- Ring 2 TEXT references (no hard FK — cross-DB boundary)
@@ -403,30 +364,30 @@ CREATE TABLE IF NOT EXISTS compliance.compliance_cases (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-COMMENT ON TABLE compliance.compliance_cases IS
+COMMENT ON TABLE compl_cases IS
     'Ring 3 (FeatureCompliance): Compliance cases moved from ocx-extension-svc/extc_compliance_cases. '
     'Requires FeatureCompliance in tenant JWT. All Ring 2 FKs are TEXT-only (cross-DB boundary).';
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_compliance_cases_dedup
-    ON compliance.compliance_cases (dedup_key) WHERE dedup_key IS NOT NULL;
+    ON compl_cases (dedup_key) WHERE dedup_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_compliance_cases_tenant_status
-    ON compliance.compliance_cases (tenant_id, status, created_at DESC);
+    ON compl_cases (tenant_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_compliance_cases_type
-    ON compliance.compliance_cases (tenant_id, case_type, status);
+    ON compl_cases (tenant_id, case_type, status);
 CREATE INDEX IF NOT EXISTS idx_compliance_cases_agent_id
-    ON compliance.compliance_cases (agent_id);
+    ON compl_cases (agent_id);
 CREATE INDEX IF NOT EXISTS idx_compliance_cases_severity
-    ON compliance.compliance_cases (tenant_id, severity, created_at DESC) WHERE severity IS NOT NULL;
+    ON compl_cases (tenant_id, severity, created_at DESC) WHERE severity IS NOT NULL;
 
 -- ============================================================================
 -- § CROSS-RING PROPAGATION — Layer 2 & Layer 3 Infrastructure (Ring 3)
 -- ============================================================================
 
--- ── compliance.tenant_baselines — seeded by TENANT_PROVISIONED ──────────────
+-- ── compl_tenant_baselines — seeded by TENANT_PROVISIONED ──────────────
 -- Every tenant gets a compliance baseline row on provisioning.
 -- Ring 0 TENANT_PROVISIONED → compliance UPSERT here.
 -- Conflict key: (tenant_id) — idempotent on redelivery.
-CREATE TABLE IF NOT EXISTS compliance.tenant_baselines (
+CREATE TABLE IF NOT EXISTS compl_tenant_baselines (
     baseline_id     TEXT        PRIMARY KEY DEFAULT gen_id(),
     tenant_id       TEXT        NOT NULL,
     jurisdiction    TEXT,                               -- from syst_tenants.jurisdiction
@@ -439,13 +400,13 @@ CREATE TABLE IF NOT EXISTS compliance.tenant_baselines (
 );
 
 CREATE INDEX IF NOT EXISTS idx_compliance_baseline_tenant
-    ON compliance.tenant_baselines (tenant_id);
+    ON compl_tenant_baselines (tenant_id);
 
--- ── compliance.agent_evidence_vault — seeded by AGENT_REGISTERED ────────────
+-- ── compl_evidence_vault — seeded by AGENT_REGISTERED ────────────
 -- Per-agent evidence registry seeded when a new agent is registered in Ring 2.
 -- Ring 2 AGENT_REGISTERED → compliance UPSERT here.
 -- All evidence items (ZKP proofs, DLP scans) reference this anchor row.
-CREATE TABLE IF NOT EXISTS compliance.agent_evidence_vault (
+CREATE TABLE IF NOT EXISTS compl_evidence_vault (
     vault_id        TEXT        PRIMARY KEY DEFAULT gen_id(),
     tenant_id       TEXT        NOT NULL,
     agent_id        TEXT        NOT NULL,               -- soft ref: Ring 2 core_agents.agent_id
@@ -460,12 +421,12 @@ CREATE TABLE IF NOT EXISTS compliance.agent_evidence_vault (
 );
 
 CREATE INDEX IF NOT EXISTS idx_vault_tenant
-    ON compliance.agent_evidence_vault (tenant_id, vault_status);
+    ON compl_evidence_vault (tenant_id, vault_status);
 CREATE INDEX IF NOT EXISTS idx_vault_agent
-    ON compliance.agent_evidence_vault (agent_id);
+    ON compl_evidence_vault (agent_id);
 
--- ── compliance.idempotency_log — Layer 2 consumer guard ─────────────────────
-CREATE TABLE IF NOT EXISTS compliance.idempotency_log (
+-- ── compl_idempotency_log — Layer 2 consumer guard ─────────────────────
+CREATE TABLE IF NOT EXISTS compl_idempotency_log (
     message_id      TEXT        PRIMARY KEY,
     topic           TEXT        NOT NULL,
     tenant_id       TEXT,
@@ -475,9 +436,9 @@ CREATE TABLE IF NOT EXISTS compliance.idempotency_log (
     processed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-COMMENT ON TABLE compliance.tenant_baselines IS
+COMMENT ON TABLE compl_tenant_baselines IS
     'Ring 3 compliance baseline seeded by TENANT_PROVISIONED event. '
     'UPSERT (tenant_id) ensures idempotency on Pub/Sub redelivery.';
-COMMENT ON TABLE compliance.agent_evidence_vault IS
+COMMENT ON TABLE compl_evidence_vault IS
     'Ring 3 evidence vault anchor seeded by AGENT_REGISTERED event. '
     'All ZKP proofs and DLP scan results reference this row.';

@@ -134,7 +134,10 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 		// CC5/CC6: Active policies and gate verdicts
 		var policyRows []struct{ PolicyID string `json:"policy_id"` }
 		policyCount := 0
-		if err := db.QueryRowsCompound(database.TblCorePolicies, "policy_id",
+		// cross-ring read: Ring 3b compliance SOC2 reads Ring 2 core_policies
+		// to count active governance policies for TSC CC5/CC6 evidence.
+		// See ring_architecture_audit.md §Compliance-Core Coupling.
+		if err := db.QueryRowsCompound(database.TblCorePolicies, "policy_id", //nolint:ring_linter -- Ring 3b compliance reads Ring 2 policies for SOC2 TSC evidence: intentional
 			"tenant_id", tenantID, "status", "ACTIVE", &policyRows); err == nil {
 			policyCount = len(policyRows)
 		}

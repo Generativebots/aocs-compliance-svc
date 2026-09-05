@@ -3,15 +3,15 @@
 // Layer 2 Pub/Sub consumers for Ring 3 (aocs-compliance-svc).
 //
 // Palantir 3-layer pattern for each consumer:
-//  1. Check compliance.idempotency_log (message_id) → skip if already processed.
+//  1. Check compl_idempotency_log (message_id) → skip if already processed.
 //  2. UPSERT the target table (ON CONFLICT DO UPDATE) — safe on redelivery.
-//  3. Write compliance.idempotency_log after success.
+//  3. Write compl_idempotency_log after success.
 //  4. ACK.
 //
 // Triggers handled:
-//   - TENANT_PROVISIONED (Ring 0) → UPSERT compliance.tenant_baselines
-//   - TENANT_DELETED    (Ring 0) → UPDATE compliance.tenant_baselines + compliance_cases
-//   - AGENT_REGISTERED  (Ring 2) → UPSERT compliance.agent_evidence_vault
+//   - TENANT_PROVISIONED (Ring 0) → UPSERT compl_tenant_baselines
+//   - TENANT_DELETED    (Ring 0) → UPDATE compl_tenant_baselines + compl_cases
+//   - AGENT_REGISTERED  (Ring 2) → UPSERT compl_evidence_vault
 
 package propagation
 
@@ -209,7 +209,7 @@ func startConsumer(ctx context.Context, db database.DB, projectID, topic, subID 
 
 func isProcessed(ctx context.Context, db database.DB, messageID string) bool {
 	var rows []map[string]any
-	_ = db.QueryRowsCtx(ctx, "compliance.idempotency_log",
+	_ = db.QueryRowsCtx(ctx, "compl_idempotency_log",
 		"message_id", "message_id", messageID, &rows)
 	return len(rows) > 0
 }
@@ -227,5 +227,5 @@ func markProcessed(ctx context.Context, db database.DB, messageID, topic, tenant
 		"result":       "OK",
 		"processed_at": time.Now().UTC().Format(time.RFC3339),
 	}
-	_ = db.InsertRowIdempotent("compliance.idempotency_log", row, "message_id")
+	_ = db.InsertRowIdempotent("compl_idempotency_log", row, "message_id")
 }

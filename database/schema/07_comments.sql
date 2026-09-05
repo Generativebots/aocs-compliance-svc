@@ -64,19 +64,19 @@ COMMENT ON TABLE core_evidence IS 'Evidence vault entries with ZKP anchors. Owne
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- SECTION 1: Verify compliance schema exists
+-- SECTION 1: Verify public schema (tables in public, not compliance schema)
 -- ─────────────────────────────────────────────────────────────────────────────
-    RAISE EXCEPTION 'compliance schema not found. Run 00_compliance_schema.sql first.';
+    -- compliance schema check removed (Decision 2026-09-05: all tables in public schema);
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- SECTION 2: Verify compliance tables deployed
 -- ─────────────────────────────────────────────────────────────────────────────
 SELECT table_name, table_schema
 FROM information_schema.tables
-WHERE table_schema = 'compliance'
+WHERE table_schema = 'public'
 ORDER BY table_name;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- ─────────────────────────────────────────────────────────────────────────────
     SELECT 1 FROM information_schema.tables
-    WHERE table_schema = 'compliance' AND table_name = 'core_compliance'
+    WHERE table_schema = 'public' AND table_name = 'compl_records'

@@ -6,7 +6,7 @@
 -- =============================================================================
 
 -- SOC2 Trust Services Criteria (TSC) — base controls
-INSERT INTO compliance.core_compliance
+INSERT INTO compl_records
   (tenant_id, framework, control_ref, name, description, status)
 SELECT
   t.tenant_id,
@@ -30,7 +30,7 @@ WHERE t.is_platform_tenant = TRUE
 ON CONFLICT (tenant_id, framework, control_ref) DO NOTHING;
 
 -- EU AI Act — Article compliance controls
-INSERT INTO compliance.core_compliance
+INSERT INTO compl_records
   (tenant_id, framework, control_ref, name, description, status)
 SELECT
   t.tenant_id,
@@ -51,4 +51,4 @@ CROSS JOIN (VALUES
 WHERE t.is_platform_tenant = TRUE
 ON CONFLICT (tenant_id, framework, control_ref) DO NOTHING;
 
-SELECT COUNT(*) AS seeded_controls FROM compliance.core_compliance;
+SELECT COUNT(*) AS seeded_controls FROM compl_records;

@@ -66,7 +66,7 @@ func NewComplianceRepositoryFromQuerier(q ComplianceQuerier) *ComplianceReposito
 func (r *ComplianceRepository) ListReports(ctx context.Context, tenantID string) ([]ComplianceReport, error) {
 	const q = `
 		SELECT id, tenant_id, report_type, status, generated_at, summary, created_at, updated_at
-		FROM core_compliance_reports
+		FROM compl_reports
 		WHERE tenant_id = $1
 		ORDER BY created_at DESC`
 
@@ -97,7 +97,7 @@ func (r *ComplianceRepository) ListReports(ctx context.Context, tenantID string)
 func (r *ComplianceRepository) GetReportByID(ctx context.Context, tenantID, id string) (*ComplianceReport, error) {
 	const q = `
 		SELECT id, tenant_id, report_type, status, generated_at, summary, created_at, updated_at
-		FROM core_compliance_reports
+		FROM compl_reports
 		WHERE tenant_id = $1 AND id = $2`
 
 	var cr ComplianceReport
@@ -118,7 +118,7 @@ func (r *ComplianceRepository) GetReportByID(ctx context.Context, tenantID, id s
 func (r *ComplianceRepository) CreateReport(ctx context.Context, cr ComplianceReport) (*ComplianceReport, error) {
 	now := time.Now().UTC()
 	const q = `
-		INSERT INTO core_compliance_reports
+		INSERT INTO compl_reports
 		  (id, tenant_id, report_type, status, summary, created_at, updated_at, created_by)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
 		RETURNING id, tenant_id, report_type, status, generated_at, summary, created_at, updated_at`
@@ -144,7 +144,7 @@ func (r *ComplianceRepository) CreateReport(ctx context.Context, cr ComplianceRe
 // updated_at is trigger-managed; updated_by stamps the actor.
 func (r *ComplianceRepository) MarkReportGenerated(ctx context.Context, id string, summary map[string]any) error {
 	const q = `
-		UPDATE core_compliance_reports
+		UPDATE compl_reports
 		SET status = 'GENERATED', generated_at=NOW(), summary=$1, updated_by='system.compliance'
 		WHERE id=$2`
 	_, err := r.db.Exec(ctx, q, summary, id)
@@ -158,7 +158,7 @@ func (r *ComplianceRepository) MarkReportGenerated(ctx context.Context, id strin
 func (r *ComplianceRepository) ListViolations(ctx context.Context, tenantID string, limit int) ([]ViolationEvent, error) {
 	const q = `
 		SELECT id, tenant_id, agent_id, policy_id, severity, description, evidence, remediated, created_at
-		FROM core_compliance
+		FROM compl_records
 		WHERE tenant_id = $1
 		ORDER BY created_at DESC
 		LIMIT $2`
@@ -189,7 +189,7 @@ func (r *ComplianceRepository) ListViolations(ctx context.Context, tenantID stri
 // RecordViolation inserts a new violation event.
 func (r *ComplianceRepository) RecordViolation(ctx context.Context, v ViolationEvent) error {
 	const q = `
-		INSERT INTO core_compliance
+		INSERT INTO compl_records
 		  (id, tenant_id, agent_id, policy_id, severity, description, evidence, remediated, created_at, created_by)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,false,NOW(),$8)`
 	_, err := r.db.Exec(ctx, q,
@@ -203,7 +203,7 @@ func (r *ComplianceRepository) RecordViolation(ctx context.Context, v ViolationE
 
 // MarkRemediated marks a violation as remediated.
 func (r *ComplianceRepository) MarkRemediated(ctx context.Context, tenantID, id string) error {
-	const q = `UPDATE core_compliance SET remediated=true WHERE tenant_id=$1 AND id=$2`
+	const q = `UPDATE compl_records SET remediated=true WHERE tenant_id=$1 AND id=$2`
 	_, err := r.db.Exec(ctx, q, tenantID, id)
 	if err != nil {
 		return fmt.Errorf("compliance.MarkRemediated: %w", err)
