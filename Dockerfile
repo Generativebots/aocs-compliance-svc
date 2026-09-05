@@ -8,7 +8,7 @@
 # Ring: 0-adjacent — always-on compliance observability layer.
 # Depends on Ring 1 (ocx-core-svc / aocs-hub) at runtime for agent data.
 
-FROM golang:1.23-alpine AS builder
+FROM golang:1.27-alpine AS builder
 
 WORKDIR /src
 
