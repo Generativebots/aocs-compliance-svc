@@ -10,7 +10,7 @@
 //   2. Sends email to configured recipients via tenant SMTP
 //   3. Updates next_delivery_at and last_sent_at
 //
-// Wire in cmd/aocs-platform/bootstrap.go:
+// Wire in cmd/aocs-system/bootstrap.go:
 //   compliance.StartScheduledDeliveryWorker(svc.BgCtx, db, coreClient)
 package compliance
 

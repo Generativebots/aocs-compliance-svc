@@ -10,7 +10,7 @@
 // Each aggregation is persisted as a "DAILY" row in nexus_compliance_reports
 // so the Compliance dashboard (/govern/compliance) has real data.
 //
-// Wire from cmd/aocs-platform/main.go:
+// Wire from cmd/aocs-system/main.go:
 //
 //	compliance.StartReportGenerator(svc.BgCtx, db, coreClient)
 package compliance
