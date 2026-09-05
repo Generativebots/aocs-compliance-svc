@@ -622,7 +622,7 @@ func HandleListDashboards(db database.DB) http.HandlerFunc {
 	}
 }
 
-// HandleGetDashboard returns a single dashboard from core_gov_config.
+// HandleGetDashboard returns a single dashboard from syst_governance_config.
 // GET /api/v1/dashboards/{id}
 func HandleGetDashboard(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -653,7 +653,7 @@ func HandleGetDashboard(db database.DB) http.HandlerFunc {
 	}
 }
 
-// HandleCreateDashboard creates a new dashboard in core_gov_config.
+// HandleCreateDashboard creates a new dashboard in syst_governance_config.
 // POST /api/v1/dashboards
 func HandleCreateDashboard(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -692,7 +692,7 @@ func HandleCreateDashboard(db database.DB) http.HandlerFunc {
 			"widgets":     req.Widgets,
 			"settings":    req.Settings,
 		}
-		// core_gov_config: record_key (NOT NULL), record_value, category, tenant_id.
+		// syst_governance_config: record_key (NOT NULL), record_value, category, tenant_id.
 		// updated_at is DB-managed. No key/value columns — use record_key/record_value.
 		cfg := map[string]any{
 			"tenant_id":    tenantID,
@@ -713,7 +713,7 @@ func HandleCreateDashboard(db database.DB) http.HandlerFunc {
 	}
 }
 
-// HandleUpdateDashboard persists dashboard changes to core_gov_config.
+// HandleUpdateDashboard persists dashboard changes to syst_governance_config.
 // PUT /api/v1/dashboards/{id}
 func HandleUpdateDashboard(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

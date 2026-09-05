@@ -34,7 +34,7 @@ func HandleDeleteDashboard(db database.DB) http.HandlerFunc {
 			return
 		}
 		// Was returning {"status":"deleted"} without touching the DB.
-		// Dashboards are stored in core_gov_config keyed by (category, key).
+		// Dashboards are stored in syst_governance_config keyed by (category, key).
 		// category = "dashboard_<tenantID>", key = dashID (UUID set on create).
 		if err := db.UpdateRowCompound(database.TblPlatformConfig,
 			"category", "dashboard_"+tenantID,
