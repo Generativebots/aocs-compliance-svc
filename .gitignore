@@ -1,28 +1,110 @@
-# Binaries
-bin/
+# =============================================================================
+# aocs-compliance-svc — .gitignore
+# Ring 3: Evidence vault, ZKP proofs, DLP scanning, compliance cases, SOC2/EU AI Act
+# =============================================================================
+
+# ── Compiled Binaries ─────────────────────────────────────────────────────────
 *.exe
+*.exe~
 *.dll
 *.so
 *.dylib
+*.a
+*.o
 
-# Test binary
-*.test
+# Service binary (go build ./cmd/aocs-compliance)
+/aocs-compliance
+/aocs-compliance-svc
+
+# ── Build Output ──────────────────────────────────────────────────────────────
+bin/*
+!bin/.gitkeep
+dist/
+out/
+build/
+
+# ── Go-specific ───────────────────────────────────────────────────────────────
 *.out
-
-# Dependency
+*.prof
+*.pprof
+cpu.prof
+mem.prof
+trace.out
+go.work
+go.work.sum
 vendor/
+*.test
 
-# Environment — NEVER commit secrets
+# ── Environment & Secrets (NEVER commit) ──────────────────────────────────────
 .env
 .env.local
-.env.*.local
+.env.dev
+.env.test
+.env.prod
+.env.production
+.env.staging
+.env.*
+!.env.example
+*.local
+deploy/secrets.real.yaml
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+*.pfx
+*.cer
+*.der
+secrets/
 
-# OS
+# ── Log Files ─────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Temp & Debug ──────────────────────────────────────────────────────────────
+tmp/
+*.tmp
+*.bak
+debug
+
+# ── OS Artifacts ──────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 
-# IDE
+# ── IDE / Editor ──────────────────────────────────────────────────────────────
 .idea/
 .vscode/
 *.swp
 *.swo
+*~
+.editorconfig
+
+# ── Dependency directories ────────────────────────────────────────────────────
+vendor/
+
+# ── Go profiling / coverage ───────────────────────────────────────────────────
+*.out
+coverage.out
+coverage/
+
+# ── Protobuf generated (never commit generated pb.go) ─────────────────────────
+*.pb.go
+*_pb2.py
+proto/google/
+
+# ── AI Tooling ────────────────────────────────────────────────────────────────
+.gemini/
+.agent/
+.agents/
+graphify-out/
+
+# ── Screenshots / audit media ─────────────────────────────────────────────────
+ux_*.webp
+ux_*.png
+audit_*.png
+*.screenshot.png
+
+# ── Compliance-specific: ZKP proof artifacts ──────────────────────────────────
+# (proof files are stored in evidence vault, not source control)
+*.zkp
+*.proof

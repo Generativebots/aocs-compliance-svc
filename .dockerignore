@@ -1,6 +1,84 @@
+# =============================================================================
+# aocs-compliance-svc — .dockerignore
+# Keeps Docker build context lean — only Go source needed for compilation.
+# =============================================================================
+
+# ── Version control ──────────────────────────────────────────────────────────
 .git
-*.md
-.env*
+.gitignore
+.github/
+
+# ── IDE / Editor ─────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.editorconfig
+
+# ── Built binaries (never copy local builds into Docker) ─────────────────────
 bin/
-vendor/
+/aocs-compliance
+/aocs-compliance-svc
+
+# ── Test files and artifacts ─────────────────────────────────────────────────
+**/*_test.go
+**/testdata/
+*.test
+*.out
+coverage.out
+coverage/
+tests/
+
+# ── Go workspace (resolved at build time by Dockerfile) ──────────────────────
+go.work
+go.work.sum
+
+# ── Environment files (secrets must NOT be baked into images) ────────────────
+.env
+.env.*
+*.local
+secrets/
+deploy/secrets.real.yaml
+*.pem
+*.key
+*.crt
+*.p12
+
+# ── OS artifacts ─────────────────────────────────────────────────────────────
 .DS_Store
+Thumbs.db
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Temp files ───────────────────────────────────────────────────────────────
+tmp/
+*.tmp
+*.bak
+
+# ── Documentation ────────────────────────────────────────────────────────────
+*.md
+!README.md
+docs/
+
+# ── AI tooling ───────────────────────────────────────────────────────────────
+.gemini/
+.agent/
+.agents/
+graphify-out/
+
+# ── Scripts (not needed at runtime) ──────────────────────────────────────────
+scripts/
+Makefile
+
+# ── Database migrations (applied separately, not baked into image) ───────────
+database/
+
+# ── Deployment configs ───────────────────────────────────────────────────────
+deployments/
+
+# ── ZKP proof artifacts ──────────────────────────────────────────────────────
+*.zkp
+*.proof
