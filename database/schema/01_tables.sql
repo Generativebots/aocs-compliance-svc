@@ -247,7 +247,7 @@ CREATE INDEX IF NOT EXISTS idx_collusion_ip_tenant
 -- backward FK compatibility during the transition period.
 
 CREATE TABLE IF NOT EXISTS compl_policy_violations (
-    violation_id        TEXT PRIMARY KEY DEFAULT gen_id(),
+    violation_id        TEXT PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     policy_id           TEXT NOT NULL,
     agent_id            TEXT,
@@ -265,7 +265,7 @@ CREATE TABLE IF NOT EXISTS compl_policy_violations (
 );
 
 CREATE TABLE IF NOT EXISTS compl_regulatory (
-    obligation_id       TEXT PRIMARY KEY DEFAULT gen_id(),
+    obligation_id       TEXT PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     framework           TEXT NOT NULL,
     control_id          TEXT NOT NULL,
@@ -281,7 +281,7 @@ CREATE TABLE IF NOT EXISTS compl_regulatory (
 );
 
 CREATE TABLE IF NOT EXISTS compl_policy_exceptions (
-    exception_id        TEXT PRIMARY KEY DEFAULT gen_id(),
+    exception_id        TEXT PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     policy_id           TEXT NOT NULL,
     agent_id            TEXT,
@@ -295,7 +295,7 @@ CREATE TABLE IF NOT EXISTS compl_policy_exceptions (
 );
 
 CREATE TABLE IF NOT EXISTS compl_risk_assessments (
-    gra_risk_assessment_id TEXT PRIMARY KEY DEFAULT gen_id(),
+    gra_risk_assessment_id TEXT PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     framework_id        TEXT,
     risk_level          TEXT NOT NULL CHECK (risk_level = ANY (ARRAY['LOW','MEDIUM','HIGH','CRITICAL'])),
@@ -388,7 +388,7 @@ CREATE INDEX IF NOT EXISTS idx_compliance_cases_severity
 -- Ring 0 TENANT_PROVISIONED → compliance UPSERT here.
 -- Conflict key: (tenant_id) — idempotent on redelivery.
 CREATE TABLE IF NOT EXISTS compl_tenant_baselines (
-    baseline_id     TEXT        PRIMARY KEY DEFAULT gen_id(),
+    baseline_id     TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id       TEXT        NOT NULL,
     jurisdiction    TEXT,                               -- from syst_tenants.jurisdiction
     frameworks      JSONB       NOT NULL DEFAULT '[]',  -- regulatory frameworks active
@@ -407,7 +407,7 @@ CREATE INDEX IF NOT EXISTS idx_compliance_baseline_tenant
 -- Ring 2 AGENT_REGISTERED → compliance UPSERT here.
 -- All evidence items (ZKP proofs, DLP scans) reference this anchor row.
 CREATE TABLE IF NOT EXISTS compl_evidence_vault (
-    vault_id        TEXT        PRIMARY KEY DEFAULT gen_id(),
+    vault_id        TEXT        PRIMARY KEY DEFAULT public.gen_id(),
     tenant_id       TEXT        NOT NULL,
     agent_id        TEXT        NOT NULL,               -- soft ref: Ring 2 core_agents.agent_id
     agent_name      TEXT,
