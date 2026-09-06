@@ -13,7 +13,7 @@
 -- Links to Ring 1 via TEXT IDs (agent_id, hitl_decision_id, policy_id).
 -- These are TEXT-only — no hard FK to Ring 1 tables (different schema boundary).
 CREATE TABLE IF NOT EXISTS compl_records (
-    case_id             TEXT        PRIMARY KEY DEFAULT public.gen_id(),
+    case_id             TEXT        PRIMARY KEY DEFAULT public.gen_id(''),
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     -- Ring 1 references — TEXT only, enforced at app layer
@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS compl_records (
 
 -- ── compl_records ──────────────────────────────────────
 CREATE TABLE IF NOT EXISTS compl_obligations (
-    control_id          TEXT        PRIMARY KEY DEFAULT public.gen_id(),
+    control_id          TEXT        PRIMARY KEY DEFAULT public.gen_id(''),
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     framework           TEXT        NOT NULL,  -- SOC2, EU_AI_ACT, ISO27001, GDPR, HIPAA
@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS compl_obligations (
 -- ── compl_evidence ─────────────────────────────────────────────────
 -- Evidence vault: ZKP proofs, DLP findings, audit screenshots, SOC2 artifacts.
 CREATE TABLE IF NOT EXISTS compl_evidence (
-    evidence_id         TEXT        PRIMARY KEY DEFAULT public.gen_id(),
+    evidence_id         TEXT        PRIMARY KEY DEFAULT public.gen_id(''),
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     case_id             TEXT        REFERENCES compl_records(case_id) ON DELETE SET NULL,
@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS compl_evidence (
 -- ── compl_evidence ────────────────────────────────────────────────
 -- Zero-Knowledge Proof records. Cryptographic proof that a governance action occurred.
 CREATE TABLE IF NOT EXISTS compl_evidence_anchors (
-    proof_id            TEXT        PRIMARY KEY DEFAULT public.gen_id(),
+    proof_id            TEXT        PRIMARY KEY DEFAULT public.gen_id(''),
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     evidence_id         TEXT        REFERENCES compl_evidence(evidence_id),
@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS compl_evidence_anchors (
 -- ── compl_dlp_integrations ─────────────────────────────────────────────
 -- Data Loss Prevention scan results.
 CREATE TABLE IF NOT EXISTS compl_dlp_integrations (
-    finding_id          TEXT        PRIMARY KEY DEFAULT public.gen_id(),
+    finding_id          TEXT        PRIMARY KEY DEFAULT public.gen_id(''),
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     case_id             TEXT        REFERENCES compl_records(case_id) ON DELETE SET NULL,
@@ -156,7 +156,7 @@ CREATE TABLE IF NOT EXISTS compl_dlp_integrations (
 -- ── compl_reports ──────────────────────────────────────
 -- Daily generated compliance reports (SOC2, EU AI Act, GRC summaries).
 CREATE TABLE IF NOT EXISTS compl_reports (
-    report_id           TEXT        PRIMARY KEY DEFAULT public.gen_id(),
+    report_id           TEXT        PRIMARY KEY DEFAULT public.gen_id(''),
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     report_type         TEXT        NOT NULL
@@ -180,7 +180,7 @@ CREATE TABLE IF NOT EXISTS compl_reports (
 
 -- ── compl_case_comments ────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS compl_case_comments (
-    comment_id      TEXT        PRIMARY KEY DEFAULT public.gen_id(),
+    comment_id      TEXT        PRIMARY KEY DEFAULT public.gen_id(''),
     case_id         TEXT        NOT NULL REFERENCES compl_records(case_id) ON DELETE CASCADE,
     tenant_id       TEXT        NOT NULL REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     author_id       TEXT        NOT NULL,
@@ -203,8 +203,8 @@ CREATE TABLE IF NOT EXISTS compl_signing_keys (
     private_key TEXT        NOT NULL,
     is_active   BOOLEAN     NOT NULL DEFAULT TRUE,
     -- H6: explicit ON DELETE for FK (Palantir standard)
-    superseded_by   TEXT        REFERENCES compl_signing_keys (key_id) ON DELETE SET NULL
-                                    CONSTRAINT platform_signing_keys_superseded_by_fkey,
+    superseded_by   TEXT        CONSTRAINT platform_signing_keys_superseded_by_fkey
+                                    REFERENCES compl_signing_keys (key_id) ON DELETE SET NULL,
     rotated_at  TIMESTAMPTZ,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     -- H5: updated_at required for incremental sync
@@ -247,7 +247,7 @@ CREATE INDEX IF NOT EXISTS idx_collusion_ip_tenant
 -- backward FK compatibility during the transition period.
 
 CREATE TABLE IF NOT EXISTS compl_policy_violations (
-    violation_id        TEXT PRIMARY KEY DEFAULT public.gen_id(),
+    violation_id        TEXT PRIMARY KEY DEFAULT public.gen_id(''),
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     policy_id           TEXT NOT NULL,
     agent_id            TEXT,
@@ -265,7 +265,7 @@ CREATE TABLE IF NOT EXISTS compl_policy_violations (
 );
 
 CREATE TABLE IF NOT EXISTS compl_regulatory (
-    obligation_id       TEXT PRIMARY KEY DEFAULT public.gen_id(),
+    obligation_id       TEXT PRIMARY KEY DEFAULT public.gen_id(''),
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     framework           TEXT NOT NULL,
     control_id          TEXT NOT NULL,
@@ -281,7 +281,7 @@ CREATE TABLE IF NOT EXISTS compl_regulatory (
 );
 
 CREATE TABLE IF NOT EXISTS compl_policy_exceptions (
-    exception_id        TEXT PRIMARY KEY DEFAULT public.gen_id(),
+    exception_id        TEXT PRIMARY KEY DEFAULT public.gen_id(''),
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     policy_id           TEXT NOT NULL,
     agent_id            TEXT,
@@ -295,7 +295,7 @@ CREATE TABLE IF NOT EXISTS compl_policy_exceptions (
 );
 
 CREATE TABLE IF NOT EXISTS compl_risk_assessments (
-    gra_risk_assessment_id TEXT PRIMARY KEY DEFAULT public.gen_id(),
+    gra_risk_assessment_id TEXT PRIMARY KEY DEFAULT public.gen_id(''),
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     framework_id        TEXT,
     risk_level          TEXT NOT NULL CHECK (risk_level = ANY (ARRAY['LOW','MEDIUM','HIGH','CRITICAL'])),
@@ -316,7 +316,7 @@ CREATE TABLE IF NOT EXISTS compl_risk_assessments (
 -- FKs to Ring 2 (agent_id, hitl_decision_id, enforcement_action_id) are TEXT-only
 -- (no hard FK) — enforced at application layer. Cross-DB FK forbidden.
 CREATE TABLE IF NOT EXISTS compl_cases (
-    case_id             TEXT        PRIMARY KEY DEFAULT public.gen_id(),
+    case_id             TEXT        PRIMARY KEY DEFAULT public.gen_id(''),
     tenant_id           TEXT        NOT NULL REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     -- Ring 2 TEXT references (no hard FK — cross-DB boundary)
     agent_id            TEXT,
@@ -388,7 +388,7 @@ CREATE INDEX IF NOT EXISTS idx_compliance_cases_severity
 -- Ring 0 TENANT_PROVISIONED → compliance UPSERT here.
 -- Conflict key: (tenant_id) — idempotent on redelivery.
 CREATE TABLE IF NOT EXISTS compl_tenant_baselines (
-    baseline_id     TEXT        PRIMARY KEY DEFAULT public.gen_id(),
+    baseline_id     TEXT        PRIMARY KEY DEFAULT public.gen_id(''),
     tenant_id       TEXT        NOT NULL,
     jurisdiction    TEXT,                               -- from syst_tenants.jurisdiction
     frameworks      JSONB       NOT NULL DEFAULT '[]',  -- regulatory frameworks active
@@ -407,7 +407,7 @@ CREATE INDEX IF NOT EXISTS idx_compliance_baseline_tenant
 -- Ring 2 AGENT_REGISTERED → compliance UPSERT here.
 -- All evidence items (ZKP proofs, DLP scans) reference this anchor row.
 CREATE TABLE IF NOT EXISTS compl_evidence_vault (
-    vault_id        TEXT        PRIMARY KEY DEFAULT public.gen_id(),
+    vault_id        TEXT        PRIMARY KEY DEFAULT public.gen_id(''),
     tenant_id       TEXT        NOT NULL,
     agent_id        TEXT        NOT NULL,               -- soft ref: Ring 2 core_agents.agent_id
     agent_name      TEXT,

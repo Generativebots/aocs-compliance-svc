@@ -1,33 +1,28 @@
 -- =============================================================================
--- 00_gen_id_function.sql — aocs-compliance-svc
+-- 00_gen_id_function.sql — MUST run BEFORE 01_tables.sql
 -- =============================================================================
--- This is a COPY of the canonical gen_id() function.
--- It is idempotent — safe to run even if gen_id() already exists in this DB.
--- The compliance schema uses the SAME Supabase project as Ring 0 and Ring 1.
--- gen_id() lives in public schema, compliance tables live in compliance schema.
+-- PURPOSE:
+--   Creates gen_id(), the universal ID generator used as DEFAULT on ALL PKs.
+--   Single overload: gen_id(prefix TEXT DEFAULT '') — no separate no-arg function.
+--   M-05 FIX: Removed the no-arg gen_id() overload that caused 42725 ambiguity.
+--   Column defaults using gen_id() without args resolve via DEFAULT param.
+--
+-- IDEMPOTENT: CREATE OR REPLACE — safe to re-run.
 -- =============================================================================
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
+-- ── Single canonical overload: gen_id('ten') → 'ten_<uuid>', gen_id() → '<uuid>' ─
 CREATE OR REPLACE FUNCTION public.gen_id(prefix TEXT DEFAULT '')
 RETURNS TEXT
-LANGUAGE plpgsql
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public, pg_catalog
 AS $$
-DECLARE
-    raw_bytes  BYTEA := gen_random_bytes(9);
-    b64        TEXT;
-    clean      TEXT;
-BEGIN
-    b64   := encode(raw_bytes, 'base64');
-    clean := replace(replace(replace(b64, '+', 'x'), '/', 'y'), '=', '');
-    IF prefix <> '' THEN
-        RETURN prefix || '_' || clean;
-    END IF;
-    RETURN clean;
-END;
+  SELECT CASE
+    WHEN prefix <> '' THEN prefix || '_' || gen_random_uuid()::TEXT
+    ELSE gen_random_uuid()::TEXT
+  END;
 $$;
 
-COMMENT ON FUNCTION public.gen_id IS
-    'Generates a URL-safe, non-sequential, opaque identifier. '
-    'Shared across all AOCS services in the same Supabase project. '
-    'Must exist in public schema before any compliance schema tables are created.';
+COMMENT ON FUNCTION public.gen_id(TEXT) IS
+  'Universal AOCS ID generator. Single overload handles both gen_id() and gen_id(prefix). '
+  'M-05: No separate no-arg overload — avoids 42725 function ambiguity.';
