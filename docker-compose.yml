@@ -13,6 +13,7 @@
 # =============================================================================
 
 x-common-env: &common-env
+  OCX_SERVICE_NAME: aocs-compliance   # DBA-001: shows in Supabase logs + pg_stat_activity
   OCX_ENV: ${OCX_ENV:-development}
   LOG_LEVEL: ${LOG_LEVEL:-info}
 
