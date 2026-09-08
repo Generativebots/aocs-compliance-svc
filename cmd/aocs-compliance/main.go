@@ -28,6 +28,7 @@ import (
 
 	// Infrastructure
 	"github.com/ocx/shared/infra/config"
+	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/infra/license"
 	"github.com/ocx/shared/infra/middleware"
 	"github.com/ocx/shared/infra/routecheck"
@@ -65,8 +66,11 @@ func main() {
 	// Used by DLP handlers, GRA handlers, compliance report worker, and dashboards.
 	r1URL := os.Getenv("INTERNAL_API_URL")
 	if r1URL == "" {
-		// PRD-02 FIX: aocs-system-svc runs on :8082, NOT :8080.
-		r1URL = "http://aocs-platform:8082"
+		// HANDSHAKE-P2 FIX: coreClient makes Ring-2 calls (DLP integrations, enforcement
+		// actions, events, SMTP config, tenant list). These endpoints live in ocx-core-svc
+		// at :8083 — NOT in aocs-system-svc (Ring-0) at :8082.
+		// Set INTERNAL_API_URL to the internal VPC URL of ocx-core-svc in production.
+		r1URL = "http://aocs-core:8083"
 	}
 	coreClient := serviceclient.New(
 		"aocs-compliance",
@@ -99,10 +103,39 @@ func main() {
 	//   - TENANT_PROVISIONED → UPSERT compliance.tenant_baselines (OBSERVE mode)
 	//   - TENANT_DELETED     → UPDATE compliance records (soft tombstone)
 	//   - AGENT_REGISTERED   → UPSERT compliance.agent_evidence_vault
-	// All consumers use idempotency log (compliance.idempotency_log) to prevent
-	// duplicate processing on Pub/Sub redelivery.
-	propagation.StartCompliancePropagationConsumers(svc.BgCtx, db, os.Getenv("GCP_PROJECT_ID"))
-	slog.Info("cross-ring propagation consumers started (TENANT_PROVISIONED, TENANT_DELETED, AGENT_REGISTERED)")
+	// All consumers use idempotency log (compl_idempotency_log) to prevent duplicate
+	// processing. The outbox event ID is used as message_id for deduplication.
+	//
+	// TWO consumer paths:
+	//  1. Ring0ComplianceConsumer — polls syst_outbox_events via PLATFORM_DATABASE_URL.
+	//     Production path: reliable at-least-once, no GCP Pub/Sub dependency.
+	//  2. StartCompliancePropagationConsumers — GCP Pub/Sub / LocalEventBus dev fallback.
+	//     Kept for dev-only LocalEventBus delivery (no PLATFORM_DATABASE_URL needed).
+	{
+		// Primary: Ring-0 outbox polling (production-reliable).
+		var ring0Pool *database.PGXPool
+		if platformDSN := os.Getenv("PLATFORM_DATABASE_URL"); platformDSN != "" {
+			p, err := database.NewPGXPoolFromDSN(svc.BgCtx, platformDSN)
+			if err != nil {
+				slog.Error("compliance: failed to open PLATFORM_DATABASE_URL pool — Ring0ComplianceConsumer disabled",
+					"error", err)
+			} else {
+				ring0Pool = p
+				defer ring0Pool.Close()
+			}
+		} else {
+			slog.Warn("compliance: PLATFORM_DATABASE_URL not set — Ring0ComplianceConsumer skipped (dev: LocalEventBus handles delivery)")
+		}
+		if ring0Pool != nil {
+			ring0Consumer := propagation.NewRing0ComplianceConsumer(ring0Pool.Pool(), db)
+			ring0Consumer.Start(svc.BgCtx)
+			slog.Info("Ring0ComplianceConsumer started — polling syst_outbox_events (production path)")
+		}
+
+		// Complementary: GCP Pub/Sub / LocalEventBus (dev fallback only).
+		propagation.StartCompliancePropagationConsumers(svc.BgCtx, db, os.Getenv("GCP_PROJECT_ID"))
+		slog.Info("cross-ring propagation consumers started (GCP Pub/Sub / LocalEventBus dev fallback)")
+	}
 
 	// ── DLP Store ───────────────────────────────────────────────────────────
 	dlpStore := hsecurity.NewDLPStore(db, coreClient)
