@@ -81,15 +81,18 @@ func registerComplianceRoutes(
 	}
 
 	// ── Admin routes (SuperAdmin only) ────────────────────────────────────────
-	// POST /admin/rotate-signing-key — rotates the persistent Ed25519 key (S2)
+	// POST /system/compliance/rotate-signing-key — rotates persistent Ed25519 key
 	// SuperAdminRequired wraps the handler: blocks non-superadmin at HTTP layer.
 	if pgx != nil {
+		api.Handle("/system/compliance/rotate-signing-key",
+			middleware.SuperAdminRequired(pgx, hadmin.HandleRotateSigningKey(db))).
+			Methods("POST")
 		api.Handle("/admin/rotate-signing-key",
 			middleware.SuperAdminRequired(pgx, hadmin.HandleRotateSigningKey(db))).
 			Methods("POST")
-		slog.Info("S2: POST /admin/rotate-signing-key registered (SuperAdmin only)")
+		slog.Info("S2: POST /system/compliance/rotate-signing-key registered (SuperAdmin only)")
 	} else {
-		slog.Warn("S2: /admin/rotate-signing-key NOT registered — pgx pool unavailable")
+		slog.Warn("S2: /system/compliance/rotate-signing-key NOT registered — pgx pool unavailable")
 	}
 
 	// SCAN-13: ChallengeVerifier secret — must be set in production via OCX_CHALLENGE_SECRET.
