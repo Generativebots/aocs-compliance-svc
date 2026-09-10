@@ -107,34 +107,38 @@ func main() {
 	// processing. The outbox event ID is used as message_id for deduplication.
 	//
 	// TWO consumer paths:
-	//  1. Ring0ComplianceConsumer — polls syst_outbox_events via PLATFORM_DATABASE_URL.
+	//  1. SystemComplianceConsumer — polls syst_outbox_events via PLATFORM_DATABASE_URL or SYSTEM_DATABASE_URL.
 	//     Production path: reliable at-least-once, no GCP Pub/Sub dependency.
 	//  2. StartCompliancePropagationConsumers — GCP Pub/Sub / LocalEventBus dev fallback.
 	//     Kept for dev-only LocalEventBus delivery (no PLATFORM_DATABASE_URL needed).
 	{
-		// Primary: Ring-0 outbox polling (production-reliable).
-		var ring0Pool *database.PGXPool
-		if platformDSN := os.Getenv("PLATFORM_DATABASE_URL"); platformDSN != "" {
+		// Primary: System outbox polling (production-reliable).
+		var systemPool *database.PGXPool
+		platformDSN := os.Getenv("SYSTEM_DATABASE_URL")
+		if platformDSN == "" {
+			platformDSN = os.Getenv("PLATFORM_DATABASE_URL")
+		}
+		if platformDSN != "" {
 			p, err := database.NewPGXPoolFromDSN(svc.BgCtx, platformDSN)
 			if err != nil {
-				slog.Error("compliance: failed to open PLATFORM_DATABASE_URL pool — Ring0ComplianceConsumer disabled",
+				slog.Error("compliance: failed to open system DB pool — SystemComplianceConsumer disabled",
 					"error", err)
 			} else {
-				ring0Pool = p
-				defer ring0Pool.Close()
+				systemPool = p
+				defer systemPool.Close()
 			}
 		} else {
-			slog.Warn("compliance: PLATFORM_DATABASE_URL not set — Ring0ComplianceConsumer skipped (dev: LocalEventBus handles delivery)")
+			slog.Warn("compliance: SYSTEM_DATABASE_URL not set — SystemComplianceConsumer skipped (dev: LocalEventBus handles delivery)")
 		}
-		if ring0Pool != nil {
-			ring0Consumer := propagation.NewRing0ComplianceConsumer(ring0Pool.Pool(), db)
-			ring0Consumer.Start(svc.BgCtx)
-			slog.Info("Ring0ComplianceConsumer started — polling syst_outbox_events (production path)")
+		if systemPool != nil {
+			systemConsumer := propagation.NewSystemComplianceConsumer(systemPool.Pool(), db)
+			systemConsumer.Start(svc.BgCtx)
+			slog.Info("SystemComplianceConsumer started — polling syst_outbox_events (production path)")
 		}
 
 		// Complementary: GCP Pub/Sub / LocalEventBus (dev fallback only).
 		propagation.StartCompliancePropagationConsumers(svc.BgCtx, db, os.Getenv("GCP_PROJECT_ID"))
-		slog.Info("cross-ring propagation consumers started (GCP Pub/Sub / LocalEventBus dev fallback)")
+		slog.Info("cross-service propagation consumers started (GCP Pub/Sub / LocalEventBus dev fallback)")
 	}
 
 	// ── DLP Store ───────────────────────────────────────────────────────────

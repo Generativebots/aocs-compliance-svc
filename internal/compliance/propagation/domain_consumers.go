@@ -1,6 +1,6 @@
-// Package propagation — ring_consumers.go
+// Package propagation — domain_consumers.go
 //
-// Layer 2 Pub/Sub consumers for Ring 3 (aocs-compliance-svc).
+// Layer 2 Pub/Sub consumers for compliance (aocs-compliance-svc).
 //
 // Palantir 3-layer pattern for each consumer:
 //  1. Check compl_idempotency_log (message_id) → skip if already processed.
@@ -9,9 +9,9 @@
 //  4. ACK.
 //
 // Triggers handled:
-//   - TENANT_PROVISIONED (Ring 0) → UPSERT compl_tenant_baselines
-//   - TENANT_DELETED    (Ring 0) → UPDATE compl_tenant_baselines + compl_cases
-//   - AGENT_REGISTERED  (Ring 2) → UPSERT compl_evidence_vault
+//   - TENANT_PROVISIONED (system) → UPSERT compl_tenant_baselines
+//   - TENANT_DELETED    (system) → UPDATE compl_tenant_baselines + compl_cases
+//   - AGENT_REGISTERED  (core)   → UPSERT compl_evidence_vault
 
 package propagation
 
