@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS compl_dlp_integrations (
                             CHECK (status IN ('OPEN','ACKNOWLEDGED','RESOLVED','FALSE_POSITIVE')),
     metadata            JSONB       NOT NULL DEFAULT '{}',
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    -- H5: updated_at required for incremental sync (Palantir standard)
+    -- updated_at required for incremental sync
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -187,7 +187,7 @@ CREATE TABLE IF NOT EXISTS compl_case_comments (
     content         TEXT        NOT NULL,
     is_internal     BOOLEAN     NOT NULL DEFAULT FALSE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    -- H5: updated_at required for incremental sync (Palantir standard)
+    -- updated_at required for incremental sync
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -202,7 +202,7 @@ CREATE TABLE IF NOT EXISTS compl_signing_keys (
     public_key  TEXT        NOT NULL,
     private_key TEXT        NOT NULL,
     is_active   BOOLEAN     NOT NULL DEFAULT TRUE,
-    -- H6: explicit ON DELETE for FK (Palantir standard)
+    -- explicit ON DELETE for FK
     superseded_by   TEXT        CONSTRAINT platform_signing_keys_superseded_by_fkey
                                     REFERENCES compl_signing_keys (key_id) ON DELETE SET NULL,
     rotated_at  TIMESTAMPTZ,
@@ -216,7 +216,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uidx_platform_signing_keys_active
     WHERE is_active = TRUE;
 
 -- ── compl_anomaly ───────────────────────────────────────
--- S3 Fix (Palantir Gap): Cross-pod sybil collusion tracking.
+-- Cross-pod sybil collusion tracking.
 -- CollusionStore.RecordAgentOnIP() upserts here for cross-pod shared state.
 CREATE TABLE IF NOT EXISTS compl_anomaly (
     tenant_id   TEXT        NOT NULL REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,

@@ -2,7 +2,7 @@
 //
 // Layer 2 Pub/Sub consumers for compliance (aocs-compliance-svc).
 //
-// Palantir 3-layer pattern for each consumer:
+// Idempotent 3-layer event pattern for each consumer:
 //  1. Check compl_idempotency_log (message_id) → skip if already processed.
 //  2. UPSERT the target table (ON CONFLICT DO UPDATE) — safe on redelivery.
 //  3. Write compl_idempotency_log after success.

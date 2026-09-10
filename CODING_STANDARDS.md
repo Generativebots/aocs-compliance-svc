@@ -3,7 +3,7 @@
 > **Authoritative Specification** for Evidence Vault, Zero-Knowledge Proofs (ZKP), DLP Scanners, SOC 2 / EU AI Act Reports, and Regulatory Audits.
 > **Service Port**: `8089`
 > **Database Schema**: `compliance` (`DATABASE_URL` must include `search_path=compliance,public`)
-> **Engineering Benchmark**: Palantir Gotham / Apple Privacy Engineering / Amazon Trust & Safety.
+> **Engineering Standards**: Enterprise Compliance, Cryptographic Proofs & Privacy Engineering.
 
 ---
 

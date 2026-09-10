@@ -36,8 +36,7 @@ CREATE INDEX IF NOT EXISTS idx_comp_controls_status ON compl_records (status);
 
 SELECT 'compliance indexes created' AS status;
 
--- ── DBA Audit Fixes (2026-09-02) ──────────────────────────────────────────────
--- Google/Palantir DBA standard: every FK column must have a supporting index.
+-- Relational integrity: every FK column must have a supporting index.
 -- Missing these caused seq scans on cascade deletes and JOIN queries.
 
 -- core_compliance_comments
