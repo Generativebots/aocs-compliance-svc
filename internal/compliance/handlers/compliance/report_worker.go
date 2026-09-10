@@ -187,10 +187,8 @@ func generateTenantReport(ctx context.Context, db database.DB, coreClient *servi
 	}
 	_ = hitlOverdue // used in report data below
 
-	// 2. Enforcement actions (last 24h) — read from Ring2-owned compliance cases (local).
+	// 2. Enforcement actions (last 24h) — read from compliance cases (local).
 	var enfRows []map[string]any
-	// FIX: Column name aligned with actual core_compliance schema.
-	// Previous code referenced phantom column enforcement_action_id (SQLSTATE 42703).
 	if _dbErr := db.QueryRowsCursor(database.TblCoreCompliance, "case_id,case_type,created_at",
 		"tenant_id", tenantID, database.CursorPage{Limit: 200}, &enfRows); _dbErr != nil {
 		slog.Error("db.QueryRows compliance cases failed (best-effort)", "error", _dbErr)

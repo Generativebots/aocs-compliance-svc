@@ -2,15 +2,13 @@
 
 **AOCS Compliance Service** — evidence vault, ZKP proofs, DLP scanning, compliance cases, and SOC2/EU AI Act report generation.
 
-## Ring Position
+## Architecture Position
 
 ```
-Ring 0: aocs-system-svc  ← tenants, users, billing (PAID — requires FeatureCompliance license entitlement)
-  │
-  ├── Ring 3 (PAID): aocs-compliance-svc  ← THIS SERVICE (PAID — requires FeatureCompliance license entitlement)
-  │     └── Reads Ring 1 at runtime (agent/HITL data)
-  │
-  └── Ring 1: ocx-core-svc + aocs-hub ← agents, governance, HITL
+Foundation: aocs-system-svc (:8082)   ← tenants, users, billing
+Core:       ocx-core-svc (:8083)      ← agents, governance, HITL
+Compliance: aocs-compliance-svc (:8089) ← THIS SERVICE (PAID — FeatureCompliance license)
+            └── Reads Core at runtime (agent/HITL data)
 ```
 
 ## What it owns
@@ -34,7 +32,7 @@ cp .env.example .env
 # 2. Deploy compliance schema to Supabase (run in SQL Editor)
 make db-deploy
 
-# 3. Run locally (requires Ring 0 running on :8082)
+# 3. Run locally (requires Foundation running on :8082)
 make run
 
 # 4. Or use Docker

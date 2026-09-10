@@ -1,7 +1,7 @@
 package main
 
 // routes_compliance_evidence.go — ZKP, Evidence, and Audit verification routes
-// Ring 2 only. All Ring 1 imports removed. RLHC clusters owned by Ring 1 (aocs-hub).
+// RLHC clusters owned by Core service (aocs-hub).
 
 import (
 	"log/slog"
@@ -59,7 +59,7 @@ func registerComplianceEvidenceRoutes(
 	api.HandleFunc("/qcore/zkp-proofs", auth.RequireAccess(pc, "analytics", "read", zkp.HandleListZKPVerifications(db))).Methods("GET")
 	api.HandleFunc("/qcore/zkp-proofs/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(zkp.HandleGetZKPVerification(db)))).Methods("GET")
 
-	// NOTE: /hitl/rlhc/clusters is owned by Ring 1 (aocs-hub). Not registered here.
+	// NOTE: /hitl/rlhc/clusters is owned by Core service (aocs-hub). Not registered here.
 	// Frontend should call aocs-hub directly via the API gateway.
 
 	// ── Evidence — Tenant-scoped CRUD ─────────────────────────────────────────
@@ -110,7 +110,7 @@ func registerComplianceEvidenceRoutes(
 	api.HandleFunc("/ledger/root/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(compliance.HandleGetLedgerRootEntry(db)))).Methods("GET")
 
 	// ── Coverage + policy ─────────────────────────────────────────────────────
-	// NOTE: Routes below owned by Ring 1 (aocs-gate/hub) — removed from Ring 2.
+	// NOTE: Routes below owned by Core service (aocs-gate/hub).
 	// governance/federation/workflow handlers registered by aocs-gate service.
 	api.HandleFunc("/compliance/policy-summary", auth.RequireAccess(pc, "compliance", "read", compliance.HandleGetPolicySummary(pgxPool))).Methods("GET")
 	api.HandleFunc("/compliance/policy-impact", auth.RequireAccess(pc, "compliance", "read", compliance.HandleGetPolicyImpact(pgxPool))).Methods("GET")

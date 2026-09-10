@@ -64,17 +64,15 @@ func main() {
 
 	// ── ocx-core-svc Service Client ─────────────────────────────────────────────────
 	// Used by DLP handlers, GRA handlers, compliance report worker, and dashboards.
-	r1URL := os.Getenv("INTERNAL_API_URL")
-	if r1URL == "" {
-		// HANDSHAKE-P2 FIX: coreClient makes Ring-2 calls (DLP integrations, enforcement
-		// actions, events, SMTP config, tenant list). These endpoints live in ocx-core-svc
-		// at :8083 — NOT in aocs-system-svc (Ring-0) at :8082.
+	coreURL := os.Getenv("INTERNAL_API_URL")
+	if coreURL == "" {
+		// Core client targets ocx-core-svc (DLP integrations, enforcement actions, events).
 		// Set INTERNAL_API_URL to the internal VPC URL of ocx-core-svc in production.
-		r1URL = "http://aocs-core:8083"
+		coreURL = "http://aocs-core:8083"
 	}
 	coreClient := serviceclient.New(
 		"aocs-compliance",
-		r1URL,
+		coreURL,
 		os.Getenv("SERVICE_JWT_SECRET"),
 		&http.Client{Timeout: 15 * time.Second},
 	)
@@ -84,22 +82,16 @@ func main() {
 	hcompliance.StartZKPBatchWorkerPool(svc.BgCtx, db)
 	slog.Info("ZKPBatchWorkerPool started", "workers", 3)
 
-	// P-18 FIX: Start daily compliance report generator.
-	// Was implemented in report_worker.go but never started — patent test P-18 requires
-	// nexus_compliance_reports to have a row created by today's daily 00:00 UTC run.
+	// Start daily compliance report generator.
 	hcompliance.StartReportGenerator(svc.BgCtx, db, coreClient)
-	slog.Info("P-18: ComplianceReportWorker started — daily 00:00 UTC report generation")
+	slog.Info("ComplianceReportWorker started — daily 00:00 UTC report generation")
 
-	// P-16 FIX: Start daily Sybil detection worker.
-	// Was implemented in sybil_resistance_worker.go but never started — patent test P-16
-	// requires core_trust_events (cross_org=true rows) to be created at daily 03:00 UTC.
-	// NOTE: shar_trust was merged into core_trust_events — TblSybilRiskAssess now resolves
-	// to "core_trust_events". Rows written with cross_org=false (sybil = single-tenant concern).
+	// Start daily Sybil detection worker.
 	hsecurity.StartSybilDetectionWorker(svc.BgCtx, db)
-	slog.Info("P-16: SybilDetectionWorker started — daily 03:00 UTC sybil scan")
+	slog.Info("SybilDetectionWorker started — daily 03:00 UTC sybil scan")
 
-	// ── Layer 2 Cross-Ring Propagation Consumers ─────────────────────────────
-	// Palantir 3-layer model: Ring 3 subscribes to Ring 0 and Ring 2 domain events.
+	// ── Domain Propagation Consumers ─────────────────────────────────────────
+	// Subscribes to tenant and agent domain events.
 	//   - TENANT_PROVISIONED → UPSERT compliance.tenant_baselines (OBSERVE mode)
 	//   - TENANT_DELETED     → UPDATE compliance records (soft tombstone)
 	//   - AGENT_REGISTERED   → UPSERT compliance.agent_evidence_vault

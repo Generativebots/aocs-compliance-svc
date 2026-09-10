@@ -15,8 +15,8 @@ import (
 	"github.com/ocx/shared/types"
 )
 
-// routes_compliance.go — Ring 2 only: /violations/*, /sanctions/*, /dlp/*, /cases/*, /hitl/cases/*, /entropy/*
-// All Ring 1 dependencies removed. Entropy uses contracts.EntropyMonitor interface.
+// routes_compliance.go — /violations/*, /sanctions/*, /dlp/*, /cases/*, /hitl/cases/*, /entropy/*
+// Uses contracts.EntropyMonitor interface.
 // ZKP/Evidence/GRA routes delegated to registerComplianceEvidenceRoutes().
 
 func registerIntelComplianceRoutes(
@@ -144,7 +144,7 @@ func registerIntelComplianceRoutes(
 	api.HandleFunc("/blocklist-entry", auth.RequireAccess(pc, "compliance", "write", compliance.HandleCreateBlocklistEntry(db))).Methods("POST")
 
 	// ── Departments ───────────────────────────────────────────────────────────
-	// IntentClassifier — uses shared types interface, no Ring 1 import needed
+	// IntentClassifier — uses shared types interface
 	coreClassifier := types.NewIntentClassifierHTTP(extractorURL)
 	api.HandleFunc("/departments/route", auth.RequireAccess(pc, "compliance", "read", compliance.HandleRouteDepartment(db, coreClassifier, coreClient))).Methods("POST")
 	api.HandleFunc("/departments/{slug}/overflow-route", auth.RequireAccess(pc, "compliance", "write", compliance.HandleRouteDeptOverflow(db, coreClient))).Methods("POST")

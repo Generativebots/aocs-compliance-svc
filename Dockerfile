@@ -5,8 +5,8 @@
 #   builder: compiles the Go binary
 #   runtime: minimal distroless image
 #
-# Ring: 0-adjacent — always-on compliance observability layer.
-# Depends on Ring 1 (ocx-core-svc / aocs-hub) at runtime for agent data.
+# Compliance observability layer.
+# Depends on ocx-core-svc / aocs-hub at runtime for agent data.
 
 FROM golang:1.27-alpine AS builder
 

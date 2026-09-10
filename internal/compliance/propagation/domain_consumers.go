@@ -26,7 +26,7 @@ import (
 	"github.com/ocx/shared/infra/eventbus"
 )
 
-// StartCompliancePropagationConsumers starts all cross-ring consumers for Ring 3.
+// StartCompliancePropagationConsumers starts all domain event consumers for compliance.
 // Must be called in goroutines. All consumers run until ctx is cancelled.
 func StartCompliancePropagationConsumers(ctx context.Context, db database.DB, projectID string) {
 	go startConsumer(ctx, db, projectID,
@@ -68,7 +68,7 @@ func handleComplianceTenantProvisioned(ctx context.Context, db database.DB, mess
 		"updated_at":       now,
 	}
 	// UPSERT on (tenant_id) — ON CONFLICT DO UPDATE enforces idempotency.
-	// If Ring 0 sends twice, second delivery updates enforcement_mode to OBSERVE
+	// If event is redelivered, second delivery updates enforcement_mode to OBSERVE
 	// (same value) — safe no-op in practice.
 	if err := db.InsertRowIdempotent(database.TblComplianceTenantBaselines, row, "tenant_id"); err != nil {
 		slog.Error("compliance/propagation: failed to upsert tenant_baselines",

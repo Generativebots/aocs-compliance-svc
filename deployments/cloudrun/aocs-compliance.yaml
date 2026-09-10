@@ -1,7 +1,7 @@
 # =============================================================================
 # aocs-compliance — Cloud Run Service Definition
 # =============================================================================
-# Ring 3 PAID — independently purchasable, always-on observability layer.
+# PAID independently purchasable, always-on observability layer.
 # Ingress: internal — never publicly accessible. API Gateway routes to this via
 #          internal VPC (callers: ocx-core-svc aocs-gate, aocs-hub).
 #
@@ -19,14 +19,14 @@ metadata:
   name: aocs-compliance
   labels:
     app: aocs-compliance
-    ring: "3"
+    tier: "compliance"
     team: ocx-compliance
     environment: production
   annotations:
     # Internal only — compliance is never directly internet-accessible.
     # API Gateway (ocx-gateway) → aocs-gate → aocs-compliance via VPC.
     run.googleapis.com/ingress: internal
-    run.googleapis.com/description: "AOCS Compliance — Ring 3 PAID — ZKP, DLP, evidence vault, SOC2/EU AI Act"
+    run.googleapis.com/description: "AOCS Compliance — ZKP, DLP, evidence vault, SOC2/EU AI Act"
 
 spec:
   template:

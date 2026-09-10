@@ -132,8 +132,7 @@ type submitDeclarationRequest struct {
 // BuildEUAIActTransparencyCard constructs the Article 13 transparency card from
 // live telemetry fetched from ocx-core-svc via internal API.
 //
-// V-06 RING FIX: No longer queries Ring 1 tables directly.
-// Calls /internal/v1/tenants/{tenant_id}/telemetry instead.
+// Live telemetry is queried via internal API /internal/v1/tenants/{tenant_id}/telemetry.
 //
 // Called by:
 //   - HandleGetEUAIActTransparency (interactive dashboard card)
@@ -141,7 +140,7 @@ type submitDeclarationRequest struct {
 func BuildEUAIActTransparencyCard(ctx context.Context, db database.DB, coreClient *serviceclient.Client, tenantID string) (EUAIActTransparencyCard, error) {
 	log := slog.With("handler", "BuildEUAIActTransparencyCard", "tenant_id", tenantID)
 
-	// V-06 FIX: Fetch live metrics from Ring 1 internal API instead of direct DB access.
+	// Fetch live metrics from Core internal API.
 	agentCount := 0
 	hitlEnabled := false
 	policyCount := 0

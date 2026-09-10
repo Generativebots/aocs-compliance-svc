@@ -1,6 +1,6 @@
 package compliance
 
-// palette.go — Studio node palette manifest for the Compliance ring.
+// palette.go — Studio node palette manifest for the Compliance service.
 //
 // GET /api/v1/compliance/palette-manifest
 //
@@ -12,7 +12,7 @@ package compliance
 //     code-shipped, not operator-configured at runtime).
 //   - No auth guard — the gateway already validates the tenant JWT; this
 //     endpoint is internal VPC only (Cloud Run ingress = internal).
-//   - Format matches ringclient.CompliancePaletteNode in aocs-studio-svc.
+//   - Format matches peerclient.CompliancePaletteNode in aocs-studio-svc.
 //   - The Available flag is NOT set here — studio-svc sets it based on the
 //     tenant's FeatureCompliance JWT claim after fetching this manifest.
 

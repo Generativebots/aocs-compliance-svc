@@ -191,7 +191,7 @@ func HandleCasesSubmitJuryVote(db database.DB, coreClient *serviceclient.Client)
 			approveRatio    float64
 			rejectRatio     float64
 			// postDeadlockEvent signals that a QUORUM_DEADLOCKED platform event should be
-			// posted via ocx-core-svc API *after* the transaction commits (Ring2 isolation).
+			// posted via ocx-core-svc API *after* the transaction commits (compliance service isolation).
 			postDeadlockEvent bool
 		}
 		if txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
@@ -311,7 +311,7 @@ func HandleCasesSubmitJuryVote(db database.DB, coreClient *serviceclient.Client)
 					}); err != nil {
 					return err
 				}
-				// Event posted after transaction commits to avoid ocx-core-svc write inside Ring2 transaction.
+				// Event posted after transaction commits to avoid ocx-core-svc write inside local transaction.
 				txResult.postDeadlockEvent = true
 			}
 

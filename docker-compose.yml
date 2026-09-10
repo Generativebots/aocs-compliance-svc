@@ -1,9 +1,9 @@
 # =============================================================================
-# docker-compose.yml — aocs-compliance-svc (Ring 3 (PAID))
+# docker-compose.yml — aocs-compliance-svc
 # =============================================================================
-# Ring dependency:
-#   REQUIRES Ring 0 (aocs-system-svc :8082) — for tenant validation + billing
-#   REQUIRES Ring 1 (ocx-core-svc :8083/:8085) — for agent/HITL/enforcement data
+# Service dependencies:
+#   REQUIRES Foundation (aocs-system-svc :8082) — for tenant validation + billing
+#   REQUIRES Core (ocx-core-svc :8083/:8085) — for agent/HITL/enforcement data
 #   Start AFTER: docker compose up -d in aocs-system-svc AND ocx-core-svc
 #
 # Usage:
@@ -13,7 +13,7 @@
 # =============================================================================
 
 x-common-env: &common-env
-  OCX_SERVICE_NAME: aocs-compliance   # DBA-001: shows in Supabase logs + pg_stat_activity
+  OCX_SERVICE_NAME: aocs-compliance   # shows in Supabase logs + pg_stat_activity
   OCX_ENV: ${OCX_ENV:-development}
   LOG_LEVEL: ${LOG_LEVEL:-info}
 
@@ -46,12 +46,12 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-}
       POSTGRES_SCHEMA: "public"
 
-      # ── Ring 0: aocs-system-svc ───────────────────────────────────────────
+      # ── Foundation: aocs-system-svc ───────────────────────────────────────
       INTERNAL_API_URL: ${INTERNAL_API_URL:-http://host.docker.internal:8082}
 
-      # ── Ring 1: ocx-core-svc ─────────────────────────────────────────────
-      # Compliance needs Ring 1 to read agent executions, HITL decisions,
-      # enforcement actions. Without Ring 1, report handlers return 503.
+      # ── Core: ocx-core-svc ───────────────────────────────────────────────
+      # Compliance needs Core to read agent executions, HITL decisions,
+      # enforcement actions. Without Core, report handlers return 503.
       CORE_INTERNAL_API_URL: ${CORE_INTERNAL_API_URL:-http://host.docker.internal:8083}
       HUB_INTERNAL_API_URL: ${HUB_INTERNAL_API_URL:-http://host.docker.internal:8085}
 
@@ -71,7 +71,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     labels:
-      com.aocs.ring: "3"
+      com.aocs.tier: "compliance"
       com.aocs.service: "compliance"
       com.aocs.description: "ZKP, DLP, compliance cases, evidence vault, SOC2/EU AI Act reports"
     healthcheck:

@@ -30,8 +30,7 @@ import (
 )
 
 // HandleAnalyticsSummary returns a tenant-scoped analytics digest.
-// Ring design: agent counts are fetched from Ring 1 internal API (not direct DB).
-// Ring 4 (compliance) must never read Ring 1 tables — V-06 fix.
+// Agent counts are fetched from Core internal API.
 //
 //	{
 //	  "tenant_id":            "...",
@@ -66,8 +65,7 @@ func HandleAnalyticsSummary(db database.DB, internalAPIURL string) http.HandlerF
 		// so dashboards can show a data-reliability warning rather than wrong zeros.
 		var dbErrors []string
 
-		// 1. Agent counts — fetched from Ring 1 internal API (V-06 fix: no direct Ring 1 table access)
-		// Ring 4 (compliance) must use Ring 1's internal API, never direct SQL on Ring 1 tables.
+		// 1. Agent counts — fetched from Core internal API
 		type agentCounts struct {
 			Total  int `json:"total"`
 			Active int `json:"active"`
@@ -77,7 +75,7 @@ func HandleAnalyticsSummary(db database.DB, internalAPIURL string) http.HandlerF
 			apiURL := fmt.Sprintf("%s/internal/v1/agents/counts?tenant_id=%s", internalAPIURL, tenantID)
 			apiReq, reqErr := http.NewRequestWithContext(r.Context(), http.MethodGet, apiURL, nil)
 			if reqErr == nil {
-				// Forward the service JWT so Ring 1 trusts this internal call
+				// Forward the service JWT so Core trusts this internal call
 				if svcJWT := r.Header.Get("X-Service-JWT"); svcJWT != "" {
 					apiReq.Header.Set("Authorization", "Bearer "+svcJWT)
 				}
@@ -85,8 +83,8 @@ func HandleAnalyticsSummary(db database.DB, internalAPIURL string) http.HandlerF
 				cl := &http.Client{Timeout: 5 * time.Second}
 				apiResp, apiErr := cl.Do(apiReq)
 				if apiErr != nil {
-					slog.Warn("analytics_summary: Ring 1 agent counts API unavailable", "error", apiErr)
-					dbErrors = append(dbErrors, "agents: ring1_api_unavailable")
+					slog.Warn("analytics_summary: Core agent counts API unavailable", "error", apiErr)
+					dbErrors = append(dbErrors, "agents: core_api_unavailable")
 				} else {
 					defer apiResp.Body.Close()
 					if apiResp.StatusCode == http.StatusOK {
@@ -99,13 +97,13 @@ func HandleAnalyticsSummary(db database.DB, internalAPIURL string) http.HandlerF
 							agents = agentCounts{Total: payload.Total, Active: payload.Active}
 						}
 					} else {
-						slog.Warn("analytics_summary: Ring 1 agent counts API returned non-200",
+						slog.Warn("analytics_summary: Core agent counts API returned non-200",
 							"status", apiResp.StatusCode)
-						dbErrors = append(dbErrors, fmt.Sprintf("agents: ring1_api_status_%d", apiResp.StatusCode))
+						dbErrors = append(dbErrors, fmt.Sprintf("agents: core_api_status_%d", apiResp.StatusCode))
 					}
 				}
 			} else {
-				dbErrors = append(dbErrors, "agents: ring1_api_request_build_failed")
+				dbErrors = append(dbErrors, "agents: core_api_request_build_failed")
 			}
 		}
 
@@ -138,10 +136,8 @@ WHERE tenant_id = $1 AND created_at >= $2`
 		}
 
 		// 3. Compliance posture score — normalised per active agent
-		// P3-4 FIX: was AVG(score) over all core_compliance rows.
-		// If only 10 of 100 agents have records, AVG ignores the 90 uncovered agents.
-		// Fix: score = SUM(score) / GREATEST(total_active_agents, 1)
-		// where total_active_agents comes from core_agents (Ring 2) for this tenant.
+		// score = SUM(score) / GREATEST(total_active_agents, 1)
+		// where total_active_agents comes from core_agents for this tenant.
 		// An agent with no compliance record counts as 0.0 (uncovered = non-compliant).
 		type complianceRow struct {
 			Score float64 `json:"score"`

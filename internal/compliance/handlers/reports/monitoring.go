@@ -95,7 +95,7 @@ type systemOverview struct {
 }
 
 // HandleGetSystemOverview — GET /monitor/overview
-// V-06 FIX: agent counts fetched via Ring 1 internal API — no direct Ring 1 table access.
+// Agent counts fetched via Core internal API.
 func HandleGetSystemOverview(db database.DB, internalAPIURL string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if respond.RequireDB(w, db) {
@@ -109,8 +109,7 @@ func HandleGetSystemOverview(db database.DB, internalAPIURL string) http.Handler
 		ov := systemOverview{GeneratedAt: time.Now().UTC().Format(time.RFC3339)}
 		cutoff24h := time.Now().UTC().Add(-24 * time.Hour).Format(time.RFC3339)
 
-		// V-06 FIX: Agent counts via Ring 1 internal API (was: direct FROM core_agents SQL)
-		// Ring 4 (compliance) must call Ring 1's API — never touch Ring 1 tables directly.
+		// Agent counts via Core internal API
 		if internalAPIURL != "" {
 			apiURL := fmt.Sprintf("%s/internal/v1/agents/counts?tenant_id=%s", internalAPIURL, tenantID)
 			apiReq, reqErr := http.NewRequestWithContext(r.Context(), http.MethodGet, apiURL, nil)
@@ -135,7 +134,7 @@ func HandleGetSystemOverview(db database.DB, internalAPIURL string) http.Handler
 						}
 					}
 				} else {
-					slog.Warn("monitoring: Ring 1 agent counts API unavailable", "error", apiErr)
+					slog.Warn("monitoring: Core agent counts API unavailable", "error", apiErr)
 				}
 			}
 		}
