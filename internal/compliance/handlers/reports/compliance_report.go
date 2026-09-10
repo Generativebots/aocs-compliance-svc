@@ -75,14 +75,20 @@ func HandleGetRegulatoryComplianceReport(db database.PlatformRepository) http.Ha
 		// 2. Violations in period
 		totalViolations, _ := db.CountRows(database.TblViolations, "tenant_id", tenantID)
 
-		// 3. HITL cases (human-reviewed actions)
-		// F-RPT-01 FIX: was _ = (silent drop). If HITL query fails, report is incomplete
-		// but returns HTTP 200 — false compliance report for regulated industries.
+		sinceStr := since.Format(time.RFC3339)
+		untilStr := until.Format(time.RFC3339)
+
+		// 3. HITL cases (human-reviewed actions within period)
+		// F-RPT-01 FIX: Query within the requested period window.
 		var hitlRows []struct {
 			Status string `json:"status"`
 		}
-		hitlQueryErr := db.QueryRowsCtx(r.Context(), database.TblCoreHitl,
-			"status", "tenant_id", tenantID, &hitlRows)
+		hitlQueryErr := db.QueryRowsWithWindow(database.TblCoreHitl,
+			"status", tenantID, sinceStr, untilStr, &hitlRows)
+		if hitlQueryErr != nil {
+			hitlQueryErr = db.QueryRowsCtx(r.Context(), database.TblCoreHitl,
+				"status", "tenant_id", tenantID, &hitlRows)
+		}
 		if hitlQueryErr != nil {
 			slog.Error("F-RPT-01: compliance report HITL query failed — report incomplete",
 				"tenant_id", tenantID, "error", hitlQueryErr)
@@ -101,13 +107,17 @@ func HandleGetRegulatoryComplianceReport(db database.PlatformRepository) http.Ha
 			}
 		}
 
-		// 4. Gate verdicts (PERMIT/DENY/ESCALATE breakdown)
-		// F-RPT-01 FIX: was _ = (silent drop). Missing verdicts = false compliance totals.
+		// 4. Gate verdicts (PERMIT/DENY/ESCALATE breakdown within period)
+		// F-RPT-01 FIX: Query within the requested period window.
 		var verdictRows []struct {
 			Verdict string `json:"verdict"`
 		}
-		verdictQueryErr := db.QueryRowsCtx(r.Context(), database.TblCoreVerdicts,
-			"verdict", "tenant_id", tenantID, &verdictRows)
+		verdictQueryErr := db.QueryRowsWithWindow(database.TblCoreVerdicts,
+			"verdict", tenantID, sinceStr, untilStr, &verdictRows)
+		if verdictQueryErr != nil {
+			verdictQueryErr = db.QueryRowsCtx(r.Context(), database.TblCoreVerdicts,
+				"verdict", "tenant_id", tenantID, &verdictRows)
+		}
 		if verdictQueryErr != nil {
 			slog.Error("F-RPT-01: compliance report verdict query failed — report incomplete",
 				"tenant_id", tenantID, "error", verdictQueryErr)
