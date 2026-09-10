@@ -60,7 +60,7 @@ type JuryConsumer struct {
 }
 
 // NewJuryConsumer creates a production consumer that dials the Python Jury at juryAddr.
-// juryAddr: gRPC address of the unified aocs-py-svc Jury gRPC port (e.g. "aocs-jury.ocx-system.svc.cluster.local:50090")
+// juryAddr: gRPC address of the unified aocs-py-svc Jury gRPC port (e.g. "aocs-py-svc.ocx-system.svc.cluster.local:50090")
 // project:  GCP project ID (falls back to GOOGLE_CLOUD_PROJECT env var)
 // subName:  Pub/Sub subscription name (defaults to "aocs-jury-escalated-sub")
 func NewJuryConsumer(juryAddr, project, subName string) *JuryConsumer {
