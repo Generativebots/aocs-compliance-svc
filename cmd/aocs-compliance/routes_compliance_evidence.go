@@ -59,6 +59,9 @@ func registerComplianceEvidenceRoutes(
 	api.HandleFunc("/qcore/zkp-proofs", auth.RequireAccess(pc, "analytics", "read", zkp.HandleListZKPVerifications(db))).Methods("GET")
 	api.HandleFunc("/qcore/zkp-proofs/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(zkp.HandleGetZKPVerification(db)))).Methods("GET")
 
+	// Frontend compatibility alias for ZKP proof chain lookup
+	api.HandleFunc("/gra/zkp-proof-chain", auth.RequireAccess(pc, "compliance", "read", zkp.HandleListZKPVerifications(db))).Methods("GET")
+
 	// NOTE: /hitl/rlhc/clusters is owned by Core service (aocs-hub). Not registered here.
 	// Frontend should call aocs-hub directly via the API gateway.
 

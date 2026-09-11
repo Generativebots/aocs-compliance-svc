@@ -5,15 +5,17 @@ package evaluation
 // hit non-existent routes. Uses SupabaseClient's public QueryRows/InsertRow API.
 
 import (
-	"github.com/ocx/shared/idgen"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
+
 	"github.com/gorilla/mux"
+	"github.com/ocx/shared/idgen"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/respond"
@@ -24,18 +26,34 @@ import (
 // Matches the PostgreSQL gen_id() function in V013__functions.sql
 func generatePlatformID() string { return idgen.GenID() }
 
-// verifyEvidenceHash recomputes sha256(payload) and compares against the stored hash.
-// GAP-P3 FIX: evidence GET handlers now verify the hash chain on every read.
+// computeCanonicalEvidenceHash calculates a deterministic SHA-256 hash across record attributes.
+func computeCanonicalEvidenceHash(rec database.QCoreEvidenceRecord) string {
+	payloadStr := string(rec.Payload)
+	hashInput := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s",
+		rec.ID, rec.TenantID, rec.Type, rec.AgentID, rec.IntentID, payloadStr, rec.PreviousHash)
+	hashBytes := sha256.Sum256([]byte(hashInput))
+	return hex.EncodeToString(hashBytes[:])
+}
+
+// verifyEvidenceHash verifies record integrity.
+// Supports both canonical record hash and legacy payload-only hash to prevent false positives.
 // Returns (integrityOK bool, storedHash string, computedHash string).
-// A blank stored hash means the record pre-dates hash chain (legacy) — treated as ok.
 func verifyEvidenceHash(rec database.QCoreEvidenceRecord) (integrityOK bool, stored, computed string) {
 	if rec.Hash == "" {
-		return true, "", "" // pre-chain legacy record — no hash to verify
+		return true, "", "" // pre-chain legacy record — treated as ok
 	}
+	canonicalComputed := computeCanonicalEvidenceHash(rec)
+	if rec.Hash == canonicalComputed {
+		return true, rec.Hash, canonicalComputed
+	}
+	// Fallback for legacy records hashed on payload only
 	payloadBytes := []byte(rec.Payload)
 	sum := sha256.Sum256(payloadBytes)
-	computed = hex.EncodeToString(sum[:])
-	return rec.Hash == computed, rec.Hash, computed
+	payloadComputed := hex.EncodeToString(sum[:])
+	if rec.Hash == payloadComputed {
+		return true, rec.Hash, payloadComputed
+	}
+	return false, rec.Hash, canonicalComputed
 }
 
 func HandleListEvidence(db database.DB) http.HandlerFunc {
@@ -186,17 +204,7 @@ func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 			prevHash = prevRows[0].Hash
 		}
 		record.PreviousHash = prevHash
-
-		// Serialize the struct to establish canonical JSON for hashing
-		structuredBytes, marshalErr := json.Marshal(record)
-		if marshalErr != nil {
-			slog.Error("json.Marshal failed", "err", marshalErr)
-			return
-		}
-		hashInput := string(structuredBytes) + prevHash
-		hashBytes := sha256.Sum256([]byte(hashInput))
-
-		record.Hash = hex.EncodeToString(hashBytes[:])
+		record.Hash = computeCanonicalEvidenceHash(record)
 
 		if err := db.InsertRow(database.TblCoreEvidenceRecords, record); err != nil {
 			slog.Error("CreateEvidence failed", "error", err)
@@ -218,15 +226,12 @@ func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 		// Return actor chain FKs so UI can persist for governance traceability
 		respond.JSON(w, http.StatusCreated, map[string]any{
 			"status":       "created",
-			"evidence_id":  record.ID,
 			"id":           record.ID,
-			"tenant_id":    tenantID,
-			"type":         req.Type,
-			"agent_id":     req.AgentID,
-			"intent_id":    req.IntentID,
-			"activity_id":  req.ActivityID,
-			"execution_id": req.ExecutionID,
 			"hash":         record.Hash,
+			"agent_id":     record.AgentID,
+			"intent_id":    record.IntentID,
+			"activity_id":  record.ActivityID,
+			"execution_id": record.ExecutionID,
 		})
 	}
 }
@@ -248,7 +253,7 @@ func HandleGetEvidence(db database.DB) http.HandlerFunc {
 		}
 
 		var result []database.QCoreEvidenceRecord
-		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "evidence_record_id", id, "tenant_id", tenantID, &result); err != nil || len(result) == 0 {
+		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "id", id, "tenant_id", tenantID, &result); err != nil || len(result) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "evlt not found")
 			return
 		}
@@ -272,7 +277,6 @@ func HandleGetEvidence(db database.DB) http.HandlerFunc {
 	}
 }
 
-// HandleVerifyEvidence — POST /api/v1/evlt/{id}/verify
 // HandleVerifyEvidence — POST /api/v1/evlt/{id}/verify
 // F-RPT-02 FIX: accepts optional vault to check signing availability.
 // Returns 503 SERVICE_SIGNING_UNAVAILABLE if signing is disabled.
@@ -302,17 +306,16 @@ func HandleVerifyEvidence(db database.DB, vault ...VaultSigner) http.HandlerFunc
 
 		// Verify tenant ownership before allowing verification
 		var currentRows []map[string]any
-		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, "timestamp,tenant_id", "evidence_record_id", id, "tenant_id", tenantID, &currentRows); err != nil || len(currentRows) == 0 {
+		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, "id,tenant_id", "id", id, "tenant_id", tenantID, &currentRows); err != nil || len(currentRows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "evlt not found")
 			return
 		}
-		ts, _ := currentRows[0]["timestamp"].(string)
 
 		update := map[string]any{
 			"verified":    true,
 			"verified_at": time.Now().UTC().Format(time.RFC3339),
 		}
-		if err := db.UpdateRowCompound(database.TblCoreEvidenceRecords, "evidence_record_id", id, "timestamp", ts, update); err != nil {
+		if err := db.UpdateRowCompound(database.TblCoreEvidenceRecords, "id", id, "tenant_id", tenantID, update); err != nil {
 			slog.Error("VerifyEvidence update failed", "id", id, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "verify evidence", err)
 			return
@@ -371,7 +374,7 @@ func HandleAttestEvidence(db database.DB, vault ...VaultSigner) http.HandlerFunc
 		var ownership []struct {
 			TenantID string `json:"tenant_id"`
 		}
-		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, "tenant_id", "evidence_record_id", id, "tenant_id", tenantID, &ownership); err != nil || len(ownership) == 0 {
+		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, "tenant_id", "id", id, "tenant_id", tenantID, &ownership); err != nil || len(ownership) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "evidence record not found")
 			return
 		}
@@ -409,7 +412,7 @@ func HandleAttestEvidence(db database.DB, vault ...VaultSigner) http.HandlerFunc
 			"attested_at":         time.Now().UTC().Format(time.RFC3339),
 			"event_data":          string(eventData),
 		}
-		if err := db.UpdateRowCompound(database.TblCoreEvidenceRecords, "evidence_record_id", id, "tenant_id", tenantID, fullRow); err != nil {
+		if err := db.UpdateRowCompound(database.TblCoreEvidenceRecords, "id", id, "tenant_id", tenantID, fullRow); err != nil {
 			// PGRST204 = column not found (migration not yet applied) — fall back to event_data only
 			if strings.Contains(err.Error(), "PGRST204") {
 				fallbackRow := map[string]any{
@@ -417,7 +420,7 @@ func HandleAttestEvidence(db database.DB, vault ...VaultSigner) http.HandlerFunc
 					"verification_status": attestationStatus,
 					"event_data":          string(eventData),
 				}
-				if err2 := db.UpdateRowCompound(database.TblCoreEvidenceRecords, "evidence_record_id", id, "tenant_id", tenantID, fallbackRow); err2 != nil {
+				if err2 := db.UpdateRowCompound(database.TblCoreEvidenceRecords, "id", id, "tenant_id", tenantID, fallbackRow); err2 != nil {
 					slog.Error("AttestEvidence fallback update failed", "evidence_id", id, "error", err2)
 					respond.InternalError(w, http.StatusInternalServerError, "attest evidence", err2)
 					return
@@ -457,14 +460,14 @@ func HandleGetEvidenceAttestations(db database.DB) http.HandlerFunc {
 
 		// Verify parent evidence belongs to this tenant first
 		var evidenceRows []map[string]any
-		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, "tenant_id", "evidence_record_id", id, "tenant_id", tenantID, &evidenceRows); err != nil || len(evidenceRows) == 0 {
+		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, "tenant_id", "id", id, "tenant_id", tenantID, &evidenceRows); err != nil || len(evidenceRows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "evidence not found")
 			return
 		}
 
 		var result []database.QCoreEvidenceRecord
 		// Attestations are columns on the evidence record itself
-		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "evidence_record_id", id, "tenant_id", tenantID, &result); err != nil || len(result) == 0 {
+		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "id", id, "tenant_id", tenantID, &result); err != nil || len(result) == 0 {
 			slog.Error("GetEvidenceAttestations failed", "evidence_id", id, "error", err)
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "evidence not found")
 			return
@@ -544,14 +547,14 @@ func HandleGetEvidenceChainByID(db database.DB) http.HandlerFunc {
 
 		// Verify parent evidence belongs to this tenant first
 		var evidenceRows []map[string]any
-		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, "tenant_id", "evidence_record_id", id, "tenant_id", tenantID, &evidenceRows); err != nil || len(evidenceRows) == 0 {
+		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, "tenant_id", "id", id, "tenant_id", tenantID, &evidenceRows); err != nil || len(evidenceRows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "evidence not found")
 			return
 		}
 
 		var result []database.QCoreEvidenceRecord
 		// Chain data is columns on the evidence record itself
-		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "evidence_record_id", id, "tenant_id", tenantID, &result); err != nil || len(result) == 0 {
+		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "id", id, "tenant_id", tenantID, &result); err != nil || len(result) == 0 {
 			slog.Error("GetEvidenceChainByID failed", "evidence_id", id, "error", err)
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "evidence not found")
 			return

@@ -360,14 +360,13 @@ func (v *ZKPVerifier) verifyTrustRangeProof(challenge *ZKPChallenge, proof *ZKPP
 	commitHex, _ := proof.PublicInputs["commitment_hex"].(string)
 	rangeProofHex, _ := proof.PublicInputs["range_proof_hex"].(string)
 	nonceHex, _ := proof.PublicInputs["nonce_hex"].(string)
-	if commitHex != "" && rangeProofHex != "" && nonceHex != "" {
-		if ok, reason := verifyRangeCommitment(commitHex, rangeProofHex, nonceHex, minScore, maxScore); !ok {
-			return false, reason
-		}
-		return true, fmt.Sprintf("trust score Pedersen-proven in range [%.2f, %.2f] (privacy-preserving)", minScore, maxScore)
+	if commitHex == "" || rangeProofHex == "" || nonceHex == "" {
+		return false, "missing required Sigma commitment fields: commitment_hex, range_proof_hex, and nonce_hex are mandatory for trust range proofs"
 	}
-	// Fallback: Ed25519-only proof (backwards-compatible with existing clients)
-	return true, fmt.Sprintf("trust score ed25519-attested in range [%.2f, %.2f]", minScore, maxScore)
+	if ok, reason := verifyRangeCommitment(commitHex, rangeProofHex, nonceHex, minScore, maxScore); !ok {
+		return false, reason
+	}
+	return true, fmt.Sprintf("trust score Pedersen-proven in range [%.2f, %.2f] (privacy-preserving)", minScore, maxScore)
 }
 
 // verifyRangeCommitment verifies a Sigma-protocol range commitment:
