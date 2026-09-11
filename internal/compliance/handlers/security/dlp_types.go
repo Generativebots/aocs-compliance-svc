@@ -28,7 +28,7 @@ import (
 )
 
 type DLPScanRequest struct {
-	TenantID	string	`json:"tenant_id" validate:"required"`
+	TenantID	string	`json:"tenant_id"`
 	AgentID	string	`json:"agent_id" validate:"required"`
 	Payload   string `json:"payload"`
 	ToolID    string `json:"tool_id,omitempty"`
@@ -71,7 +71,7 @@ type DLPIntegration struct {
 	EventCount  int64     `json:"event_count"`
 }
 type MonitorPIDRequest struct {
-	TenantID	string	`json:"tenant_id" validate:"required"`
+	TenantID	string	`json:"tenant_id"`
 	PID      int    `json:"pid"`
 	Label    string `json:"label"` // "agt", "browser", "service"
 }
