@@ -44,3 +44,33 @@ make docker-run
 | Service | Port |
 |---------|------|
 | aocs-compliance-svc | **8089** |
+
+---
+
+## Ring Synchronization & Activation Endpoint
+
+### `POST /compliance/sync/activate` (or `/api/v1/compliance/sync/activate`)
+Handles cross-ring activation when a tenant purchases the Compliance Vault add-on.
+
+#### Request Body
+```json
+{
+  "tenant_id": "meridian-insurance",
+  "module": "compliance",
+  "mode": "forward_only",
+  "watermark": "2026-09-11T13:00:00Z",
+  "initiator": "ops-activator"
+}
+```
+
+#### Modes:
+* **Mode A: `"forward_only"` (Move Forward Only)**:
+  * Baseline initialized at $t = \text{NOW}()$.
+  * Starts a fresh Merkle root in `compliance.merkle_ledger`.
+  * Zero historical backfill latency.
+  * Responds: `HTTP 200 OK`, `status: "ACTIVE"`, `events_processed: 0`.
+* **Mode B: `"full_backfill"` (Historical Replay)**:
+  * Retroactively scans all historical `core_events` and `core_hitl` since tenant inception.
+  * Generates Merkle tree leaves and Ed25519 signatures.
+  * Responds: `HTTP 202 Accepted`, `status: "SYNCHRONIZING"`.
+

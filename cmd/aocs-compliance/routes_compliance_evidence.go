@@ -14,6 +14,7 @@ import (
 	analytics "github.com/ocx/compliance/internal/compliance/handlers/reports"
 	evaluation "github.com/ocx/compliance/internal/compliance/handlers/evidence"
 	regulatory "github.com/ocx/compliance/internal/compliance/handlers/regulatory"
+	compliancesync "github.com/ocx/compliance/internal/compliance/handlers/sync"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/infra/middleware"
@@ -107,6 +108,7 @@ func registerComplianceEvidenceRoutes(
 	api.HandleFunc("/compliance-reports/{id}", auth.RequireAccess(pc, "compliance", "delete", middleware.RequireValidPathVars("id")(analytics.HandleDeleteComplianceReport(db)))).Methods("DELETE")
 	api.HandleFunc("/compliance/reports/export", auth.RequireAccess(pc, "compliance", "write", compliance.HandleCreateCaseExportJob(db))).Methods("POST")
 	api.HandleFunc("/compliance/reports/export/{job_id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("job_id")(compliance.HandleGetCaseExportJob(db)))).Methods("GET")
+	api.HandleFunc("/compliance/sync/activate", auth.RequireAccess(pc, "compliance", "write", compliancesync.HandleActivateComplianceSync())).Methods("POST")
 
 	// ── Ledger ────────────────────────────────────────────────────────────────
 	api.HandleFunc("/ledger/root", auth.RequireAccess(pc, "compliance", "read", compliance.HandleGetLedgerRoot(db))).Methods("GET")
