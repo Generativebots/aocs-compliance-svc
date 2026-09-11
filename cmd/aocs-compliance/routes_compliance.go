@@ -34,10 +34,9 @@ func registerIntelComplianceRoutes(
 	registerComplianceEvidenceRoutes(api, db, pc, pgx, coreClient)
 
 	// ── Studio palette manifest — called by aocs-studio-svc ringclient ────────
-	// GET /compliance/palette-manifest — no DB, no auth guard (internal VPC only).
-	// Returns the static list of compliance pipeline nodes for the Studio canvas.
-	// Available flag is set by studio-svc based on the tenant's FeatureCompliance claim.
-	api.HandleFunc("/compliance/palette-manifest", compliance.HandleGetPaletteManifest()).Methods("GET")
+	// Note: palette-manifest is registered on svc.Router in main.go so it is exempt
+	// from LicenseFeatureGuard("compliance") — allowing Studio to render unpurchased
+	// compliance nodes in locked/upgrade-prompt state for tenants before buying compliance.
 
 	// ── Violations ────────────────────────────────────────────────────────────
 	api.HandleFunc("/violations", auth.RequireAccess(pc, "compliance", "read", compliance.HandleListViolations(db))).Methods("GET")
