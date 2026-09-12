@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"log/slog"
 	"os"
 	"strconv"
 	"time"
@@ -13,7 +15,6 @@ import (
 	"github.com/ocx/shared/infra/middleware"
 	"github.com/ocx/shared/infra/security"
 	"github.com/ocx/shared/infra/serviceclient"
-	"log/slog"
 )
 
 // routes.go — Route coordinator for aocs-compliance.
@@ -69,7 +70,7 @@ func registerComplianceRoutes(
 	// PLATFORM_MASTER_KEY must be set — absent → fails-fast (by design).
 	masterKey := os.Getenv("PLATFORM_MASTER_KEY")
 	if masterKey != "" && db != nil {
-		if _, err := security.LoadOrCreateSigningKey(nil, db, masterKey); err != nil {
+		if _, err := security.LoadOrCreateSigningKey(context.Background(), db, masterKey); err != nil {
 			slog.Error("S2: LoadOrCreateSigningKey failed — evidence signing will use ZKPVerifier fallback",
 				"error", err,
 			)
