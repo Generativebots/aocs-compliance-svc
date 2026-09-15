@@ -65,7 +65,10 @@ CREATE TABLE IF NOT EXISTS compl_obligations (
     metadata            JSONB       NOT NULL DEFAULT '{}',
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (tenant_id, framework, control_ref)
+    UNIQUE (tenant_id, framework, control_ref),
+    CONSTRAINT uq_compl_obligations_tenant_name UNIQUE (tenant_id, name),
+    CONSTRAINT chk_compl_obligations_name_min_length CHECK (length(trim(name)) >= 3),
+    CONSTRAINT chk_compl_obligations_name_trimmed CHECK (name = trim(name))
 );
 
 -- ── compl_evidence ─────────────────────────────────────────────────
