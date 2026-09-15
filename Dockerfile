@@ -14,13 +14,22 @@ WORKDIR /src
 
 RUN apk add --no-cache git ca-certificates
 
-COPY go.mod go.sum ./
-# Replace directive points to ocx-shared-go — copy it into the build context
-COPY ../ocx-shared-go /shared-go/
-RUN sed -i 's|../ocx-shared-go|/shared-go|g' go.mod && go mod download
+# Copy the local replace dependency first (ocx-shared-go)
+# Build context is set to the parent directory (Documents/)
+COPY ocx-shared-go/ /ocx-shared-go/
 
-COPY . .
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
+# Cache dependency layer separately from source
+COPY aocs-compliance-svc/go.mod aocs-compliance-svc/go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+# Copy source
+COPY aocs-compliance-svc/ .
+
+# Build static binary
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
     go build -ldflags="-w -s" -o /bin/aocs-compliance ./cmd/aocs-compliance
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────

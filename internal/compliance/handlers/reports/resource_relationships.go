@@ -77,7 +77,7 @@ func HandleListRelationships(db database.DB) http.HandlerFunc {
 		}
 
 		var rels []map[string]any
-		if err := db.QueryRowsCtx(r.Context(), database.TblConrRagSources, database.ColsIAResourceRel, "tenant_id", tenantID, &rels); err != nil {
+		if err := db.QueryRowsCtx(r.Context(), database.TblCoreResourceRelationships, database.ColsCoreResourceRel, "tenant_id", tenantID, &rels); err != nil {
 			slog.Error("ListRelationships failed", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to list relationships", nil)
 			return
@@ -125,12 +125,23 @@ func HandleCreateRelationship(db database.DB) http.HandlerFunc {
 			"label":             req.Label,
 		}
 		// created_at DEFAULT NOW() — DB handles
-		if err := db.InsertRow(database.TblConrRagSources, row); err != nil {
+		relID, err := db.InsertRowReturning(database.TblCoreResourceRelationships, row, "relationship_id")
+		if err != nil {
 			slog.Error("CreateRelationship failed", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to create relationship", nil)
 			return
 		}
-		respond.JSON(w, http.StatusCreated, map[string]any{"status": "created"})
+		respond.JSON(w, http.StatusCreated, map[string]any{
+			"relationship_id":   relID,
+			"source_type":       req.SourceType,
+			"source_id":         req.SourceID,
+			"target_type":       req.TargetType,
+			"target_id":         req.TargetID,
+			"relationship_type": req.RelationshipType,
+			"label":             req.Label,
+			"tenant_id":         tenantID,
+			"status":            "ACTIVE",
+		})
 	}
 }
 

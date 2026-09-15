@@ -22,8 +22,8 @@ services:
   # ── aocs-compliance ──────────────────────────────────────────────────────────
   aocs-compliance:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: aocs-compliance-svc/Dockerfile
     container_name: ocx-aocs-compliance-local
     restart: unless-stopped
     ports:
