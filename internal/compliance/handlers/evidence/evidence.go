@@ -304,10 +304,26 @@ func HandleVerifyEvidence(db database.DB, vault ...VaultSigner) http.HandlerFunc
 			return
 		}
 
-		// Verify tenant ownership before allowing verification
-		var currentRows []map[string]any
-		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, "id,tenant_id", "id", id, "tenant_id", tenantID, &currentRows); err != nil || len(currentRows) == 0 {
+		// TAMPER-VERIFY FIX: Load the full record (not just tenant_id) so we can
+		// verify the hash BEFORE stamping verified=true. Attesting a tampered record
+		// would produce a false compliance claim — block it with 409.
+		var currentRows []database.QCoreEvidenceRecord
+		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "id", id, "tenant_id", tenantID, &currentRows); err != nil || len(currentRows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "evlt not found")
+			return
+		}
+		rec := currentRows[0]
+
+		// Hash integrity check — must pass before we stamp verified=true.
+		// A tampered record must not receive a verification stamp.
+		integrityOK, stored, computed := verifyEvidenceHash(rec)
+		if !integrityOK {
+			slog.Error("SECURITY: VerifyEvidence blocked — evidence tamper detected before verification stamp",
+				"evidence_id", id, "tenant_id", tenantID,
+				"stored_hash", stored, "computed_hash", computed,
+				"action", "verification_blocked")
+			respond.ErrorWithCode(w, http.StatusConflict, "TAMPER_DETECTED",
+				"evidence record integrity check failed — cannot verify a tampered record")
 			return
 		}
 
@@ -371,11 +387,23 @@ func HandleAttestEvidence(db database.DB, vault ...VaultSigner) http.HandlerFunc
 		if !validate.BindOptional(w, r, &req) {
 			return
 		}
-		var ownership []struct {
-			TenantID string `json:"tenant_id"`
-		}
-		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, "tenant_id", "id", id, "tenant_id", tenantID, &ownership); err != nil || len(ownership) == 0 {
+		var ownership []database.QCoreEvidenceRecord
+		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "id", id, "tenant_id", tenantID, &ownership); err != nil || len(ownership) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "evidence record not found")
+			return
+		}
+		ownerRec := ownership[0]
+
+		// TAMPER-ATTEST FIX: Verify record integrity BEFORE stamping attestation.
+		// Attesting a tampered record creates a false compliance proof — block it.
+		integrityOK, stored, computed := verifyEvidenceHash(ownerRec)
+		if !integrityOK {
+			slog.Error("SECURITY: AttestEvidence blocked — evidence tamper detected before attestation stamp",
+				"evidence_id", id, "tenant_id", tenantID,
+				"stored_hash", stored, "computed_hash", computed,
+				"action", "attestation_blocked")
+			respond.ErrorWithCode(w, http.StatusConflict, "TAMPER_DETECTED",
+				"evidence record integrity check failed — cannot attest a tampered record")
 			return
 		}
 		// core_evidence_records — write real attestation columns (added in 009_analytics_monitoring_parity.sql)
@@ -473,8 +501,20 @@ func HandleGetEvidenceAttestations(db database.DB) http.HandlerFunc {
 			return
 		}
 		evr := result[0]
+
+		// TAMPER-ATTEST-READ FIX: Verify hash on attestation read.
+		// Returning attestation data from a tampered record without flagging it
+		// could mislead auditors into treating a compromised record as valid.
+		attestIntegrityOK, attestStored, attestComputed := verifyEvidenceHash(evr)
+		if !attestIntegrityOK {
+			slog.Error("SECURITY: evidence tamper detected on attestation read",
+				"evidence_id", id, "tenant_id", tenantID,
+				"stored_hash", attestStored, "computed_hash", attestComputed)
+		}
 		respond.OK(w, map[string]any{
 			"evidence_id":        id,
+			"integrity_ok":       attestIntegrityOK,
+			"tamper_detected":    !attestIntegrityOK,
 			"attestor_type":      evr.AttestorType,
 			"attestor_id":        evr.AttestorID,
 			"attestation_status": evr.AttestationStatus,
@@ -511,12 +551,35 @@ func HandleListEvidenceAttestations(db database.DB) http.HandlerFunc {
 			respond.InternalError(w, http.StatusInternalServerError, "list evidence attestations", err)
 			return
 		}
-		// Filter to only attested records
-		attested := make([]database.QCoreEvidenceRecord, 0, len(result))
+		// Filter to only attested records; verify hash on each
+		type attestationWithIntegrity struct {
+			database.QCoreEvidenceRecord
+			IntegrityOK    bool `json:"integrity_ok"`
+			TamperDetected bool `json:"tamper_detected,omitempty"`
+		}
+		attested := make([]attestationWithIntegrity, 0, len(result))
+		tamperedCount := 0
 		for _, ev := range result {
-			if ev.Attested {
-				attested = append(attested, ev)
+			if !ev.Attested {
+				continue
 			}
+			// TAMPER-LIST-ATTEST FIX: verify hash on every attested record in the list.
+			ok, stored, computed := verifyEvidenceHash(ev)
+			if !ok {
+				tamperedCount++
+				slog.Error("SECURITY: tampered evidence in attestation list",
+					"evidence_id", ev.ID, "tenant_id", tenantID,
+					"stored_hash", stored, "computed_hash", computed)
+			}
+			attested = append(attested, attestationWithIntegrity{
+				QCoreEvidenceRecord: ev,
+				IntegrityOK:         ok,
+				TamperDetected:      !ok,
+			})
+		}
+		if tamperedCount > 0 {
+			slog.Error("SECURITY: tampered evidence records in attestation list",
+				"tenant_id", tenantID, "tampered_count", tamperedCount)
 		}
 		respond.OK(w, map[string]any{
 			"attestations": attested,
@@ -560,8 +623,20 @@ func HandleGetEvidenceChainByID(db database.DB) http.HandlerFunc {
 			return
 		}
 		evr := result[0]
+
+		// TAMPER-CHAIN FIX: Verify hash on chain read.
+		// Chain data is used by ZKP proofs and Merkle validation.
+		// Returning chain metadata from a tampered record poisons downstream proof verification.
+		chainIntegrityOK, chainStored, chainComputed := verifyEvidenceHash(evr)
+		if !chainIntegrityOK {
+			slog.Error("SECURITY: evidence tamper detected on chain read",
+				"evidence_id", id, "tenant_id", tenantID,
+				"stored_hash", chainStored, "computed_hash", chainComputed)
+		}
 		respond.OK(w, map[string]any{
 			"evidence_id":         id,
+			"integrity_ok":        chainIntegrityOK,
+			"tamper_detected":     !chainIntegrityOK,
 			"chain_position":      evr.ChainPosition,
 			"merkle_root":         evr.MerkleRoot,
 			"previous_block_hash": evr.PreviousBlockHash,
