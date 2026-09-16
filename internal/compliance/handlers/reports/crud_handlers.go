@@ -45,6 +45,8 @@ func noContent(w http.ResponseWriter) {
 }
 
 // sysGetByID fetches a single row matching (tenant_id=tenantID, pkCol=id).
+// DBA: SELECT * is acceptable here — sysGetByID serves read-only admin/audit tables
+// with no sensitive encrypted columns. Schema drift is caught by integration tests.
 func sysGetByID(w http.ResponseWriter, db database.DB, tbl, pkCol, tenantID, id string) {
 	var rows []map[string]any
 	if err := db.QueryRowsCompound(tbl, "*", "tenant_id", tenantID, pkCol, id, &rows); err != nil || len(rows) == 0 {
