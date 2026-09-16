@@ -57,6 +57,7 @@ import (
 	"log/slog"
 	"math/big"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/ocx/shared/infra/auth"
@@ -376,19 +377,26 @@ func HandleGenerateZKPProof(db database.DB) http.HandlerFunc {
 		}
 		if err := db.QueryRowsCompoundCtx(r.Context(), database.TblSharZkpVerify, "challenge_id,issued_at",
 			"agent_id", req.AgentID, "tenant_id", tenantID, &prevRows); err == nil && len(prevRows) > 0 {
-			// Sort ascending by issued_at — last entry is the most recent proof to chain from.
-			for i := 0; i < len(prevRows)-1; i++ {
-				for j := i + 1; j < len(prevRows); j++ {
-					if prevRows[j].IssuedAt < prevRows[i].IssuedAt {
-						prevRows[i], prevRows[j] = prevRows[j], prevRows[i]
-					}
+			// BUG-Z1 FIX: old O(n²) bubble sort used RFC3339 string comparison which breaks
+			// for timestamps with mixed precision ("2026-01T10:30:00Z" vs "2026-01-15T10:30:00.000Z").
+			// Now: sort.Slice with time.Parse(RFC3339Nano) for correct temporal ordering.
+			sort.Slice(prevRows, func(i, j int) bool {
+				ti, erri := time.Parse(time.RFC3339Nano, prevRows[i].IssuedAt)
+				tj, errj := time.Parse(time.RFC3339Nano, prevRows[j].IssuedAt)
+				if erri != nil || errj != nil {
+					// Fallback: lexicographic (still works for UTC strings of same precision)
+					return prevRows[i].IssuedAt < prevRows[j].IssuedAt
 				}
-			}
+				return ti.Before(tj)
+			})
 			previousCommitment = prevRows[len(prevRows)-1].ChallengeID
 		}
 		chainHash := ""
 		if previousCommitment != "" {
-			ch := sha256.Sum256([]byte(previousCommitment + ":" + commitment))
+			// BUG-Z2 FIX: old hash was sha256(prevCommitment + ":" + commitment) with no entity binding.
+			// Two agents with identical proof histories produced identical chain_hashes.
+			// Fix: bind tenant_id and agent_id so the chain hash is entity-scoped.
+			ch := sha256.Sum256([]byte(tenantID + ":" + req.AgentID + ":" + previousCommitment + ":" + commitment))
 			chainHash = hex.EncodeToString(ch[:])
 		}
 
@@ -440,8 +448,16 @@ func HandleGenerateZKPProof(db database.DB) http.HandlerFunc {
 		}
 
 		if err := db.InsertRow(database.TblSharZkpVerify, record); err != nil {
-			slog.Error("GenerateZKPProof: persist failed (non-fatal)", "agent_id", req.AgentID, "error", err)
-			// Non-fatal: return proof even if DB write fails
+			// BUG-Z3 FIX: previously the proof was returned as 201 Created even when the DB
+			// persist failed. The caller stored the proof; future VerifyProof calls returned 404.
+			// Compliance audit trails were silently broken.
+			// Fix: return 503 + Retry-After:30 so the caller knows to retry. Proof data is
+			// NOT returned until successfully stored — no proof without a storage receipt.
+			slog.Error("GenerateZKPProof: persist failed — returning 503", "agent_id", req.AgentID, "error", err)
+			w.Header().Set("Retry-After", "30")
+			respond.ErrorWithCode(w, http.StatusServiceUnavailable, respond.ErrCodeUnavailable,
+				"proof generated but could not be persisted — retry in 30s")
+			return
 		}
 
 		respond.JSON(w, http.StatusCreated, map[string]any{
