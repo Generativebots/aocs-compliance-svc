@@ -44,13 +44,12 @@ func main() {
 	// Cloud Run injects PORT at startup — hardcoding "8085" bypasses it.
 	compliancePort := os.Getenv("PORT")
 	if compliancePort == "" {
-		// PRD-04 FIX: log collision risk when defaulting.
-		slog.Warn("PRD-04: PORT env var not set — defaulting to 8085. "+
-			"Ensure this does not conflict with aocs-intel or aocs-studio "+
+		slog.Warn("PORT env var not set — defaulting to 8089 (canonical SSOT). "+
+			"Ensure this does not conflict with other services "+
 			"on co-located (non-Cloud Run) deployments.",
-			"service", "aocs-compliance", "default_port", "8085",
+			"service", "aocs-compliance", "default_port", "8089",
 		)
-		compliancePort = "8085"
+		compliancePort = "8089"
 	}
 	svc := svcboot.Boot("aocs-compliance", compliancePort)
 
