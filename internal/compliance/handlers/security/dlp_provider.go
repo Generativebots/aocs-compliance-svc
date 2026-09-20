@@ -16,10 +16,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
-	"github.com/ocx/shared/infra/providers"
 	"github.com/ocx/shared/infra/config"
+	"github.com/ocx/shared/infra/providers"
 )
 
 // DLPProvider is the interface every DLP backend must satisfy.
@@ -58,13 +60,74 @@ func NewDLPProvider(cfg *providers.ProviderConfig) DLPProvider {
 	}
 }
 
-// ── Builtin (existing code, unchanged) ───────────────────────────────────────
+// ── Builtin (Python DLP with local regex fallback) ───────────────────────────
 
-// BuiltinDLPProvider delegates to the existing scanPayload() regex function.
-// This is the default for all tenants with no DLP provider configured.
+type pythonDLPResponse struct {
+	RedactedContent string   `json:"redacted_content"`
+	RedactedTypes   []string `json:"redacted_types"`
+	PIIDetected     bool     `json:"pii_detected"`
+}
+
+func scanViaPythonDLP(ctx context.Context, addr, tenantID, payload string) *providers.DLPResult {
+	if payload == "" {
+		return nil
+	}
+	reqBody, _ := json.Marshal(map[string]string{
+		"content":   payload,
+		"tenant_id": tenantID,
+	})
+	reqCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+	defer cancel()
+
+	httpReq, err := http.NewRequestWithContext(reqCtx, http.MethodPost, strings.TrimRight(addr, "/")+"/dlp/scan", bytes.NewReader(reqBody))
+	if err != nil {
+		return nil
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 1500 * time.Millisecond}
+	resp, err := client.Do(httpReq)
+	if err != nil || resp == nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+	var dlpResp pythonDLPResponse
+	if err := json.NewDecoder(resp.Body).Decode(&dlpResp); err != nil {
+		return nil
+	}
+
+	result := &providers.DLPResult{
+		HasViolations: dlpResp.PIIDetected,
+		ProviderName:  "python-dlp",
+	}
+	for _, t := range dlpResp.RedactedTypes {
+		result.Violations = append(result.Violations, providers.DLPViolation{
+			Type:     t,
+			Severity: "medium",
+			RuleID:   t,
+		})
+	}
+	return result
+}
+
+// BuiltinDLPProvider delegates to Python DLP service if available, otherwise local scanPayload().
 type BuiltinDLPProvider struct{}
 
-func (b *BuiltinDLPProvider) Scan(_ context.Context, _, payload string) *providers.DLPResult {
+func (b *BuiltinDLPProvider) Scan(ctx context.Context, tenantID, payload string) *providers.DLPResult {
+	// Attempt Python ML DLP scan first if available (P6 remediation)
+	dlpAddr := os.Getenv("PYTHON_DLP_ADDR")
+	if dlpAddr == "" {
+		dlpAddr = "http://localhost:8102"
+	}
+	if res := scanViaPythonDLP(ctx, dlpAddr, tenantID, payload); res != nil {
+		return res
+	}
+
+	// Fallback to local regex scan
 	raw := scanPayload(payload)
 	if raw == nil {
 		return &providers.DLPResult{ProviderName: "builtin"}
