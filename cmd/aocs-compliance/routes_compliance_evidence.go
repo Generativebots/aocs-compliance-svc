@@ -110,6 +110,16 @@ func registerComplianceEvidenceRoutes(
 	api.HandleFunc("/compliance/reports/export/{job_id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("job_id")(compliance.HandleGetCaseExportJob(db)))).Methods("GET")
 	api.HandleFunc("/compliance/sync/activate", auth.RequireAccess(pc, "compliance", "write", compliancesync.HandleActivateComplianceSync())).Methods("POST")
 
+	// ── Data Export endpoints (system-svc proxy parity) ──────────────────────
+	api.HandleFunc("/compliance/data-export", auth.RequireAccess(pc, "compliance", "write", compliance.HandleCreateCaseExportJob(db))).Methods("POST")
+	api.HandleFunc("/compliance/data-export", auth.RequireAccess(pc, "compliance", "read", analytics.HandleListComplianceReports(db))).Methods("GET")
+	api.HandleFunc("/compliance/data-export/{id}/download", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(compliance.HandleGetCaseExportJob(db)))).Methods("GET")
+
+	// ── Scheduled Reports endpoints (system-svc proxy parity) ────────────────
+	api.HandleFunc("/compliance/scheduled-reports", auth.RequireAccess(pc, "compliance", "read", analytics.HandleComplianceDeliveryStatus(pgxPool))).Methods("GET")
+	api.HandleFunc("/compliance/scheduled-reports", auth.RequireAccess(pc, "compliance", "write", compliance.HandleCreateCaseExportJob(db))).Methods("POST")
+	api.HandleFunc("/compliance/scheduled-reports/{id}", auth.RequireAccess(pc, "compliance", "delete", middleware.RequireValidPathVars("id")(analytics.HandleDeleteComplianceReport(db)))).Methods("DELETE")
+
 	// ── Ledger ────────────────────────────────────────────────────────────────
 	api.HandleFunc("/ledger/root", auth.RequireAccess(pc, "compliance", "read", compliance.HandleGetLedgerRoot(db))).Methods("GET")
 	api.HandleFunc("/ledger/root/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(compliance.HandleGetLedgerRootEntry(db)))).Methods("GET")
@@ -195,7 +205,9 @@ func registerComplianceEvidenceRoutes(
 	// GET  /compliance/soc2/evidence-package/{id}   — retrieve package by ID
 	// GET  /compliance/soc2/evidence-packages       — list all packages for tenant
 	api.HandleFunc("/compliance/soc2/evidence-package", auth.RequireAccess(pc, "compliance", "write", evaluation.HandleGenerateSOC2Package(db))).Methods("POST")
+	api.HandleFunc("/compliance/soc2/evidence-packages", auth.RequireAccess(pc, "compliance", "write", evaluation.HandleGenerateSOC2Package(db))).Methods("POST")
 	api.HandleFunc("/compliance/soc2/evidence-package/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(evaluation.HandleGetSOC2Package(db)))).Methods("GET")
+	api.HandleFunc("/compliance/soc2/evidence-packages/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(evaluation.HandleGetSOC2Package(db)))).Methods("GET")
 	api.HandleFunc("/compliance/soc2/evidence-packages", auth.RequireAccess(pc, "compliance", "read", evaluation.HandleListSOC2Packages(db))).Methods("GET")
 
 	// ── Evidence Chain (SOX/GDPR cryptographic audit trail) ──────────────────
