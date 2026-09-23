@@ -69,14 +69,28 @@ func HandleGetRegulatoryComplianceReport(db database.PlatformRepository) http.Ha
 
 		// ── Collect metrics ───────────────────────────────────────────────────
 
-		// 1. Total AI actions (proxy calls)
-		totalActions, _ := db.CountRows(database.TblProxyCalls, "tenant_id", tenantID)
-
-		// 2. Violations in period
-		totalViolations, _ := db.CountRows(database.TblViolations, "tenant_id", tenantID)
-
 		sinceStr := since.Format(time.RFC3339)
 		untilStr := until.Format(time.RFC3339)
+
+		// 1. Total AI actions (proxy calls) in period (HIGH-06 & MEDIUM-03 FIX)
+		totalActions, actErr := db.CountRowsWithWindow(database.TblProxyCalls, tenantID, sinceStr, untilStr)
+		if actErr != nil {
+			slog.Error("F-RPT-01: compliance report proxy calls query failed — report aborted to prevent false filing",
+				"tenant_id", tenantID, "error", actErr)
+			respond.ErrorWithCode(w, http.StatusServiceUnavailable, "REPORT_DATA_INCOMPLETE",
+				"compliance report could not fetch activity counts — report aborted to prevent false filing")
+			return
+		}
+
+		// 2. Violations in period (HIGH-06 & MEDIUM-03 FIX)
+		totalViolations, violErr := db.CountRowsWithWindow(database.TblViolations, tenantID, sinceStr, untilStr)
+		if violErr != nil {
+			slog.Error("F-RPT-01: compliance report violations query failed — report aborted to prevent false filing",
+				"tenant_id", tenantID, "error", violErr)
+			respond.ErrorWithCode(w, http.StatusServiceUnavailable, "REPORT_DATA_INCOMPLETE",
+				"compliance report could not fetch violation counts — report aborted to prevent false filing")
+			return
+		}
 
 		// 3. HITL cases (human-reviewed actions within period)
 		// F-RPT-01 FIX: Query within the requested period window.
@@ -130,8 +144,15 @@ func HandleGetRegulatoryComplianceReport(db database.PlatformRepository) http.Ha
 			verdictCounts[strings.ToUpper(v.Verdict)]++
 		}
 
-		// 5. Agent inventory
-		agentTotal, _ := db.CountRows(database.TblCoreAgents, "tenant_id", tenantID)
+		// 5. Agent inventory (MEDIUM-03 FIX: abort on error)
+		agentTotal, agtErr := db.CountRows(database.TblCoreAgents, "tenant_id", tenantID)
+		if agtErr != nil {
+			slog.Error("F-RPT-01: compliance report agents query failed — report aborted to prevent false filing",
+				"tenant_id", tenantID, "error", agtErr)
+			respond.ErrorWithCode(w, http.StatusServiceUnavailable, "REPORT_DATA_INCOMPLETE",
+				"compliance report could not fetch agent inventory — report aborted to prevent false filing")
+			return
+		}
 
 		// 6. Shadow agents detected
 		// F-RPT-01 FIX: was _ = (silent drop). Missing shadow agents = security gap in report.
@@ -153,15 +174,16 @@ func HandleGetRegulatoryComplianceReport(db database.PlatformRepository) http.Ha
 		blocked := verdictCounts["DENY"] + verdictCounts["BLOCK"] + totalViolations
 		withHITL := hitlApproved + hitlRejected
 
-		// Compliance posture: all financial actions must have approval chain
-		// (simplified — real implementation would join token_usage > threshold)
-		financialActionsTotal := autoApproved / 10 // heuristic: 10% of actions touch financials
-		financialWithHITL := withHITL
-		financialPassed := financialWithHITL >= financialActionsTotal/2
+		// CRIT-04 FIX: Replace fabricated 10% financial heuristic.
+		// Financial threshold controls require explicit financial intent tag configuration.
+		// Without active financial tag data, mark as pending configuration.
+		financialActionsTotal := 0
+		financialWithHITL := 0
+		financialPassed := false
 
-		// Segregation check: no agent in both initiator and approver role
-		// (simplified heuristic — full impl would join hitl_decisions + agent actions)
-		segregationPassed := true
+		// CRIT-05 FIX: Segregation of duties check.
+		// Without dual-role evaluation joining initiator and approver, set to false (pending manual review).
+		segregationPassed := false
 
 		summary := complianceSummary{
 			TotalAIActions:              totalActions,
@@ -300,21 +322,41 @@ func buildSections(standard string, s complianceSummary) []complianceSection {
 
 	switch standard {
 	case "SOX":
+		finStatus := "WARNING"
+		finDetails := "Requires financial intent tag configuration. 0 explicit financial actions detected in period."
+		if s.FinancialActionsTotal > 0 {
+			if s.FinancialControlPassed {
+				finStatus = "PASS"
+				finDetails = fmt.Sprintf("%d financial AI actions in period. %d had human approval chain.",
+					s.FinancialActionsTotal, s.FinancialActionsWithApproval)
+			} else {
+				finStatus = "FAIL"
+				finDetails = fmt.Sprintf("%d financial AI actions in period. Only %d had required human approval.",
+					s.FinancialActionsTotal, s.FinancialActionsWithApproval)
+			}
+		}
+
+		sodStatus := "WARNING"
+		sodDetails := "Segregation of duties verification pending manual review. No dual-role enforcement violations detected."
+		if s.SegregationPassed {
+			sodStatus = "PASS"
+			sodDetails = "No AI agent acted as both initiator and approver in any transaction."
+		}
+
 		sections = append(sections,
 			complianceSection{
-				Title:  "Financial Threshold Controls (SOX §302)",
-				Status: statusFromBool(s.FinancialControlPassed),
-				Details: fmt.Sprintf("%d financial AI actions in period. %d had human approval chain.",
-					s.FinancialActionsTotal, s.FinancialActionsWithApproval),
+				Title:   "Financial Threshold Controls (SOX §302)",
+				Status:  finStatus,
+				Details: finDetails,
 			},
 			complianceSection{
-				Title:  "Segregation of Duties",
-				Status: statusFromBool(s.SegregationPassed),
-				Details: "No AI agent acted as both initiator and approver in any transaction.",
+				Title:   "Segregation of Duties",
+				Status:  sodStatus,
+				Details: sodDetails,
 			},
 			complianceSection{
-				Title:  "Human Oversight (HITL)",
-				Status: "PASS",
+				Title:   "Human Oversight (HITL)",
+				Status:  "PASS",
 				Details: fmt.Sprintf("%d AI decisions required human review. All were processed via AOCS HITL queue.",
 					s.ActionsWithHumanApproval),
 			},
@@ -358,10 +400,7 @@ func buildSections(standard string, s complianceSummary) []complianceSection {
 }
 
 func overallStatus(s complianceSummary) string {
-	if !s.FinancialControlPassed || !s.SegregationPassed {
-		return "FAIL"
-	}
-	if s.ShadowAgentsDetected > 0 {
+	if s.ShadowAgentsDetected > 0 || !s.FinancialControlPassed || !s.SegregationPassed {
 		return "WARNING"
 	}
 	return "PASS"
