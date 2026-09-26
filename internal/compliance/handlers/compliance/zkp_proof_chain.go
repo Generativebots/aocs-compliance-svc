@@ -144,17 +144,23 @@ func HandleVerifyProofInclusion(db database.DB) http.HandlerFunc {
 				return
 			}
 			var rows []map[string]any
-			if _dbErr := db.QueryRowsCompound(database.TblZKPChainRoots, "chain_root,tree_algorithm",
+			if _dbErr := db.QueryRowsCompound(database.TblZKPChainRoots, "chain_root,tree_algorithm,tenant_id",
 				"agent_id", body.AgentID, "period", body.Period, &rows); _dbErr != nil {
 				slog.Error("db.QueryRowsCompound failed (best-effort)", "error", _dbErr)
 			}
-			if len(rows) == 0 {
+			// SEC-10 FIX: Enforce tenant isolation on ZKP proof chain root.
+			filtered := rows[:0]
+			for _, row := range rows {
+				if tid, ok := row["tenant_id"].(string); ok && tid == tenantID {
+					filtered = append(filtered, row)
+				}
+			}
+			if len(filtered) == 0 {
 				respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "no Merkle chain root found — build the chain first")
 				return
 			}
-			_ = tenantID //nolint:errcheck — audited: best-effort, failure is non-critical
-			expectedRoot, _ = rows[0]["chain_root"].(string)
-			if alg, _ := rows[0]["tree_algorithm"].(string); alg != "sha256-merkle" {
+			expectedRoot, _ = filtered[0]["chain_root"].(string)
+			if alg, _ := filtered[0]["tree_algorithm"].(string); alg != "sha256-merkle" {
 				respond.JSON(w, http.StatusUnprocessableEntity, map[string]any{
 					"valid":     false,
 					"reason":    "chain built with legacy flat-hash — rebuild with POST /zkp/chain",

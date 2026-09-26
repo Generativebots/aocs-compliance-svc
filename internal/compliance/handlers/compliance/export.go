@@ -351,7 +351,7 @@ func HandleCasesSubmitJuryVote(db database.DB, coreClient *serviceclient.Client)
 		// Post QUORUM_DEADLOCKED audit event via ocx-core-svc API after transaction commits.
 		if txResult.postDeadlockEvent && coreClient != nil {
 			concurrent.Go("quorum-deadlocked-event", func() {
-				_ = coreClient.PostEvent(context.Background(), map[string]any{
+				if err := coreClient.PostEvent(context.Background(), map[string]any{
 					"tenant_id":   tenantID,
 					"event_type":  "QUORUM_DEADLOCKED",
 					"entity_id":   caseID,
@@ -360,7 +360,10 @@ func HandleCasesSubmitJuryVote(db database.DB, coreClient *serviceclient.Client)
 					"new_value": fmt.Sprintf(`{"approve_count":%d,"reject_count":%d,"approve_ratio":%.2f,"reject_ratio":%.2f,"threshold":%d}`,
 						txResult.approveCount, txResult.rejectCount, txResult.approveRatio, txResult.rejectRatio, txResult.quorumThreshold),
 					"created_at": respondedAt,
-				})
+				}); err != nil {
+					slog.Error("SD-26: failed to post QUORUM_DEADLOCKED audit event to core",
+						"tenant_id", tenantID, "case_id", caseID, "error", err)
+				}
 			})
 		}
 		respond.JSON(w, http.StatusOK, map[string]any{

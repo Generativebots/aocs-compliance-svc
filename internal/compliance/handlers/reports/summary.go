@@ -543,13 +543,7 @@ func HandleExportDownload(db database.DB) http.HandlerFunc {
 			return
 		}
 		var rows []map[string]any
-		// SCHEMA FIX: PK is 'job_id'; 'download_url' doesn't exist (real col is 'file_url').
-		if err := db.QueryRowsCtx(r.Context(), database.TblCoreJobs, "status,file_url,tenant_id", "job_id", jobID, &rows); err != nil || len(rows) == 0 {
-			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "export job not found")
-			return
-		}
-		// Verify tenant ownership
-		if rt, ok := rows[0]["tenant_id"].(string); ok && rt != tenantID && tenantID != "" {
+		if err := db.QueryRowsCompound(database.TblCoreJobs, "status,file_url,tenant_id", "job_id", jobID, "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "export job not found")
 			return
 		}

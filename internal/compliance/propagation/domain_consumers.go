@@ -209,8 +209,14 @@ func startConsumer(ctx context.Context, db database.DB, projectID, topic, subID 
 
 func isProcessed(ctx context.Context, db database.DB, messageID string) bool {
 	var rows []map[string]any
-	_ = db.QueryRowsCtx(ctx, "compl_idempotency_log",
-		"message_id", "message_id", messageID, &rows)
+	// DC-I1 FIX: DB error on idempotency check now returns true (fail-safe).
+	// Previous: silent drop returned false, causing message reprocessing on DB hiccup.
+	if err := db.QueryRowsCtx(ctx, "compl_idempotency_log",
+		"message_id", "message_id", messageID, &rows); err != nil {
+		slog.Warn("compliance/propagation: idempotency check failed, assuming processed (fail-safe)",
+			"message_id", messageID, "error", err)
+		return true // fail-safe: assume processed to avoid double-processing
+	}
 	return len(rows) > 0
 }
 
@@ -227,5 +233,11 @@ func markProcessed(ctx context.Context, db database.DB, messageID, topic, tenant
 		"result":       "OK",
 		"processed_at": time.Now().UTC().Format(time.RFC3339),
 	}
-	_ = db.InsertRowIdempotent("compl_idempotency_log", row, "message_id")
+	// DC-I2 FIX: idempotency mark insert failure is now logged.
+	// Silent drop meant messages were never marked processed —
+	// causing infinite reprocessing of the same event.
+	if err := db.InsertRowIdempotent("compl_idempotency_log", row, "message_id"); err != nil {
+		slog.Error("compliance/propagation: markProcessed insert failed",
+			"message_id", messageID, "topic", topic, "tenant_id", tenantID, "error", err)
+	}
 }

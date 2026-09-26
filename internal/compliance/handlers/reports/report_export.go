@@ -102,8 +102,32 @@ func HandleExecuteComplianceReport(db database.DB) http.HandlerFunc {
 			return
 		}
 		reportID := mux.Vars(r)["id"]
+		if reportID == "" {
+			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing path parameter: id")
+			return
+		}
 		callerID := auth.GetUserID(r.Context())
-		_ = tenantID
+		// TI-C1 FIX: verify report belongs to this tenant before updating.
+
+		var existing []map[string]any
+		if err := db.QueryRowsCtx(r.Context(), database.TblSharComplianceReports,
+			"report_id,tenant_id", "tenant_id", tenantID, &existing); err != nil {
+			slog.Error("HandleExecuteComplianceReport: ownership check failed",
+				"report_id", reportID, "tenant_id", tenantID, "error", err)
+			respond.InternalError(w, http.StatusInternalServerError, "execute compliance report", err)
+			return
+		}
+		owned := false
+		for _, row := range existing {
+			if rid, _ := row["report_id"].(string); rid == reportID {
+				owned = true
+				break
+			}
+		}
+		if !owned {
+			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "Compliance report not found.")
+			return
+		}
 
 		updates := map[string]any{
 			"status":      "RUNNING",
@@ -111,9 +135,9 @@ func HandleExecuteComplianceReport(db database.DB) http.HandlerFunc {
 			"executed_at": "now()",
 			"updated_at":  "now()",
 		}
-		if err := db.UpdateRow(database.TblSharComplianceReports, "report_id", reportID, updates); err != nil {
+		if err := db.UpdateRowCompound(database.TblSharComplianceReports, "report_id", reportID, "tenant_id", tenantID, updates); err != nil {
 			slog.Error("HandleExecuteComplianceReport: db update failed",
-				"report_id", reportID, "error", err)
+				"report_id", reportID, "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "execute compliance report", err)
 			return
 		}
@@ -132,8 +156,32 @@ func HandleScheduleComplianceReport(db database.DB) http.HandlerFunc {
 			return
 		}
 		reportID := mux.Vars(r)["id"]
+		if reportID == "" {
+			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing path parameter: id")
+			return
+		}
 		callerID := auth.GetUserID(r.Context())
-		_ = tenantID
+		// TI-C2 FIX: verify report belongs to this tenant before updating.
+
+		var existing []map[string]any
+		if err := db.QueryRowsCtx(r.Context(), database.TblSharComplianceReports,
+			"report_id,tenant_id", "tenant_id", tenantID, &existing); err != nil {
+			slog.Error("HandleScheduleComplianceReport: ownership check failed",
+				"report_id", reportID, "tenant_id", tenantID, "error", err)
+			respond.InternalError(w, http.StatusInternalServerError, "schedule compliance report", err)
+			return
+		}
+		owned := false
+		for _, row := range existing {
+			if rid, _ := row["report_id"].(string); rid == reportID {
+				owned = true
+				break
+			}
+		}
+		if !owned {
+			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "Compliance report not found.")
+			return
+		}
 
 		var body struct {
 			Cron         string   `json:"cron"          validate:"required"`
@@ -145,15 +193,15 @@ func HandleScheduleComplianceReport(db database.DB) http.HandlerFunc {
 		}
 
 		updates := map[string]any{
-			"schedule_cron":   body.Cron,
+			"schedule_cron":    body.Cron,
 			"schedule_enabled": body.Enabled,
-			"notify_emails":   body.NotifyEmails,
-			"scheduled_by":    callerID,
-			"updated_at":      "now()",
+			"notify_emails":    body.NotifyEmails,
+			"scheduled_by":     callerID,
+			"updated_at":       "now()",
 		}
-		if err := db.UpdateRow(database.TblSharComplianceReports, "report_id", reportID, updates); err != nil {
+		if err := db.UpdateRowCompound(database.TblSharComplianceReports, "report_id", reportID, "tenant_id", tenantID, updates); err != nil {
 			slog.Error("HandleScheduleComplianceReport: db update failed",
-				"report_id", reportID, "error", err)
+				"report_id", reportID, "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "schedule compliance report", err)
 			return
 		}
