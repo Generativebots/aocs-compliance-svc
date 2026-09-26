@@ -135,7 +135,12 @@ func HandleListCases(db database.DB) http.HandlerFunc {
 			if tenantID != "" {
 				plainErr = db.QueryRowsCtx(r.Context(), database.TblCoreHitl, database.ColsHITLDecision, "tenant_id", tenantID, &rows)
 			} else {
-				plainErr = db.QueryRowsCtx(r.Context(), database.TblCoreHitl, database.ColsHITLDecision, "", "", &rows)
+				// SECURITY: tenantID is empty — this means the JWT claim is missing or
+				// malformed. Returning unscoped data would be a cross-tenant data leak.
+				// Deny by default (Google/AWS IAM zero-trust principle).
+				slog.Error("ListCases: tenantID empty in fallback path — aborting to prevent cross-tenant leak")
+				respond.InternalError(w, http.StatusBadRequest, "missing tenant context", nil)
+				return
 			}
 			if plainErr != nil {
 				slog.Error("ListCases fallback failed", "tenant_id", tenantID, "error", plainErr)
@@ -143,6 +148,7 @@ func HandleListCases(db database.DB) http.HandlerFunc {
 				return
 			}
 		}
+
 
 		if rows == nil {
 			rows = []map[string]any{}
