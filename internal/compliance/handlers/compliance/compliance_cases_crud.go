@@ -267,10 +267,18 @@ func HandleAddComplianceCaseComment(db database.DB) http.HandlerFunc {
 		var rows []struct {
 			CaseComments json.RawMessage `json:"case_comments"`
 		}
-		_ = db.QueryRowsCompound(database.TblComplianceComplianceCases, "case_comments",
-			"case_id", caseID, "tenant_id", tenantID, &rows)
+		if err := db.QueryRowsCompound(database.TblComplianceComplianceCases, "case_comments",
+			"case_id", caseID, "tenant_id", tenantID, &rows); err != nil {
+			slog.Error("failed to query case comments", "case_id", caseID, "tenant_id", tenantID, "err", err)
+			respond.Error(w, http.StatusInternalServerError, "failed to load case comments")
+			return
+		}
+		if len(rows) == 0 {
+			respond.NotFound(w, "compliance case not found")
+			return
+		}
 		var comments []map[string]any
-		if len(rows) > 0 && len(rows[0].CaseComments) > 0 {
+		if len(rows[0].CaseComments) > 0 {
 			_ = json.Unmarshal(rows[0].CaseComments, &comments)
 		}
 		now := time.Now().UTC().Format(time.RFC3339)
