@@ -293,7 +293,19 @@ func HandleAnalyticsErrors(db database.DB, coreClients ...*serviceclient.Client)
 			_r1 = coreClients[0]
 		}
 		if _r1 != nil {
-			_ = _r1.PostEvent(r.Context(), row)
+			// COMP-02 FIX: was _ = _r1.PostEvent (silently dropped). If PostEvent fails,
+			// the KPI error report is lost and the caller gets a false 200 OK. Now falls
+			// through to the DB fallback on delivery failure so no data is discarded.
+			if evErr := _r1.PostEvent(r.Context(), row); evErr != nil {
+				slog.Warn("KPI HandleReportError: core PostEvent failed — falling back to direct DB write",
+					"tenant_id", row["tenant_id"], "error", evErr)
+				if db != nil {
+					if dbErr := db.InsertRow(database.TblCoreEvents, row); dbErr != nil {
+						respond.InternalError(w, http.StatusInternalServerError, "persist error report", dbErr)
+						return
+					}
+				}
+			}
 		} else if db != nil {
 			if err := db.InsertRow(database.TblCoreEvents, row); err != nil {
 				respond.InternalError(w, http.StatusInternalServerError, "persist error report", err)

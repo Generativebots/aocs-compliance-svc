@@ -223,7 +223,16 @@ func HandleSubmitEUAIActReport(db database.DB) http.HandlerFunc {
 		// Parse the stored report and update filing metadata
 		var stored RegulatoryReport
 		if caseData, ok := cases[0]["case_data"].(string); ok {
-			_ = json.Unmarshal([]byte(caseData), &stored)
+			// COMP-03 FIX: was _ = json.Unmarshal (silently dropped). If the stored DRAFT
+			// report JSON is corrupt, stored stays zero-value and the EU AI Act filing is
+			// submitted with all mandatory fields (Art.13 card, risk classification, agent
+			// scope) silently missing. Regulatory filings must never proceed on corrupt data.
+			if umErr := json.Unmarshal([]byte(caseData), &stored); umErr != nil {
+				slog.Error("EU AI Act FileDraftReport: stored DRAFT report JSON is corrupt — filing blocked",
+					"report_id", req.ReportID, "tenant_id", tenantID, "error", umErr)
+				respond.InternalError(w, http.StatusInternalServerError, "stored report data is corrupt — cannot file", umErr)
+				return
+			}
 		}
 
 		now := time.Now().UTC()

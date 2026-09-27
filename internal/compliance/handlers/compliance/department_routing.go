@@ -130,15 +130,21 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 				// Post audit event via ocx-core-svc API (boundary enforcement: no direct core_events write).
 				if coreClient != nil {
 					concurrent.Go("hitl-routing-fallback-event", func() {
-						_ = coreClient.PostEvent(context.Background(), map[string]any{
+						// COMP-01 FIX: was _ = (silently dropped). Audit event delivery failure
+						// created gaps in the compliance routing trail with no operator signal.
+						if evErr := coreClient.PostEvent(context.Background(), map[string]any{
 							"tenant_id":   tenantID,
 							"event_type":  "HITL_ROUTING_CATCHALL",
 							"entity_type": "department_routing",
 							"action":      "FALLBACK_TO_COMPLIANCE",
 							"new_value":   fmt.Sprintf(`{"intent":%q,"routing_source":%q,"invalid_depts":%d}`, result.Intent, result.RoutingSource, len(invalidDepts)),
 							"created_at":  time.Now().UTC().Format(time.RFC3339),
-						})
+						}); evErr != nil {
+							slog.Warn("HITL routing fallback: audit event delivery to core failed (non-fatal)",
+								"tenant_id", tenantID, "intent", result.Intent, "error", evErr)
+						}
 					})
+
 				} else if _wErr := db.InsertRow(database.TblCoreEvents, map[string]any{
 					"tenant_id":   tenantID,
 					"event_type":  "HITL_ROUTING_CATCHALL",
