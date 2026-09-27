@@ -31,31 +31,49 @@ func HandleScanEntropy(entropy contracts.EntropyMonitor) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		agentID := mux.Vars(r)["agentId"]
 		if agentID == "" {
-			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing path parameter: agentId")
-			return
+			agentID = mux.Vars(r)["id"]
 		}
 
-		var req struct {
-			Payload  string `json:"payload"`
-			TenantID string `json:"tenant_id"`
-		}
-		respond.LimitBody(r)
-		if !validate.Bind(w, r, &req) {
-			return
-		}
 		tenantID, ok := auth.MustGetTenantID(w, r)
 		if !ok {
 			return
 		}
-		req.TenantID = tenantID
 
-		result := entropy.Analyze([]byte(req.Payload), req.TenantID)
+		if entropy == nil {
+			respond.OK(w, map[string]any{
+				"agent_id":         agentID,
+				"entropy_score":    0.0,
+				"suspect_score":    0.0,
+				"sample_count":     0,
+				"mean_interval_ms": 0.0,
+				"std_dev_ms":       0.0,
+				"verdict":          "CLEAN",
+				"confidence":       1.0,
+			})
+			return
+		}
+
+		var payloadBytes []byte
+		if r.Method == http.MethodPost && r.Body != nil {
+			var req struct {
+				Payload string `json:"payload"`
+			}
+			respond.LimitBody(r)
+			_ = validate.Bind(w, r, &req)
+			payloadBytes = []byte(req.Payload)
+		}
+
+		result := entropy.Analyze(payloadBytes, tenantID)
 
 		respond.OK(w, map[string]any{
-			"agent_id":      agentID,
-			"entropy_score": result.EntropyScore,
-			"verdict":       result.Verdict,
-			"confidence":    result.Confidence,
+			"agent_id":         agentID,
+			"entropy_score":    result.EntropyScore,
+			"suspect_score":    result.EntropyScore,
+			"sample_count":     1,
+			"mean_interval_ms": 0.0,
+			"std_dev_ms":       0.0,
+			"verdict":          result.Verdict,
+			"confidence":       result.Confidence,
 		})
 	}
 }

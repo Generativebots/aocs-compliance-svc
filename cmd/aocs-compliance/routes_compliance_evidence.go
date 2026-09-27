@@ -99,7 +99,14 @@ func registerComplianceEvidenceRoutes(
 	api.HandleFunc("/evidence-stats/{id}", auth.RequireAccess(pc, "analytics", "read", middleware.RequireValidPathVars("id")(evaluation.HandleGetEvidenceStats(db)))).Methods("GET")
 	api.HandleFunc("/evidence-stats", auth.RequireAccess(pc, "analytics", "read", evaluation.HandleGetEvidenceStats(db))).Methods("GET")
 	api.HandleFunc("/evidences", auth.RequireAccess(pc, "analytics", "read", evaluation.HandleListEvidence(db))).Methods("GET")
+	api.HandleFunc("/governance/evidence", auth.RequireAccess(pc, "analytics", "read", evaluation.HandleListEvidence(db))).Methods("GET")
 	api.HandleFunc("/verify-evidence", auth.RequireAccess(pc, "analytics", "read", evaluation.HandleVerifyEvidence(db))).Methods("GET")
+
+	// ── Audit Log ─────────────────────────────────────────────────────────────
+	api.HandleFunc("/governance/audit-log", auth.RequireAccess(pc, "compliance", "read", gra.HandleListAllAuditLog(db))).Methods("GET")
+	api.HandleFunc("/audit-log", auth.RequireAccess(pc, "compliance", "read", gra.HandleListAllAuditLog(db))).Methods("GET")
+	api.HandleFunc("/admin/platform/audit-log", auth.RequireAccess(pc, "compliance", "read", gra.HandleListAllAuditLog(db))).Methods("GET")
+	api.HandleFunc("/admin/audit-log", auth.RequireAccess(pc, "compliance", "read", gra.HandleListAllAuditLog(db))).Methods("GET")
 
 	// ── Compliance reports ────────────────────────────────────────────────────
 	api.HandleFunc("/compliance-reports", auth.RequireAccess(pc, "analytics", "read", analytics.HandleListComplianceReports(db))).Methods("GET")

@@ -65,6 +65,13 @@ func registerIntelComplianceRoutes(
 	api.HandleFunc("/sanctions/{id}", auth.RequireAccess(pc, "compliance", "delete", middleware.RequireValidPathVars("id")(compliance.HandleDeleteSanction(db)))).Methods("DELETE")
 	api.HandleFunc("/sanctions/{id}/appeal", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleSubmitSanctionAppeal(db)))).Methods("POST")
 
+	// Aliases for KC drawer, action executor, and compliance-api
+	api.HandleFunc("/compliance/violations/{id}", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleUpdateViolation(db)))).Methods("PATCH", "PUT")
+	api.HandleFunc("/compliance/violations/{id}/escalate", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleEscalateViolation(db)))).Methods("POST")
+	api.HandleFunc("/violation/{id}/quarantine", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleIsolateViolation(db)))).Methods("POST")
+	api.HandleFunc("/violation/{id}/release", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleRestoreViolation(db)))).Methods("POST")
+	api.HandleFunc("/sanction/{id}/appeal", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleSubmitSanctionAppeal(db)))).Methods("POST")
+
 	// /disputes is owned by aocs-hub — NGINX routes /api/v1/disputes → aocs-hub.
 	// Handlers here are unreachable via the gateway. Removed.
 
@@ -116,7 +123,9 @@ func registerIntelComplianceRoutes(
 	api.HandleFunc("/entropy/events/{id}", auth.RequireAccess(pc, "admin", "write", middleware.RequireValidPathVars("id")(hsecurity.HandleUpdateEntropyEvent(db)))).Methods("PATCH")
 	api.HandleFunc("/entropy/events/{id}", auth.RequireAccess(pc, "admin", "delete", middleware.RequireValidPathVars("id")(hsecurity.HandleDeleteEntropyEvent(db)))).Methods("DELETE")
 	api.HandleFunc("/entropy/status", auth.RequireAccess(pc, "compliance", "read", hsecurity.HandleGetEntropyStatus(entropyMonitor))).Methods("GET")
+	api.HandleFunc("/entropy/scan/{agentId}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("agentId")(hsecurity.HandleScanEntropy(entropyMonitor)))).Methods("GET", "POST")
 	api.HandleFunc("/security/entropy/scan", auth.RequireAccess(pc, "compliance", "write", hsecurity.HandleScanEntropy(entropyMonitor))).Methods("POST")
+	api.HandleFunc("/security/entropy/scan/{agentId}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("agentId")(hsecurity.HandleScanEntropy(entropyMonitor)))).Methods("GET", "POST")
 	api.HandleFunc("/security/entropy/status", auth.RequireAccess(pc, "compliance", "read", hsecurity.HandleGetEntropyStatus(entropyMonitor))).Methods("GET")
 
 	// ── Security ──────────────────────────────────────────────────────────────
