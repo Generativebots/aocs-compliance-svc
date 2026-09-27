@@ -39,6 +39,9 @@ func registerIntelComplianceRoutes(
 	// from LicenseFeatureGuard("compliance") — allowing Studio to render unpurchased
 	// compliance nodes in locked/upgrade-prompt state for tenants before buying compliance.
 
+	// ── GAP-P3: Consolidated Dashboard Summary (Batch SWR Elimination) ───────
+	api.HandleFunc("/compliance/dashboard-summary", auth.RequireAccess(pc, "compliance", "read", compliance.HandleGetComplianceDashboardSummary(db))).Methods("GET")
+
 	// ── Violations ────────────────────────────────────────────────────────────
 	api.HandleFunc("/violations", auth.RequireAccess(pc, "compliance", "read", compliance.HandleListViolations(db))).Methods("GET")
 	api.HandleFunc("/violations", auth.RequireAccess(pc, "compliance", "write", compliance.HandleCreateViolation(db))).Methods("POST")

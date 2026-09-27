@@ -38,4 +38,5 @@ type CreateEvidenceRequest struct {
 	IntentID    string `json:"intent_id,omitempty"`
 	ActivityID  string `json:"activity_id,omitempty"`
 	ExecutionID string `json:"execution_id,omitempty"`
+	Framework   string `json:"framework,omitempty"`
 }

@@ -23,6 +23,7 @@ import (
 
 	// Handler packages
 	hcompliance "github.com/ocx/compliance/internal/compliance/handlers/compliance"
+	hevidence   "github.com/ocx/compliance/internal/compliance/handlers/evidence"
 	hsecurity   "github.com/ocx/compliance/internal/compliance/handlers/security"
 	"github.com/ocx/compliance/internal/compliance/propagation"
 
@@ -88,6 +89,14 @@ func main() {
 	// Start daily Sybil detection worker.
 	hsecurity.StartSybilDetectionWorker(svc.BgCtx, db)
 	slog.Info("SybilDetectionWorker started — daily 03:00 UTC sybil scan")
+
+	// Start continuous compliance evaluator (GAP-GRC1)
+	hcompliance.StartContinuousComplianceWorker(svc.BgCtx, db)
+	slog.Info("ContinuousComplianceWorker started — 5m violation/posture sync")
+
+	// Start resilient evidence outbox retry worker (GAP-BE3)
+	hevidence.StartEvidenceOutboxWorker(svc.BgCtx, db)
+	slog.Info("EvidenceOutboxWorker started — 15s retry queue for failed evidence writes")
 
 	// ── Domain Propagation Consumers ─────────────────────────────────────────
 	// Subscribes to tenant and agent domain events.

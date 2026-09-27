@@ -264,6 +264,18 @@ func HandleAddComplianceCaseComment(db database.DB) http.HandlerFunc {
 			respond.Error(w, http.StatusBadRequest, "text is required")
 			return
 		}
+		author := body.Author
+		if user, err := auth.GetAuthUser(r.Context()); err == nil && user != nil {
+			if user.Email != "" {
+				author = user.Email
+			} else if user.UserID != "" {
+				author = user.UserID
+			}
+		}
+		if author == "" {
+			author = "compliance-reviewer"
+		}
+
 		var rows []struct {
 			CaseComments json.RawMessage `json:"case_comments"`
 		}
@@ -277,22 +289,44 @@ func HandleAddComplianceCaseComment(db database.DB) http.HandlerFunc {
 			respond.NotFound(w, "compliance case not found")
 			return
 		}
-		var comments []map[string]any
-		if len(rows[0].CaseComments) > 0 {
-			_ = json.Unmarshal(rows[0].CaseComments, &comments)
-		}
+
 		now := time.Now().UTC().Format(time.RFC3339)
-		comments = append(comments, map[string]any{
-			"comment_id": uuid.NewString(), "author": body.Author, "text": body.Text, "created_at": now,
-		})
-		commentsJSON, _ := json.Marshal(comments)
-		if err := db.UpdateRowCompound(database.TblComplianceComplianceCases,
-			"case_id", caseID, "tenant_id", tenantID,
-			map[string]any{"case_comments": string(commentsJSON), "updated_at": now},
-		); err != nil {
-			respond.Error(w, http.StatusInternalServerError, "failed to add comment")
-			return
+		newComment := map[string]any{
+			"comment_id": uuid.NewString(),
+			"author":     author,
+			"text":       body.Text,
+			"created_at": now,
 		}
-		respond.JSON(w, http.StatusCreated, map[string]any{"case_id": caseID, "comment_count": len(comments), "updated_at": now})
+
+		// Atomic append to avoid TOCTOU read-modify-write race (GAP-CRUD-1)
+		if err := db.AppendJSONBArray(database.TblComplianceComplianceCases, "case_id", caseID, "case_comments", newComment); err != nil {
+			// Fallback for mock/test environments without pgxPool
+			var comments []map[string]any
+			if len(rows[0].CaseComments) > 0 {
+				_ = json.Unmarshal(rows[0].CaseComments, &comments)
+			}
+			comments = append(comments, newComment)
+			commentsJSON, _ := json.Marshal(comments)
+			if err := db.UpdateRowCompound(database.TblComplianceComplianceCases,
+				"case_id", caseID, "tenant_id", tenantID,
+				map[string]any{"case_comments": string(commentsJSON), "updated_at": now},
+			); err != nil {
+				respond.Error(w, http.StatusInternalServerError, "failed to add comment")
+				return
+			}
+		} else {
+			// Touch updated_at timestamp on the case
+			_ = db.UpdateRowCompound(database.TblComplianceComplianceCases, "case_id", caseID, "tenant_id", tenantID, map[string]any{"updated_at": now})
+		}
+
+		var count int
+		if len(rows[0].CaseComments) > 0 {
+			var existingComments []any
+			_ = json.Unmarshal(rows[0].CaseComments, &existingComments)
+			count = len(existingComments) + 1
+		} else {
+			count = 1
+		}
+		respond.JSON(w, http.StatusCreated, map[string]any{"case_id": caseID, "comment_count": count, "updated_at": now})
 	}
 }

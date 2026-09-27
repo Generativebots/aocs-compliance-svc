@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -327,12 +328,20 @@ func HandleSubmitHIPAAReport(db database.DB) http.HandlerFunc {
 		}
 
 		var req struct {
-			ReportID       string `json:"report_id" validate:"required"`
+			ReportID       string `json:"report_id"`
 			Certifier      string `json:"certifier_name"`
 			ComplianceRole string `json:"certifier_role"`
 		}
 		if !validate.Bind(w, r, &req) {
 			return
+		}
+
+		// Ensure baseline HIPAA obligations exist in DB before assessing (GAP-CRUD-7)
+		ensureHIPAAObligationsInDB(db, tenantID)
+
+		reportID := req.ReportID
+		if reportID == "" {
+			reportID = fmt.Sprintf("hipaa-%s-%s", tenantID, uuid.NewString()[:8])
 		}
 
 		// 1. Query live controls from compl_obligations to calculate finalized score
@@ -345,29 +354,42 @@ func HandleSubmitHIPAAReport(db database.DB) http.HandlerFunc {
 			}
 		}
 		total := len(obRows)
-		if total == 0 {
-			total = 8
-			passed = 8
+		var score float64
+		if total > 0 {
+			score = (float64(passed) / float64(total)) * 100.0
+		} else {
+			score = 0.0
 		}
-		score := (float64(passed) / float64(total)) * 100.0
 
 		// 2. Query evidence count
 		var evidenceRows []map[string]any
 		_ = db.QueryRows(database.TblComplEvidence, "evidence_id", "tenant_id", tenantID, &evidenceRows)
 
 		// 3. Compute hash
-		hashBytes := sha256.Sum256([]byte(req.ReportID + ":" + tenantID + ":" + time.Now().UTC().Format(time.RFC3339)))
+		hashBytes := sha256.Sum256([]byte(reportID + ":" + tenantID + ":" + time.Now().UTC().Format(time.RFC3339)))
 		contentHash := hex.EncodeToString(hashBytes[:])
 
 		now := time.Now().UTC()
+		// GAP-GRC2: Derive certifier identity securely from JWT claims
 		certifierName := req.Certifier
+		certifierID := ""
+		if au, auErr := auth.GetAuthUser(r.Context()); auErr == nil && au != nil {
+			certifierID = au.UserID
+			if au.Email != "" {
+				certifierName = au.Email
+			}
+		}
 		if certifierName == "" {
 			certifierName = "Compliance Officer"
+		}
+		generatedBy := certifierID
+		if generatedBy == "" {
+			generatedBy = certifierName
 		}
 
 		// 4. Persist the report into compl_reports database table
 		reportRow := map[string]any{
-			"report_id":        req.ReportID,
+			"report_id":        reportID,
 			"tenant_id":        tenantID,
 			"report_type":      "HIPAA",
 			"period_start":     now.Add(-30 * 24 * time.Hour).Format(time.RFC3339),
@@ -378,9 +400,10 @@ func HandleSubmitHIPAAReport(db database.DB) http.HandlerFunc {
 			"control_count":    total,
 			"compliance_score": score,
 			"generated_at":     now.Format(time.RFC3339),
-			"generated_by":     certifierName,
+			"generated_by":     generatedBy,
 			"metadata": map[string]any{
 				"certifier_name": certifierName,
+				"certifier_id":   certifierID,
 				"certifier_role": req.ComplianceRole,
 				"content_hash":   contentHash,
 				"baa_status":     "EXECUTED_VALID",
@@ -397,8 +420,8 @@ func HandleSubmitHIPAAReport(db database.DB) http.HandlerFunc {
 		}
 
 		if err := db.InsertRow(database.TblComplReports, reportRow); err != nil {
-			slog.Warn("Failed to persist report into compl_reports DB (attempting update)", "error", err, "report_id", req.ReportID)
-			_ = db.UpdateRowCompound(database.TblComplReports, "tenant_id", tenantID, "report_id", req.ReportID, map[string]any{
+			slog.Warn("Failed to persist report into compl_reports DB (attempting update)", "error", err, "report_id", reportID)
+			_ = db.UpdateRowCompound(database.TblComplReports, "tenant_id", tenantID, "report_id", reportID, map[string]any{
 				"status":       "GENERATED",
 				"generated_at": now.Format(time.RFC3339),
 				"generated_by": certifierName,
@@ -407,7 +430,7 @@ func HandleSubmitHIPAAReport(db database.DB) http.HandlerFunc {
 		}
 
 		slog.Info("HIPAA regulatory report certified and saved to compl_reports DB",
-			"report_id", req.ReportID,
+			"report_id", reportID,
 			"tenant_id", tenantID,
 			"certifier", certifierName,
 			"score", score,
@@ -415,7 +438,7 @@ func HandleSubmitHIPAAReport(db database.DB) http.HandlerFunc {
 
 		respond.JSON(w, http.StatusOK, map[string]any{
 			"status":       "CERTIFIED",
-			"report_id":    req.ReportID,
+			"report_id":    reportID,
 			"certified_at": now.Format(time.RFC3339),
 			"framework":    "HIPAA_45CFR164",
 			"content_hash": contentHash,

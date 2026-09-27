@@ -198,18 +198,21 @@ func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 
 		// Cryptographic hash chain — link to previous record
 		// discarded and the raw table string bypassed T.* registry.
-		// QueryRows with tenant filter ensures the previous hash belongs to the same tenant.
-		var prevRows []struct {
-			Hash string `json:"hash"`
-		}
-		if err := db.QueryRowsCtx(r.Context(), database.TblCoreEvidenceRecords, "hash", "tenant_id", tenantID, &prevRows); err != nil {
-			slog.Error("CreateEvidence: failed to fetch previous hash for chain link", "tenant_id", tenantID, "error", err)
+		// Deterministic cryptographic hash chain — fetch the most recent hash for this tenant (GAP-CRUD-3)
+		var prevHash string
+		_, latestHash, err := db.GetLatestEvidenceRecord(r.Context(), tenantID)
+		if err != nil {
+			slog.Warn("CreateEvidence: GetLatestEvidenceRecord fallback", "tenant_id", tenantID, "error", err)
+			var prevRows []struct {
+				Hash string `json:"hash"`
+			}
+			if qErr := db.QueryRowsCtx(r.Context(), database.TblCoreEvidenceRecords, "hash", "tenant_id", tenantID, &prevRows); qErr == nil && len(prevRows) > 0 {
+				prevHash = prevRows[0].Hash
+			}
+		} else {
+			prevHash = latestHash
 		}
 
-		var prevHash string
-		if len(prevRows) > 0 {
-			prevHash = prevRows[0].Hash
-		}
 		record.PreviousHash = prevHash
 		record.Hash = computeCanonicalEvidenceHash(record)
 
@@ -222,12 +225,33 @@ func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 		record.ChainHash = hex.EncodeToString(chainSum[:])
 		record.PreviousBlockHash = prevHash
 
-		if err := db.InsertRow(database.TblCoreEvidenceRecords, record); err != nil {
-			slog.Error("CreateEvidence failed", "error", err)
+		// GAP-BE3: Attempt insertion with exponential backoff retry & outbox queue fallback
+		var insertErr error
+		for attempt := 0; attempt < 3; attempt++ {
+			insertErr = db.InsertRow(database.TblCoreEvidenceRecords, record)
+			if insertErr == nil {
+				break
+			}
+			time.Sleep(time.Duration(50*(1<<attempt)) * time.Millisecond)
+		}
+		if insertErr != nil {
+			slog.Error("CreateEvidence: primary insert failed after retries, queuing to outbox", "error", insertErr, "tenant_id", tenantID, "evidence_id", record.ID)
+			QueueEvidenceOutbox(database.TblCoreEvidenceRecords, record)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to create evlt", nil)
 			return
 		}
-		// Also synchronize into compl_evidence table
+
+		// Resolve framework dynamically from request or payload (GAP-CRUD-4)
+		framework := req.Framework
+		if framework == "" {
+			if fw, ok := req.PayloadData["framework"].(string); ok && fw != "" {
+				framework = fw
+			} else {
+				framework = "SOC2"
+			}
+		}
+
+		// Also synchronize into compl_evidence table with retry & outbox
 		complRow := map[string]any{
 			"evidence_id":   record.ID,
 			"tenant_id":     tenantID,
@@ -238,10 +262,21 @@ func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 			"description":   req.Description,
 			"content_hash":  record.Hash,
 			"chain_hash":    record.ChainHash,
-			"framework":     "SOC2",
+			"framework":     framework,
 			"metadata":      req.PayloadData,
 		}
-		_ = db.InsertRow(database.TblComplEvidence, complRow)
+		var syncErr error
+		for attempt := 0; attempt < 3; attempt++ {
+			syncErr = db.InsertRow(database.TblComplEvidence, complRow)
+			if syncErr == nil {
+				break
+			}
+			time.Sleep(time.Duration(50*(1<<attempt)) * time.Millisecond)
+		}
+		if syncErr != nil {
+			slog.Warn("CreateEvidence: compl_evidence sync failed after retries, queuing to outbox", "evidence_id", record.ID, "err", syncErr)
+			QueueEvidenceOutbox(database.TblComplEvidence, complRow)
+		}
 		// L-NEW-4 + H-NEW-4 FIX: Audit log for evidence creation.
 		// Evidence IS the audit system — but its own creation must still be attributed.
 		// EU AI Act Art.13 requires all AI decision records to be traceable to their creator.
@@ -360,9 +395,10 @@ func HandleVerifyEvidence(db database.DB, vault ...VaultSigner) http.HandlerFunc
 			return
 		}
 
+		now := time.Now().UTC()
 		update := map[string]any{
 			"verified":    true,
-			"verified_at": time.Now().UTC().Format(time.RFC3339),
+			"verified_at": now.Format(time.RFC3339),
 		}
 		if err := db.UpdateRowCompound(database.TblCoreEvidenceRecords, "id", id, "tenant_id", tenantID, update); err != nil {
 			slog.Error("VerifyEvidence update failed", "id", id, "error", err)
@@ -373,7 +409,7 @@ func HandleVerifyEvidence(db database.DB, vault ...VaultSigner) http.HandlerFunc
 		respond.OK(w, map[string]any{
 			"id":          id,
 			"verified":    true,
-			"verified_at": time.Now().UTC().Format(time.RFC3339),
+			"verified_at": now,
 		})
 	}
 }

@@ -65,15 +65,31 @@ func HandleMergeCase(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "parent_case_id required")
 			return
 		}
+		tenantID, ok := auth.MustGetTenantID(w, r)
+		if !ok {
+			return
+		}
+		if childID == body.ParentCaseID {
+			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "cannot merge a case into itself")
+			return
+		}
+
+		// GAP-CRUD-19: Verify parent case exists and belongs to the same tenant
+		var parentRows []map[string]any
+		if err := db.QueryRowsCompound(database.TblCoreHitl, "decision_id,status", "decision_id", body.ParentCaseID, "tenant_id", tenantID, &parentRows); err != nil || len(parentRows) == 0 {
+			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "parent case not found")
+			return
+		}
+		parentStatus, _ := parentRows[0]["status"].(string)
+		if parentStatus == "MERGED" {
+			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "cannot merge into a case that is already merged")
+			return
+		}
+
 		update := map[string]any{
 			"parent_case_id":     body.ParentCaseID,
 			"additional_reasons": body.AdditionalReasons,
 			"status":             "MERGED",
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
 		}
 		if err := db.UpdateRowCompound(database.TblCoreHitl, "decision_id", childID, "tenant_id", tenantID, update); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "merge case", err)

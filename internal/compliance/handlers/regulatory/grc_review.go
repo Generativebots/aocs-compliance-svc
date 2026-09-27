@@ -14,17 +14,20 @@ package regulatory
 // persisted into the compliance database (compl_obligations, compl_evidence, compl_reports).
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
+	"github.com/ocx/shared/infra/ssrf"
 	"github.com/ocx/shared/respond"
 	"github.com/ocx/shared/validate"
 )
@@ -223,6 +226,8 @@ func HandleGetGRCAssessment(db database.DB) http.HandlerFunc {
 
 		nowStr := time.Now().UTC().Format(time.RFC3339)
 
+		fwFilter := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("framework")))
+
 		for _, row := range obRows {
 			cid, _ := row["control_id"].(string)
 			name, _ := row["name"].(string)
@@ -263,6 +268,20 @@ func HandleGetGRCAssessment(db database.DB) http.HandlerFunc {
 				}
 			}
 
+			// If framework filter is provided, skip controls not belonging to it
+			if fwFilter != "" {
+				matched := false
+				for _, fw := range fws {
+					if strings.ToUpper(fw) == fwFilter {
+						matched = true
+						break
+					}
+				}
+				if !matched {
+					continue
+				}
+			}
+
 			for _, fw := range fws {
 				frameworkTotal[fw]++
 				if status == "COMPLIANT" {
@@ -296,10 +315,12 @@ func HandleGetGRCAssessment(db database.DB) http.HandlerFunc {
 		}
 
 		totalControls := len(controls)
-		if totalControls == 0 {
-			totalControls = 1
+		var overallScore float64
+		if totalControls > 0 {
+			overallScore = (float64(compliantCount) / float64(totalControls)) * 100.0
+		} else {
+			overallScore = 0.0
 		}
-		overallScore := (float64(compliantCount) / float64(totalControls)) * 100.0
 
 		// 5. Build framework breakdown scores calculated from DB
 		frameworkNames := map[string]string{
@@ -314,13 +335,14 @@ func HandleGetGRCAssessment(db database.DB) http.HandlerFunc {
 		for code, humanName := range frameworkNames {
 			tot := frameworkTotal[code]
 			pass := frameworkPassed[code]
-			if tot == 0 {
-				tot = 1
-				pass = 1
+			var pct float64
+			if tot > 0 {
+				pct = (float64(pass) / float64(tot)) * 100.0
+			} else {
+				pct = 0.0
 			}
-			pct := (float64(pass) / float64(tot)) * 100.0
 			st := "HEALTHY"
-			if pct < 80.0 {
+			if tot == 0 || pct < 80.0 {
 				st = "CRITICAL"
 			} else if pct < 95.0 {
 				st = "ATTENTION"
@@ -400,6 +422,64 @@ func HandleSyncGRCExternal(db database.DB) http.HandlerFunc {
 		hashBytes := sha256.Sum256([]byte(syncID + ":" + tenantID + ":" + now.Format(time.RFC3339)))
 		auditHash := hex.EncodeToString(hashBytes[:])
 
+		// Compute dynamic compliance score based on live obligations (GAP-CRUD-6)
+		compliantControls := 0
+		for _, ob := range obRows {
+			if st, _ := ob["status"].(string); st == "COMPLIANT" || st == "PASSED" {
+				compliantControls++
+			}
+		}
+		var liveScore float64
+		if len(obRows) > 0 {
+			liveScore = (float64(compliantControls) / float64(len(obRows))) * 100.0
+		} else {
+			liveScore = 0.0
+		}
+
+		// Execute outbound HTTP webhook dispatch with SSRF protection (GAP-CRUD-17)
+		syncStatus := "RECORDED"
+		var deliveryError string
+		if req.WebhookURL != "" {
+			if err := ssrf.Guard.Validate(req.WebhookURL); err != nil {
+				syncStatus = "BLOCKED_SSRF"
+				deliveryError = err.Error()
+				slog.Warn("GRC sync webhook rejected by SSRF guard", "url", req.WebhookURL, "error", err)
+			} else {
+				payloadMap := map[string]any{
+					"sync_id":          syncID,
+					"tenant_id":        tenantID,
+					"platform":         req.Platform,
+					"compliance_score": liveScore,
+					"synced_controls":  len(obRows),
+					"synced_evidence":  len(evidenceRows),
+					"audit_hash":       auditHash,
+					"timestamp":        now.Format(time.RFC3339),
+				}
+				payloadBytes, _ := json.Marshal(payloadMap)
+				client := &http.Client{Timeout: 5 * time.Second}
+				httpReq, reqErr := http.NewRequestWithContext(r.Context(), http.MethodPost, req.WebhookURL, bytes.NewReader(payloadBytes))
+				if reqErr == nil {
+					httpReq.Header.Set("Content-Type", "application/json")
+					httpReq.Header.Set("X-AOCS-Sync-ID", syncID)
+					httpReq.Header.Set("X-AOCS-Tenant-ID", tenantID)
+					resp, postErr := client.Do(httpReq)
+					if postErr != nil {
+						syncStatus = "FAILED"
+						deliveryError = postErr.Error()
+						slog.Warn("GRC sync webhook POST failed", "url", req.WebhookURL, "error", postErr)
+					} else {
+						_ = resp.Body.Close()
+						if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+							syncStatus = "DELIVERED"
+						} else {
+							syncStatus = "FAILED"
+							deliveryError = fmt.Sprintf("HTTP %d", resp.StatusCode)
+						}
+					}
+				}
+			}
+		}
+
 		// 3. Persist the sync event into compl_reports in DB
 		reportRow := map[string]any{
 			"report_id":        syncID,
@@ -407,11 +487,11 @@ func HandleSyncGRCExternal(db database.DB) http.HandlerFunc {
 			"report_type":      "GRC_SUMMARY",
 			"period_start":     now.Add(-24 * time.Hour).Format(time.RFC3339),
 			"period_end":       now.Format(time.RFC3339),
-			"status":          "DELIVERED",
+			"status":           syncStatus,
 			"case_count":       0,
 			"evidence_count":   len(evidenceRows),
 			"control_count":    len(obRows),
-			"compliance_score": 100.0,
+			"compliance_score": liveScore,
 			"generated_at":     now.Format(time.RFC3339),
 			"generated_by":     "GRC_SYNC_AGENT",
 			"metadata": map[string]any{
@@ -420,6 +500,8 @@ func HandleSyncGRCExternal(db database.DB) http.HandlerFunc {
 				"synced_controls":   len(obRows),
 				"audit_hash":        auditHash,
 				"webhook_url":       req.WebhookURL,
+				"delivery_status":   syncStatus,
+				"delivery_error":    deliveryError,
 			},
 			"summary": map[string]any{
 				"platform":        req.Platform,
@@ -440,20 +522,29 @@ func HandleSyncGRCExternal(db database.DB) http.HandlerFunc {
 			"platform", req.Platform,
 			"tenant_id", tenantID,
 			"synced_controls", len(obRows),
+			"status", syncStatus,
+			"compliance_score", liveScore,
 		)
 
-		respond.JSON(w, http.StatusOK, map[string]any{
+		respStatus := http.StatusOK
+		if syncStatus == "FAILED" || syncStatus == "BLOCKED_SSRF" {
+			respStatus = http.StatusBadGateway
+		}
+
+		respond.JSON(w, respStatus, map[string]any{
 			"sync_id":           syncID,
 			"tenant_id":         tenantID,
 			"platform":          req.Platform,
 			"synced_at":         now.Format(time.RFC3339),
-			"status":            "SYNCHRONIZED",
+			"status":            syncStatus,
 			"synced_controls":   len(obRows),
 			"synced_evidence":   len(evidenceRows),
+			"compliance_score":  liveScore,
+			"delivery_error":    deliveryError,
 			"audit_hash":        auditHash,
 			"database_row":      database.TblComplReports,
 			"external_grc_mode": "ZERO_TOUCH_CONTINUOUS",
-			"message":           fmt.Sprintf("Evidence payload successfully pushed to %s and persisted in compl_reports database.", req.Platform),
+			"message":           fmt.Sprintf("Evidence payload processed for %s (status: %s, score: %.1f%%).", req.Platform, syncStatus, liveScore),
 		})
 	}
 }

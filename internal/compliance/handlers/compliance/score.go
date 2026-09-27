@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
@@ -75,13 +76,21 @@ func complianceList(db database.DB, actionType string) http.HandlerFunc {
 		}
 		if err != nil {
 			slog.Error("complianceList", "action_type", actionType, "error", err)
-				respond.InternalError(w, http.StatusInternalServerError, "db operation failed", err)
-				return
+			respond.InternalError(w, http.StatusInternalServerError, "db operation failed", err)
+			return
 		}
 		if rows == nil {
 			rows = []map[string]any{}
 		}
-		respond.JSON(w, http.StatusOK, rows)
+		// GAP-CRUD-18: Filter out soft-deleted records so they do not appear in list results
+		activeRows := make([]map[string]any, 0, len(rows))
+		for _, row := range rows {
+			if del, ok := row["deleted_at"]; ok && del != nil && del != "" {
+				continue
+			}
+			activeRows = append(activeRows, row)
+		}
+		respond.JSON(w, http.StatusOK, activeRows)
 	}
 }
 
@@ -138,16 +147,18 @@ func complianceCreate(db database.DB, actionType string) http.HandlerFunc {
 		if !validate.Bind(w, r, &req) {
 			return
 		}
+		actionID := uuid.NewString()
 		row := map[string]any{
-			"tenant_id":    tenantID,
-			"agent_id":     req.AgentID,
-			"subject_id":   req.AgentID, // backward-compat with operational enforcement path
-			"subject_type": "agent",
-			"action_type":  actionType, // matches extended CHECK (Batch 12A)
-			"reason":       req.Reason,
-			"severity":     req.Severity,
-			"status":       firstStr(req.Status, "OPEN"),
-			"metadata":     req.Metadata,
+			"enforcement_action_id": actionID,
+			"tenant_id":             tenantID,
+			"agent_id":              req.AgentID,
+			"subject_id":            req.AgentID, // backward-compat with operational enforcement path
+			"subject_type":          "agent",
+			"action_type":           actionType, // matches extended CHECK (Batch 12A)
+			"reason":                req.Reason,
+			"severity":              req.Severity,
+			"status":                firstStr(req.Status, "OPEN"),
+			"metadata":              req.Metadata,
 		}
 		// Optional expires_at for time-bounded blocklist entries.
 		if req.ExpiresAt != "" {
@@ -329,12 +340,18 @@ func complianceAddComment(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "comment or body field required")
 			return
 		}
+		// GAP-CRUD-15: Resolve author_id securely from caller JWT context
+		authorID := ""
+		if au, auErr := auth.GetAuthUser(r.Context()); auErr == nil && au != nil && au.UserID != "" {
+			authorID = au.UserID
+		}
 		// Write comment into core_compliance_comments (Batch 8).
 		// case_id maps enforcement_action.id → core_compliance_comments.case_id (logical FK).
 		comment := map[string]any{
-			"case_id":    id,
-			"tenant_id":  tenantID,
-			"body":       commentText,
+			"case_id":   id,
+			"tenant_id": tenantID,
+			"author_id": authorID,
+			"body":      commentText,
 		}
 		if err := db.InsertRow(database.TblCaseComments, comment); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "comment failed", nil)

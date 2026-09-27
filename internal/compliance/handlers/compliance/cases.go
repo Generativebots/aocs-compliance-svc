@@ -72,6 +72,20 @@ func HandleListCases(db database.DB) http.HandlerFunc {
 		var joinSQL string
 		var joinArgs []any
 
+		// Parse pagination parameters (GAP-CRUD-8)
+		limit := 100
+		if lv := r.URL.Query().Get("limit"); lv != "" {
+			if n, err := strconv.Atoi(lv); err == nil && n > 0 && n <= 500 {
+				limit = n
+			}
+		}
+		offset := 0
+		if ov := r.URL.Query().Get("offset"); ov != "" {
+			if n, err := strconv.Atoi(ov); err == nil && n >= 0 {
+				offset = n
+			}
+		}
+
 		if isSuperAdmin {
 			joinSQL = `
 				SELECT
@@ -96,7 +110,8 @@ func HandleListCases(db database.DB) http.HandlerFunc {
 				LEFT JOIN core_agents         a ON a.agent_id  = h.agent_id  AND a.tenant_id = h.tenant_id
 				LEFT JOIN core_policies      p ON p.policy_id = h.policy_id AND p.tenant_id = h.tenant_id
 				ORDER BY h.created_at DESC
-				LIMIT 500`
+				LIMIT $1 OFFSET $2`
+			joinArgs = []any{limit, offset}
 		} else {
 			//nolint:tenant_filter — tenantID injected as $1
 			joinSQL = `
@@ -123,8 +138,8 @@ func HandleListCases(db database.DB) http.HandlerFunc {
 				LEFT JOIN core_policies      p ON p.policy_id = h.policy_id AND p.tenant_id = h.tenant_id
 				WHERE h.tenant_id = $1
 				ORDER BY h.created_at DESC
-				LIMIT 500`
-			joinArgs = []any{tenantID}
+				LIMIT $2 OFFSET $3`
+			joinArgs = []any{tenantID, limit, offset}
 		}
 
 		joinErr := db.QueryRawCtx(r.Context(), joinSQL, &rows, joinArgs...)
@@ -200,8 +215,10 @@ func HandleListCases(db database.DB) http.HandlerFunc {
 			deduped = append(deduped, row)
 		}
 		respond.OK(w, map[string]any{
-			"cases": deduped,
-			"total": len(deduped),
+			"cases":  deduped,
+			"total":  len(deduped),
+			"limit":  limit,
+			"offset": offset,
 		})
 	}
 }
@@ -304,11 +321,24 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 			}
 			curStatus, _ := existing[0]["status"].(string)
 			switch curStatus {
-			case "APPROVED", "REJECTED", "arbitrated", "MERGED", "RESOLVED":
+			case "APPROVED", "REJECTED", "MERGED", "RESOLVED":
 				return fmt.Errorf("terminal:%s", curStatus)
 			}
 			if err := tx.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
 				return fmt.Errorf("update verdict: %w", err)
+			}
+			// GAP-CRUD-14: Audit row written durably in the same transaction as the verdict update
+			capturedAgent, _ := body["agent_id"].(string)
+			auditRow := map[string]any{
+				"action":    "HITL_VERDICT",
+				"tenant_id": tenantID,
+				"entity_id": caseID,
+				"agent_id":  capturedAgent,
+				"user_id":   reviewerID,
+				"verdict":   verdict,
+			}
+			if aErr := tx.InsertRow(database.TblCoreEvents, auditRow); aErr != nil {
+				slog.Warn("ArbitrateCase: failed to write audit row in tx (non-fatal)", "error", aErr)
 			}
 			return nil
 		})
@@ -335,21 +365,21 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 		capturedCase := caseID
 		capturedAgent, _ := body["agent_id"].(string)
 		capturedTenant := tenantID // tenantID already fetched above for idempotency check
-		concurrent.GoDetached(r.Context(), 10*time.Second, "cases/hitl_verdict_audit", func(bgCtx context.Context) {
-			auditRow := map[string]any{ //nolint:errcheck — async audit log, best effort
-				"action":    "HITL_VERDICT",
-				"tenant_id": capturedTenant,
-				"entity_id": capturedCase, "agent_id": capturedAgent,
-				"user_id": capturedReviewer, "verdict": capturedVerdict,
-			}
-			if coreClient != nil {
-				if _err := coreClient.PostEvent(bgCtx, auditRow); _err != nil {
-					slog.Error("coreClient.PostEvent HITL_VERDICT failed (best-effort)", "error", _err)
+
+		// If coreClient is configured, also notify core service asynchronously
+		if coreClient != nil {
+			concurrent.GoDetached(r.Context(), 10*time.Second, "cases/hitl_verdict_core_event", func(bgCtx context.Context) {
+				auditRow := map[string]any{
+					"action":    "HITL_VERDICT",
+					"tenant_id": capturedTenant,
+					"entity_id": capturedCase, "agent_id": capturedAgent,
+					"user_id": capturedReviewer, "verdict": capturedVerdict,
 				}
-			} else if _dbErr := db.InsertRow(database.TblCoreEvents, auditRow); _dbErr != nil {
-				slog.Error("db.InsertRow failed (best-effort)", "error", _dbErr)
-			}
-		})
+				if _err := coreClient.PostEvent(bgCtx, auditRow); _err != nil {
+					slog.Error("coreClient.PostEvent HITL_VERDICT failed", "error", _err)
+				}
+			})
+		}
 
 		// 4: Publish verdict to TopicVerdictRecorded so SDK polling clients
 		// and jury consumers can unblock the suspended agent action.
@@ -374,7 +404,7 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 			})
 		}
 
-		respond.OK(w, map[string]string{"status": "arbitrated", "case_id": caseID})
+		respond.OK(w, map[string]string{"status": verdict, "case_id": caseID})
 	}
 }
 
