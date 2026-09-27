@@ -153,14 +153,21 @@ func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "type is required")
 			return
 		}
-		// PKs/FKs mandatory — UI must carry agent_id and intent_id from localStorage
+
+		if req.PayloadData == nil && req.Content != nil {
+			req.PayloadData = req.Content
+		}
+
+		// PKs/FKs default if not provided by external caller
 		if req.AgentID == "" {
-			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "agent_id is required")
-			return
+			if a, ok := req.PayloadData["agent_id"].(string); ok && a != "" {
+				req.AgentID = a
+			} else {
+				req.AgentID = "agent_system"
+			}
 		}
 		if req.IntentID == "" {
-			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "intent_id is required")
-			return
+			req.IntentID = "intent_system"
 		}
 
 		ts := req.Timestamp
@@ -206,11 +213,35 @@ func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 		record.PreviousHash = prevHash
 		record.Hash = computeCanonicalEvidenceHash(record)
 
+		// Patent P-03: Merkle Chain Linking for non-repudiation
+		chainInput := record.Hash
+		if prevHash != "" {
+			chainInput = prevHash + ":" + record.Hash
+		}
+		chainSum := sha256.Sum256([]byte(chainInput))
+		record.ChainHash = hex.EncodeToString(chainSum[:])
+		record.PreviousBlockHash = prevHash
+
 		if err := db.InsertRow(database.TblCoreEvidenceRecords, record); err != nil {
 			slog.Error("CreateEvidence failed", "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to create evlt", nil)
 			return
 		}
+		// Also synchronize into compl_evidence table
+		complRow := map[string]any{
+			"evidence_id":   record.ID,
+			"tenant_id":     tenantID,
+			"agent_id":      record.AgentID,
+			"execution_id":  record.ExecutionID,
+			"evidence_type": "DOCUMENT",
+			"title":         record.Type,
+			"description":   req.Description,
+			"content_hash":  record.Hash,
+			"chain_hash":    record.ChainHash,
+			"framework":     "SOC2",
+			"metadata":      req.PayloadData,
+		}
+		_ = db.InsertRow(database.TblComplEvidence, complRow)
 		// L-NEW-4 + H-NEW-4 FIX: Audit log for evidence creation.
 		// Evidence IS the audit system — but its own creation must still be attributed.
 		// EU AI Act Art.13 requires all AI decision records to be traceable to their creator.
@@ -221,6 +252,7 @@ func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 			"actor", r.Header.Get("X-User-ID"),
 			"evidence_type", record.Type,
 			"hash", record.Hash,
+			"chain_hash", record.ChainHash,
 			"at", time.Now().UTC().Format(time.RFC3339),
 		)
 		// Return actor chain FKs so UI can persist for governance traceability
@@ -228,6 +260,7 @@ func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 			"status":       "created",
 			"id":           record.ID,
 			"hash":         record.Hash,
+			"chain_hash":   record.ChainHash,
 			"agent_id":     record.AgentID,
 			"intent_id":    record.IntentID,
 			"activity_id":  record.ActivityID,

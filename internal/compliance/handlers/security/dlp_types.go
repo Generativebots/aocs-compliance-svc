@@ -28,9 +28,10 @@ import (
 )
 
 type DLPScanRequest struct {
-	TenantID	string	`json:"tenant_id"`
-	AgentID	string	`json:"agent_id" validate:"required"`
+	TenantID  string `json:"tenant_id"`
+	AgentID   string `json:"agent_id"`
 	Payload   string `json:"payload"`
+	Content   string `json:"content,omitempty"`
 	ToolID    string `json:"tool_id,omitempty"`
 	Direction string `json:"direction"` // "egress" or "ingress"
 }

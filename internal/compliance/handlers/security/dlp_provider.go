@@ -382,9 +382,9 @@ func getCredOrDefault(cfg *providers.ProviderConfig, key, def string) string {
 	return def
 }
 
-// bridgeDLPResult converts a provider-agnostic DLPResult to the existing DLPScanResult.
+// BridgeDLPResult converts a provider-agnostic DLPResult to the existing DLPScanResult.
 // This ensures all downstream audit trail and response serialisation code is unchanged.
-func bridgeDLPResult(pr *providers.DLPResult, payload string) *DLPScanResult {
+func BridgeDLPResult(pr *providers.DLPResult, payload string) *DLPScanResult {
 	if pr == nil || pr.ProviderName == "builtin" {
 		return scanPayload(payload)
 	}

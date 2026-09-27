@@ -63,6 +63,12 @@ func HandleDLPScan(store *DLPStore) http.HandlerFunc {
 			return
 		}
 		req.TenantID = tenantID
+		if req.Payload == "" && req.Content != "" {
+			req.Payload = req.Content
+		}
+		if req.AgentID == "" {
+			req.AgentID = "system_agent"
+		}
 
 		// Resolve the active DLP provider for this tenant.
 		// Falls back to builtin (existing scanPayload) when no provider is configured.
@@ -76,7 +82,7 @@ func HandleDLPScan(store *DLPStore) http.HandlerFunc {
 		provResult := dlpProv.Scan(r.Context(), tenantID, req.Payload)
 
 		// Bridge to existing DLPScanResult for audit trail compatibility.
-		result := bridgeDLPResult(provResult, req.Payload)
+		result := BridgeDLPResult(provResult, req.Payload)
 
 		// Persist scan result to DB for audit trail
 		piiTypes := make([]string, 0, len(result.PIIDetections))

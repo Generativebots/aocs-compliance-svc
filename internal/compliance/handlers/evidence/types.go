@@ -23,10 +23,12 @@ type VaultRow struct {
 	StoredAt     string `json:"stored_at"`
 }
 
-// CreateEvidenceRequest is the request body for HandleCreateEvidence. (10 fields)
 type CreateEvidenceRequest struct {
-	Type	string	`json:"type" validate:"required"`	// NOT NULL
+	Type        string         `json:"type" validate:"required"` // NOT NULL
 	ActionClass string         `json:"action_class,omitempty"`
+	Source      string         `json:"source,omitempty"`
+	Description string         `json:"description,omitempty"`
+	Content     map[string]any `json:"content,omitempty"`
 	ToolID      string         `json:"tool_id,omitempty"`
 	TransID     string         `json:"transaction_id,omitempty"`
 	Timestamp   string         `json:"timestamp,omitempty"`

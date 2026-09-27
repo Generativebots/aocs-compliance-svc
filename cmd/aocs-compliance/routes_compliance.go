@@ -2,6 +2,7 @@ package main
 
 import (
 	compliance "github.com/ocx/compliance/internal/compliance/handlers/compliance"
+	gateway "github.com/ocx/compliance/internal/compliance/handlers/gateway"
 	hsecurity "github.com/ocx/compliance/internal/compliance/handlers/security"
 	regulatory "github.com/ocx/compliance/internal/compliance/handlers/regulatory"
 	reports "github.com/ocx/compliance/internal/compliance/handlers/reports"
@@ -77,8 +78,11 @@ func registerIntelComplianceRoutes(
 
 	// ── DLP ───────────────────────────────────────────────────────────────────
 	api.HandleFunc("/dlp", auth.RequireAccess(pc, "compliance", "read", hsecurity.HandleDLPStatus(dlpStore))).Methods("GET")
+	api.HandleFunc("/compliance/dlp", auth.RequireAccess(pc, "compliance", "read", hsecurity.HandleDLPStatus(dlpStore))).Methods("GET")
 	api.HandleFunc("/dlp/scan", auth.RequireAccess(pc, "compliance", "read", compliance.HandleListDLPFindings(db))).Methods("GET")
 	api.HandleFunc("/dlp/scan", auth.RequireAccess(pc, "compliance", "write", hsecurity.HandleDLPScan(dlpStore))).Methods("POST")
+	api.HandleFunc("/compliance/dlp/scan", auth.RequireAccess(pc, "compliance", "read", compliance.HandleListDLPFindings(db))).Methods("GET")
+	api.HandleFunc("/compliance/dlp/scan", auth.RequireAccess(pc, "compliance", "write", hsecurity.HandleDLPScan(dlpStore))).Methods("POST")
 	api.HandleFunc("/dlp/webhook", auth.RequireAccess(pc, "compliance", "write", hsecurity.HandleDLPWebhook(dlpStore))).Methods("POST")
 	api.HandleFunc("/dlp/monitor", auth.RequireAccess(pc, "compliance", "write", hsecurity.HandleDLPMonitorPID(dlpStore))).Methods("POST")
 	api.HandleFunc("/dlp/integrations", auth.RequireAccess(pc, "compliance", "read", hsecurity.HandleListDLPIntegrations(dlpStore))).Methods("GET")
@@ -271,4 +275,11 @@ func registerIntelComplianceRoutes(
 	api.HandleFunc("/compliance/investigation-cases/{id}/comments",
 		auth.RequireAccess(pc, "compliance", "write",
 			middleware.RequireValidPathVars("id")(compliance.HandleAddComplianceCaseComment(db)))).Methods("POST")
+
+	// ── Universal Enterprise Agent Interceptor & Control Plane (OpenAI-compatible) ──
+	// Any enterprise agent (LangGraph, OpenAI SDK, SAP Joule, Copilot) connects here.
+	api.HandleFunc("/compliance/gateway/v1/chat/completions",
+		gateway.HandleUniversalAgentChatProxy(db, dlpStore)).Methods("POST")
+	api.HandleFunc("/compliance/otlp/v1/traces",
+		gateway.HandleOTelTraceIngress(db)).Methods("POST")
 }

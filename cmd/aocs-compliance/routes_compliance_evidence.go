@@ -83,8 +83,12 @@ func registerComplianceEvidenceRoutes(
 	// gorilla/mux dispatches on HTTP method, so GET/PUT/DELETE are independent.
 	// This is NOT a duplicate registration.
 	api.HandleFunc("/evidence", auth.RequireAccess(pc, "analytics", "write", evaluation.HandleCreateEvidence(db))).Methods("POST")
+	api.HandleFunc("/compliance/evidence", auth.RequireAccess(pc, "compliance", "write", evaluation.HandleCreateEvidence(db))).Methods("POST")
+	api.HandleFunc("/compliance/evidence", auth.RequireAccess(pc, "compliance", "read", evaluation.HandleListEvidence(db))).Methods("GET")
+	api.HandleFunc("/compliance/evidence-vault", auth.RequireAccess(pc, "compliance", "read", evaluation.HandleListEvidence(db))).Methods("GET")
 	api.HandleFunc("/evidence/chain", auth.RequireAccess(pc, "analytics", "read", evaluation.HandleGetEvidenceChainByID(db))).Methods("GET")
 	api.HandleFunc("/evidence/{id}", auth.RequireAccess(pc, "analytics", "read", middleware.RequireValidPathVars("id")(evaluation.HandleGetEvidence(db)))).Methods("GET")
+	api.HandleFunc("/compliance/evidence/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(evaluation.HandleGetEvidence(db)))).Methods("GET")
 	// HITLMutationGuard checks aocs_evidence_records.hitl_case_id; blocks mutation if case is open.
 	api.HandleFunc("/evidence/{id}", auth.RequireAccess(pc, "analytics", "write",
 		middleware.HITLMutationGuard(db, "core_evidence", "evidence_id")(analytics.HandleUpdateEvidence(db)))).Methods("PUT")
@@ -160,6 +164,7 @@ func registerComplianceEvidenceRoutes(
 	api.HandleFunc("/gra/compliance-obligations/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(compliance.HandleGetGRAObligation(db)))).Methods("GET")
 	api.HandleFunc("/gra/compliance-regions", auth.RequireAccess(pc, "governance", "write", compliance.HandleCreateComplianceRegion(db))).Methods("POST")
 	api.HandleFunc("/gra/compliance-regions", auth.RequireAccess(pc, "governance", "read", compliance.HandleListComplianceRegions(db))).Methods("GET")
+	api.HandleFunc("/gra/frameworks", auth.RequireAccess(pc, "compliance", "read", gra.HandleListGRARegulatoryFrameworks(db, coreClient))).Methods("GET")
 	api.HandleFunc("/gra/frameworks/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(compliance.HandleGetGRAFramework(db)))).Methods("GET")
 	api.HandleFunc("/gra/frameworks/{id}", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleUpdateGRAFramework(db)))).Methods("PATCH")
 	api.HandleFunc("/gra/risk-config/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(compliance.HandleGetGRARiskConfig(db)))).Methods("GET")
@@ -202,6 +207,26 @@ func registerComplianceEvidenceRoutes(
 	api.HandleFunc("/compliance/regulatory/eu-ai-act/report", auth.RequireAccess(pc, "compliance", "write", regulatory.HandleGenerateEUAIActReport(db, coreClient))).Methods("GET")
 	api.HandleFunc("/compliance/regulatory/eu-ai-act/reports", auth.RequireAccess(pc, "compliance", "write", regulatory.HandleSubmitEUAIActReport(db))).Methods("POST")
 	api.HandleFunc("/compliance/regulatory/eu-ai-act/report/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(regulatory.HandleGetEUAIActReport(db)))).Methods("GET")
+
+	// ── HIPAA Security & Privacy Continuous Assessment (45 CFR § 164) ────────
+	// Automated verification replacing manual HIPAA audits: Access control, AES-256-GCM,
+	// Merkle audit trail, SHA-256 non-repudiation, TLS 1.3, minimum necessary, real-time DLP.
+	api.HandleFunc("/compliance/regulatory/hipaa/review", auth.RequireAccess(pc, "compliance", "read", regulatory.HandleGetHIPAAReview(db))).Methods("GET")
+	api.HandleFunc("/compliance/regulatory/hipaa/report/submit", auth.RequireAccess(pc, "compliance", "write", regulatory.HandleSubmitHIPAAReport(db))).Methods("POST")
+
+	// ── Multi-Framework Enterprise GRC Engine & External Sync ─────────────────
+	// Automated parity & sync for ServiceNow GRC, Vanta, Drata, OneTrust, Archer.
+	// Evaluates unified controls across SOC2, HIPAA, EU AI Act, GDPR, and ISO 27001.
+	api.HandleFunc("/compliance/regulatory/grc/assessment", auth.RequireAccess(pc, "compliance", "read", regulatory.HandleGetGRCAssessment(db))).Methods("GET")
+	api.HandleFunc("/compliance/regulatory/grc/sync", auth.RequireAccess(pc, "compliance", "write", regulatory.HandleSyncGRCExternal(db))).Methods("POST")
+
+	// ── ISO/IEC 42001:2023 AI Management System Continuous Assessment ──────────
+	api.HandleFunc("/compliance/regulatory/iso42001", auth.RequireAccess(pc, "compliance", "read", regulatory.HandleGetISO42001Report(db))).Methods("GET")
+	api.HandleFunc("/compliance/regulatory/iso42001/certify", auth.RequireAccess(pc, "compliance", "write", regulatory.HandleCertifyISO42001Report(db))).Methods("POST")
+
+	// ── NIST AI Risk Management Framework 1.0 Assessment ─────────────────────
+	api.HandleFunc("/compliance/regulatory/nist-ai-rmf", auth.RequireAccess(pc, "compliance", "read", regulatory.HandleGetNISTReport(db))).Methods("GET")
+	api.HandleFunc("/compliance/regulatory/nist-ai-rmf/certify", auth.RequireAccess(pc, "compliance", "write", regulatory.HandleCertifyNISTReport(db))).Methods("POST")
 
 	// ── SOC2 Type II Evidence Package Generator ────────────────────────────────
 	// AICPA Trust Service Criteria (CC1–CC9, A1) — auto-generated from live AOCS data.
