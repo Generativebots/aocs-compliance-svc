@@ -18,6 +18,7 @@
 package security
 
 import (
+	"context"
 	"github.com/ocx/shared/idgen"
 	"encoding/json"
 	"fmt"
@@ -161,12 +162,7 @@ func HandleDLPScan(store *DLPStore) http.HandlerFunc {
 			if len(req.AgentID) == 36 && req.AgentID[8] == '-' {
 				alertRow.AgentID = req.AgentID
 			}
-			concurrent.Go("dlp", func() {
-				defer func() {
-					if r := recover(); r != nil {
-						slog.Error("goroutine panic recovered", "error", r)
-					}
-				}()
+			concurrent.GoDetached(r.Context(), 10*time.Second, "dlp/senti_alert", func(bgCtx context.Context) {
 				alertPayload := map[string]any{
 					"tenant_id":  tenantID,
 					"alert_type": "dlp_violation",
@@ -180,7 +176,7 @@ func HandleDLPScan(store *DLPStore) http.HandlerFunc {
 				}
 				if store.coreClient != nil {
 					// SVC-BOUNDARY: create senti_alert via ocx-core-svc API
-					if err := store.coreClient.CreateSentiAlert(r.Context(), alertPayload); err != nil {
+					if err := store.coreClient.CreateSentiAlert(bgCtx, alertPayload); err != nil {
 						slog.Error("DLP→Sentinel: failed to create senti_alert via coreClient", "error", err,
 							"classification", result.Classification, "tenant_id", tenantID)
 					} else {

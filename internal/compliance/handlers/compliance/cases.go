@@ -3,6 +3,7 @@
 package compliance
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -334,7 +335,7 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 		capturedCase := caseID
 		capturedAgent, _ := body["agent_id"].(string)
 		capturedTenant := tenantID // tenantID already fetched above for idempotency check
-		concurrent.Go("cases", func() {
+		concurrent.GoDetached(r.Context(), 10*time.Second, "cases/hitl_verdict_audit", func(bgCtx context.Context) {
 			auditRow := map[string]any{ //nolint:errcheck — async audit log, best effort
 				"action":    "HITL_VERDICT",
 				"tenant_id": capturedTenant,
@@ -342,7 +343,7 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 				"user_id": capturedReviewer, "verdict": capturedVerdict,
 			}
 			if coreClient != nil {
-				if _err := coreClient.PostEvent(r.Context(), auditRow); _err != nil {
+				if _err := coreClient.PostEvent(bgCtx, auditRow); _err != nil {
 					slog.Error("coreClient.PostEvent HITL_VERDICT failed (best-effort)", "error", _err)
 				}
 			} else if _dbErr := db.InsertRow(database.TblCoreEvents, auditRow); _dbErr != nil {
@@ -355,7 +356,7 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 		// Without this, the gate has no feedback loop after HITL approval.
 		// Best-effort: if publish fails, the audit log above still captures the verdict.
 		if psBroker != nil {
-			concurrent.Go("cases", func() {
+			concurrent.GoDetached(r.Context(), 10*time.Second, "cases/hitl_verdict_publish", func(bgCtx context.Context) {
 				payload, _ := json.Marshal(map[string]any{
 					"schema_version": "1",
 					"event":          "HITL_VERDICT",
@@ -367,10 +368,8 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 					"decided_at":     time.Now().UTC().Format(time.RFC3339),
 				})
 				orderKey := capturedTenant + ":" + capturedAgent
-				if err := psBroker.PublishOrdered(r.Context(), eventbus.TopicVerdictRecorded(), orderKey, payload); err != nil {
+				if err := psBroker.PublishOrdered(bgCtx, eventbus.TopicVerdictRecorded(), orderKey, payload); err != nil {
 					slog.Error("post-verdict publish failed (best-effort)", "case_id", capturedCase, "error", err)
-						respond.InternalError(w, http.StatusInternalServerError, "db operation failed", err)
-						return
 				}
 			})
 		}
