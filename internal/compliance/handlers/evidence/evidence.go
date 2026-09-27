@@ -207,7 +207,7 @@ func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 				Hash string `json:"hash"`
 			}
 			if qErr := db.QueryRowsCtx(r.Context(), database.TblCoreEvidenceRecords, "hash", "tenant_id", tenantID, &prevRows); qErr == nil && len(prevRows) > 0 {
-				prevHash = prevRows[0].Hash
+				prevHash = prevRows[len(prevRows)-1].Hash
 			}
 		} else {
 			prevHash = latestHash

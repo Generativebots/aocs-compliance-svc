@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -339,8 +340,9 @@ func HandleSubmitHIPAAReport(db database.DB) http.HandlerFunc {
 		// Ensure baseline HIPAA obligations exist in DB before assessing (GAP-CRUD-7)
 		ensureHIPAAObligationsInDB(db, tenantID)
 
+		// GAP-CRUD-20: Ensure report_id is securely scoped to tenant to prevent arbitrary injection
 		reportID := req.ReportID
-		if reportID == "" {
+		if reportID == "" || !strings.HasPrefix(reportID, "hipaa-"+tenantID) {
 			reportID = fmt.Sprintf("hipaa-%s-%s", tenantID, uuid.NewString()[:8])
 		}
 
