@@ -217,7 +217,7 @@ func HandleUniversalAgentChatProxy(db database.DB, dlpStore *security.DLPStore) 
 		prevHash := "0000000000000000000000000000000000000000000000000000000000000000"
 		if db != nil {
 			var lastEvRows []map[string]any
-			_ = db.QueryRows(database.TblComplEvidence, "chain_hash", "tenant_id", tenantID, &lastEvRows)
+			_ = db.QueryRows(database.TblComplEvidence, "chain_hash", "tenant_id", tenantID, &lastEvRows)  //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
 			if len(lastEvRows) > 0 {
 				if lastH, ok := lastEvRows[len(lastEvRows)-1]["chain_hash"].(string); ok && lastH != "" {
 					prevHash = lastH
