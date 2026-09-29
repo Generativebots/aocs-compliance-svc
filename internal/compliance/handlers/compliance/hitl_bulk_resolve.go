@@ -104,26 +104,23 @@ func HandleResolveBulkHITL(db database.DB, coreClients ...*serviceclient.Client)
 					}
 				}
 			} else {
-				// Fallback: direct DB when coreClient is not wired
-				err := db.UpdateRowCompound(
-					database.TblCoreHitl,
-					"decision_id", decisionID,
-					"tenant_id", tenantID,
-					map[string]any{
-						"status":            req.Verdict,
-						"reviewer_id":       reviewerID,
-						"resolution_reason": req.Reason,
-						"resolved_at":       now,
-						"updated_at":        now,
-					},
-				)
-				if err != nil {
-					slog.Error("HandleResolveBulkHITL: update failed", "decision_id", decisionID, "error", err)
-					result["error"] = "update failed"
-					result["ok"] = false
-				} else {
-					result["ok"] = true
-					if _sErr := db.InsertPlatformEvent(database.PlatformEvent{
+				// Fallback: direct DB when coreClient is not wired (wrapped in transaction)
+				txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
+					if err := tx.UpdateRowCompound(
+						database.TblCoreHitl,
+						"decision_id", decisionID,
+						"tenant_id", tenantID,
+						map[string]any{
+							"status":            req.Verdict,
+							"reviewer_id":       reviewerID,
+							"resolution_reason": req.Reason,
+							"resolved_at":       now,
+							"updated_at":        now,
+						},
+					); err != nil {
+						return err
+					}
+					return tx.InsertPlatformEvent(database.PlatformEvent{
 						EventID:   uuid.NewString(),
 						TenantID:  tenantID,
 						EventType: "HITL_DECISION_" + req.Verdict,
@@ -133,9 +130,14 @@ func HandleResolveBulkHITL(db database.DB, coreClients ...*serviceclient.Client)
 						Action:    req.Verdict,
 						Severity:  "INFO",
 						NewValue:  []byte(`{"reason":"` + req.Reason + `"}`),
-					}); _sErr != nil {
-						slog.Error("InsertPlatformEvent failed", "decision_id", decisionID, "error", _sErr)
-					}
+					})
+				})
+				if txErr != nil {
+					slog.Error("HandleResolveBulkHITL: transactional update failed", "decision_id", decisionID, "error", txErr)
+					result["error"] = "update failed"
+					result["ok"] = false
+				} else {
+					result["ok"] = true
 				}
 			}
 			results = append(results, result)

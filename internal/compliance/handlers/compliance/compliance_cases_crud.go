@@ -197,9 +197,11 @@ func HandleUpdateComplianceCaseStatus(db database.DB) http.HandlerFunc {
 		if body.Status == "CLOSED" || body.Status == "ARCHIVED" {
 			updates["closed_at"] = now
 		}
-		if err := db.UpdateRowCompound(database.TblComplianceComplianceCases,
-			"case_id", caseID, "tenant_id", tenantID, updates,
-		); err != nil {
+		if txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
+			return tx.UpdateRowCompound(database.TblComplianceComplianceCases,
+				"case_id", caseID, "tenant_id", tenantID, updates,
+			)
+		}); txErr != nil {
 			respond.Error(w, http.StatusInternalServerError, "failed to update case status")
 			return
 		}
@@ -230,10 +232,12 @@ func HandleAssignComplianceCase(db database.DB) http.HandlerFunc {
 			return
 		}
 		now := time.Now().UTC().Format(time.RFC3339)
-		if err := db.UpdateRowCompound(database.TblComplianceComplianceCases,
-			"case_id", caseID, "tenant_id", tenantID,
-			map[string]any{"assigned_to": body.AssignedTo, "status": "INVESTIGATING", "updated_at": now},
-		); err != nil {
+		if txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
+			return tx.UpdateRowCompound(database.TblComplianceComplianceCases,
+				"case_id", caseID, "tenant_id", tenantID,
+				map[string]any{"assigned_to": body.AssignedTo, "status": "INVESTIGATING", "updated_at": now},
+			)
+		}); txErr != nil {
 			respond.Error(w, http.StatusInternalServerError, "failed to assign case")
 			return
 		}

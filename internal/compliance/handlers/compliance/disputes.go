@@ -196,13 +196,15 @@ func HandleResolveDispute(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusConflict, respond.ErrCodeConflict, "only OPEN disputes can be resolved (current: "+s+")")
 			return
 		}
-		if err := db.UpdateRowCompound(database.TblCoreDisputes, "dispute_id", id, "tenant_id", tenantID, map[string]any{
-			"status":            body.Verdict,
-			"resolution":        body.Resolution,
-			"resolved_at":       now,
-			"updated_at":        now,
-		}); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "resolve dispute", err)
+		if txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
+			return tx.UpdateRowCompound(database.TblCoreDisputes, "dispute_id", id, "tenant_id", tenantID, map[string]any{
+				"status":            body.Verdict,
+				"resolution":        body.Resolution,
+				"resolved_at":       now,
+				"updated_at":        now,
+			})
+		}); txErr != nil {
+			respond.InternalError(w, http.StatusInternalServerError, "resolve dispute", txErr)
 			return
 		}
 		slog.Info("HandleResolveDispute: resolved", "dispute_id", id, "verdict", body.Verdict, "tenant_id", tenantID)
@@ -236,12 +238,15 @@ func HandleDeleteDispute(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "dispute not found")
 			return
 		}
-		if err := db.UpdateRowCompound(database.TblCoreDisputes, "dispute_id", id, "tenant_id", tenantID, map[string]any{
-			"status":            "WITHDRAWN",
-			"resolved_at":       time.Now().UTC().Format(time.RFC3339),
-			"updated_at":        time.Now().UTC().Format(time.RFC3339),
-		}); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "withdraw dispute", err)
+		now := time.Now().UTC().Format(time.RFC3339)
+		if txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
+			return tx.UpdateRowCompound(database.TblCoreDisputes, "dispute_id", id, "tenant_id", tenantID, map[string]any{
+				"status":            "WITHDRAWN",
+				"resolved_at":       now,
+				"updated_at":        now,
+			})
+		}); txErr != nil {
+			respond.InternalError(w, http.StatusInternalServerError, "withdraw dispute", txErr)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)

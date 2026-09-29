@@ -76,12 +76,13 @@ func processPendingBatchJobs(ctx context.Context, db database.DB) {
 				"job_id", job.JobID, "error", smErr)
 			continue
 		}
-		// Mark COMPLETED — if this fails, the job stays PROCESSING and won't be retried
-		// (PROCESSING is not picked up by the PENDING query). Log as error: results are dropped.
-		if err := db.UpdateRowCompound(database.TblZKPBatchJobs, "job_id", job.JobID, "tenant_id", job.TenantID, map[string]any{
-			"status": "COMPLETED", "results": string(resJSON), "completed_at": time.Now().UTC(),
-		}); err != nil {
-			slog.Error("processPendingBatchJobs: failed to mark COMPLETED — results dropped", "job_id", job.JobID, "error", err)
+		// Mark COMPLETED inside WithTransaction for atomicity
+		if txErr := db.WithTransaction(context.Background(), func(tx database.DB) error {
+			return tx.UpdateRowCompound(database.TblZKPBatchJobs, "job_id", job.JobID, "tenant_id", job.TenantID, map[string]any{
+				"status": "COMPLETED", "results": string(resJSON), "completed_at": time.Now().UTC(),
+			})
+		}); txErr != nil {
+			slog.Error("processPendingBatchJobs: failed to mark COMPLETED — results dropped", "job_id", job.JobID, "error", txErr)
 		}
 	}
 }
