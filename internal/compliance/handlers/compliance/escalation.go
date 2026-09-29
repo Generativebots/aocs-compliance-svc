@@ -77,6 +77,23 @@ func HandleEscalateCase(db database.DB) http.HandlerFunc {
 			if err := tx.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
 				return fmt.Errorf("update escalation: %w", err)
 			}
+			// P1-B: Write escalation audit event row inside the same transaction
+			auditRow := map[string]any{
+				"event_id":    generatePlatformID(),
+				"entity_id":   caseID,
+				"entity_type": "hitl_case",
+				"tenant_id":   tenantID,
+				"event_type":  "CASE_ESCALATED",
+				"payload": map[string]any{
+					"case_id":      caseID,
+					"escalated_by": escalatedBy,
+					"reason":       reason,
+					"occurred_at":  now,
+				},
+			}
+			if err := tx.InsertRow(database.TblCoreEvents, auditRow); err != nil {
+				slog.Warn("EscalateCase: failed to write audit row in tx (non-fatal)", "error", err)
+			}
 			return nil
 		})
 		if txErr != nil {

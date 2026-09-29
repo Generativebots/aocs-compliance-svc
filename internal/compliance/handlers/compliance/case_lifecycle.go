@@ -391,8 +391,18 @@ func TransitionCase(
 		if err := r1.PatchHITLCase(ctx, tenantID, caseID, update); err != nil {
 			return fmt.Errorf("caselifecycle.TransitionCase: ocx-core-svc update failed: %w", err)
 		}
-	} else if err := db.UpdateRowCompoundCtx(ctx, database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
-		return fmt.Errorf("caselifecycle.TransitionCase: update failed: %w", err)
+		writeLifecycleEvent(ctx, db, caseID, tenantID, oldStatus, string(newStatus), reason, actorID, r1)
+	} else {
+		// P1-B: Atomically update the case status AND write the lifecycle event inside WithTransaction.
+		if txErr := db.WithTransaction(ctx, func(tx database.DB) error {
+			if err := tx.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
+				return fmt.Errorf("update failed: %w", err)
+			}
+			writeLifecycleEvent(ctx, tx, caseID, tenantID, oldStatus, string(newStatus), reason, actorID)
+			return nil
+		}); txErr != nil {
+			return fmt.Errorf("caselifecycle.TransitionCase: transaction failed: %w", txErr)
+		}
 	}
 
 	slog.Info("HITL case transitioned",
@@ -400,9 +410,6 @@ func TransitionCase(
 		"from", oldStatus, "to", string(newStatus),
 		"actor", actorID, "sla_breached", slaBreached,
 	)
-
-	// Write lifecycle event
-	writeLifecycleEvent(ctx, db, caseID, tenantID, oldStatus, string(newStatus), reason, actorID, r1)
 
 	// Copilot context for operator-visible transitions
 	if newStatus == StatusEscalated || newStatus == StatusTimeout || slaBreached {

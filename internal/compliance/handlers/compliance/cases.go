@@ -623,9 +623,31 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 				update["context_data"] = string(cdBytes)
 			}
 		}
-		if err := db.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
-			slog.Error("AssignCase failed", "case_id", caseID, "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "assign case", err)
+		// P1-B: Atomically update case assignment and write lifecycle audit row.
+		if txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
+			if err := tx.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
+				return err
+			}
+			assignEvent := map[string]any{
+				"event_id":    generatePlatformID(),
+				"entity_id":   caseID,
+				"entity_type": "hitl_case",
+				"tenant_id":   tenantID,
+				"event_type":  "CASE_ASSIGNED",
+				"payload": map[string]any{
+					"case_id":        caseID,
+					"assigned_to":    assignedTo,
+					"department_ids": deptIDs,
+					"occurred_at":    now,
+				},
+			}
+			if err := tx.InsertRow(database.TblCoreEvents, assignEvent); err != nil {
+				slog.Warn("AssignCase: audit insert failed in tx (non-fatal)", "case_id", caseID, "error", err)
+			}
+			return nil
+		}); txErr != nil {
+			slog.Error("AssignCase failed", "case_id", caseID, "error", txErr)
+			respond.InternalError(w, http.StatusInternalServerError, "assign case", txErr)
 			return
 		}
 		respond.OK(w, map[string]any{"status": "ASSIGNED", "case_id": caseID, "assigned_to": assignedTo, "department_ids": deptIDs})

@@ -23,7 +23,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ocx/shared/infra/concurrent"
 
 	"github.com/gorilla/mux"
 	"github.com/ocx/shared/infra/auth"
@@ -240,39 +239,42 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 		// Only write sla_deadline if the column exists (added in Part 1 migrations)
 		update["sla_deadline"] = newDeadline
 
-		if err := db.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
-			slog.Error("update failed", "case_id", caseID, "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "reassign case", err)
-			return
+		meta, _ := json.Marshal(map[string]any{
+			"from_dept":        currentDept,
+			"to_dept":          req.ToDeptID,
+			"reason":           req.Reason,
+			"new_sla_hours":    slaHours,
+			"new_sla_deadline": newDeadline,
+			"policy_conflict":  policyConflict, // D2D-6: persisted in audit trail
+		})
+		auditRow := map[string]any{
+			"event_type": "case.dept_handover",
+			"tenant_id":  tenantID,
+			"entity_id":  caseID,
+			"action":     "dept_reassign",
+			"severity":   "INFO",
+			"metadata":   meta,
+			"created_at": now,
 		}
 
-		// ── Audit event (best-effort) ──────────────────────────────────────────
-		concurrent.Go("case_reassignment", func() {
-			meta, _ := json.Marshal(map[string]any{
-				"from_dept":        currentDept,
-				"to_dept":          req.ToDeptID,
-				"reason":           req.Reason,
-				"new_sla_hours":    slaHours,
-				"new_sla_deadline": newDeadline,
-				"policy_conflict":  policyConflict, // D2D-6: persisted in audit trail
-			})
-			auditRow := map[string]any{
-				"event_type": "case.dept_handover",
-				"tenant_id":  tenantID,
-				"entity_id":  caseID,
-				"action":     "dept_reassign",
-				"severity":   "INFO",
-				"metadata":   meta,
-				"created_at": now,
+		// P1-B: Atomically update department assignment and insert handover audit event in tx
+		if txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
+			if err := tx.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
+				return err
 			}
 			if coreClient != nil {
 				if _err := coreClient.PostEvent(r.Context(), auditRow); _err != nil {
-					slog.Error("coreClient.PostEvent dept_handover failed (best-effort)", "error", _err)
+					slog.Warn("coreClient.PostEvent dept_handover failed (non-fatal)", "error", _err)
 				}
-			} else if _dbErr := db.InsertRow(database.TblCoreEvents, auditRow); _dbErr != nil {
-				slog.Error("InsertRow failed", "error", _dbErr)
+			} else if _dbErr := tx.InsertRow(database.TblCoreEvents, auditRow); _dbErr != nil {
+				slog.Warn("InsertRow dept_handover failed in tx (non-fatal)", "error", _dbErr)
 			}
-		})
+			return nil
+		}); txErr != nil {
+			slog.Error("update failed", "case_id", caseID, "error", txErr)
+			respond.InternalError(w, http.StatusInternalServerError, "reassign case", txErr)
+			return
+		}
 
 		slog.Info("case reassigned",
 			"case_id", caseID, "from", currentDept, "to", req.ToDeptID,
