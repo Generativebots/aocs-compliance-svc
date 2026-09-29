@@ -116,7 +116,8 @@ CREATE TABLE IF NOT EXISTS compl_evidence_anchors (
     execution_id        TEXT,
     decision_id         TEXT,
     -- ZKP fields
-    circuit_type        TEXT        NOT NULL DEFAULT 'groth16',
+    circuit_type        TEXT        NOT NULL DEFAULT 'groth16'
+                            CHECK (circuit_type IN ('groth16','plonk','fflonk')),
     proof_data          JSONB       NOT NULL DEFAULT '{}',
     public_inputs       JSONB       NOT NULL DEFAULT '{}',
     verifier_key        TEXT,
@@ -201,7 +202,8 @@ CREATE TABLE IF NOT EXISTS compl_case_comments (
 
 CREATE TABLE IF NOT EXISTS compl_signing_keys (
     key_id      TEXT        PRIMARY KEY DEFAULT public.gen_id('sk'),
-    key_type    TEXT        NOT NULL DEFAULT 'ed25519',
+    key_type    TEXT        NOT NULL DEFAULT 'ed25519'
+                                CHECK (key_type IN ('ed25519','secp256k1','rsa2048')),
     public_key  TEXT        NOT NULL,
     private_key TEXT        NOT NULL,
     is_active   BOOLEAN     NOT NULL DEFAULT TRUE,
@@ -288,6 +290,8 @@ CREATE TABLE IF NOT EXISTS compl_policy_exceptions (
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     policy_id           TEXT NOT NULL,
     agent_id            TEXT,
+    -- OPEN-ENDED: exception_type is tenant-defined (e.g. 'VENDOR_APPROVED', 'REGULATORY_WAIVER',
+    -- 'TECHNICAL_LIMITATION'). No CHECK — extensibility required for multi-jurisdiction tenants.
     exception_type      TEXT NOT NULL,
     justification       TEXT NOT NULL,
     approved_by         TEXT,
@@ -302,6 +306,8 @@ CREATE TABLE IF NOT EXISTS compl_risk_assessments (
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
     framework_id        TEXT,
     risk_level          TEXT NOT NULL CHECK (risk_level = ANY (ARRAY['LOW','MEDIUM','HIGH','CRITICAL'])),
+    -- OPEN-ENDED: subject_type is domain-discriminated (e.g. 'AGENT', 'POLICY', 'WORKFLOW',
+    -- 'VENDOR', 'INTEGRATION'). No CHECK — grows with product surface area.
     subject_type        TEXT NOT NULL,
     subject_id          TEXT NOT NULL,
     assessment_date     TIMESTAMPTZ NOT NULL DEFAULT NOW(),

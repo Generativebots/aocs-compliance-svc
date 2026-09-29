@@ -376,7 +376,7 @@ func HandleUpsertOgraphFlow(db database.DB) http.HandlerFunc {
 			"tenant_id", tenantID,
 			"source_node", req.SourceNode,
 			"target_node", req.TargetNode,
-			"actor", r.Header.Get("X-User-ID"),
+			"actor", auth.GetUserID(r.Context()),
 			"at", time.Now().UTC().Format(time.RFC3339),
 		)
 

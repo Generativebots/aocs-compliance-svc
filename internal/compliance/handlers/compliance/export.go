@@ -173,7 +173,7 @@ func HandleCasesSubmitJuryVote(db database.DB, coreClient *serviceclient.Client)
 			body.VoterID = body.MemberID
 		}
 		if body.VoterID == "" {
-			body.VoterID = r.Header.Get("X-User-Id")
+			body.VoterID = auth.GetUserID(r.Context())
 		}
 		if caseID == "" {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "case_id is required (path param or body field)")

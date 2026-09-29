@@ -125,9 +125,10 @@ func HandleUniversalAgentChatProxy(db database.DB, dlpStore *security.DLPStore) 
 			slog.Warn("UniversalAgentProxy: Ingress prompt blocked by DLP guard",
 				"tenant_id", tenantID, "agent_id", agentID, "reason", ingressScan.Reasoning)
 
-			// Record violation in database
+			// Record violation in database — non-fatal but MUST be logged on failure.
+			// Silent drop = no audit trail for a BLOCKED DLP violation (SOC2 CC6.1 gap).
 			if db != nil {
-				_ = db.InsertRow(database.TblComplPolicyViolations, map[string]any{
+				if vErr := db.InsertRow(database.TblComplPolicyViolations, map[string]any{
 					"violation_id": idgen.GenID(),
 					"tenant_id":    tenantID,
 					"policy_name":  "Ingress Enterprise DLP Exfiltration Guard",
@@ -135,7 +136,10 @@ func HandleUniversalAgentChatProxy(db database.DB, dlpStore *security.DLPStore) 
 					"status":       "BLOCKED",
 					"details":      fmt.Sprintf("Agent %s attempted prompt violating DLP: %s", agentID, ingressScan.Reasoning),
 					"created_at":   time.Now().UTC().Format(time.RFC3339),
-				})
+				}); vErr != nil {
+					slog.Error("UniversalAgentProxy: DLP violation record insert failed — audit gap",
+						"tenant_id", tenantID, "agent_id", agentID, "error", vErr)
+				}
 			}
 
 			w.Header().Set("Content-Type", "application/json")
@@ -235,7 +239,8 @@ func HandleUniversalAgentChatProxy(db database.DB, dlpStore *security.DLPStore) 
 				"ingress_dlp_risk":  ingressScan.RiskScore,
 				"egress_dlp_risk":   egressScan.RiskScore,
 			})
-			_ = db.InsertRow(database.TblComplEvidence, map[string]any{
+			// Non-fatal: evidence write failure must be logged to detect Merkle chain gaps.
+			if evErr := db.InsertRow(database.TblComplEvidence, map[string]any{
 				"evidence_id":  evidenceID,
 				"tenant_id":    tenantID,
 				"agent_id":     agentID,
@@ -246,7 +251,10 @@ func HandleUniversalAgentChatProxy(db database.DB, dlpStore *security.DLPStore) 
 				"status":       "VERIFIED",
 				"metadata":     string(metaBytes),
 				"created_at":   time.Now().UTC().Format(time.RFC3339),
-			})
+			}); evErr != nil {
+				slog.Warn("UniversalAgentProxy: Merkle evidence insert failed — chain gap",
+					"evidence_id", evidenceID, "tenant_id", tenantID, "agent_id", agentID, "error", evErr)
+			}
 		}
 
 		respObj := ChatCompletionResponse{
@@ -365,7 +373,8 @@ func HandleOTelTraceIngress(db database.DB) http.HandlerFunc {
 						contentHash := hex.EncodeToString(h.Sum(nil))
 
 						metaBytes, _ := json.Marshal(attrMap)
-						_ = db.InsertRow(database.TblComplEvidence, map[string]any{
+						// Best-effort: high-volume OTLP span ingestion — non-fatal but log on failure.
+						if spErr := db.InsertRow(database.TblComplEvidence, map[string]any{
 							"evidence_id":  evidenceID,
 							"tenant_id":    tenantID,
 							"agent_id":     agentID,
@@ -375,7 +384,10 @@ func HandleOTelTraceIngress(db database.DB) http.HandlerFunc {
 							"status":       "VERIFIED",
 							"metadata":     string(metaBytes),
 							"created_at":   time.Now().UTC().Format(time.RFC3339),
-						})
+						}); spErr != nil {
+							slog.Warn("OTelTraceIngress: span evidence insert failed",
+								"evidence_id", evidenceID, "span", span.Name, "tenant_id", tenantID, "error", spErr)
+						}
 					}
 				}
 			}

@@ -276,7 +276,7 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 			reviewerID = au.UserID
 		} else {
 			// Fallback for legacy clients still sending the header; log the event.
-			reviewerID = r.Header.Get("X-User-Id")
+			reviewerID = auth.GetUserID(r.Context())
 			if reviewerID != "" {
 				slog.Warn("ArbitrateCase: reviewer from X-User-Id header (JWT missing user claim)",
 					"case_id", caseID, "reviewer", reviewerID)
@@ -451,7 +451,7 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 			return
 		}
 		assignedTo := req.AssignedTo
-		operatorID := r.Header.Get("X-User-Id")
+		operatorID := auth.GetUserID(r.Context())
 		now := time.Now().UTC().Format(time.RFC3339)
 
 		update := map[string]any{

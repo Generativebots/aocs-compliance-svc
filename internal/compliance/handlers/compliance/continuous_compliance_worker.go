@@ -75,12 +75,16 @@ func evaluateContinuousCompliance(ctx context.Context, db database.DB) {
 					curStatus, _ := ob["status"].(string)
 					if curStatus == "COMPLIANT" {
 						// Flip to IN_PROGRESS to reflect active violation under review
-						_ = db.UpdateRowCompound(database.TblComplObligations, "control_id", cid, "tenant_id", tenantID, map[string]any{
+						if flipErr := db.UpdateRowCompound(database.TblComplObligations, "control_id", cid, "tenant_id", tenantID, map[string]any{
 							"status":           "IN_PROGRESS",
 							"last_assessed_at": nowStr,
-						})
-						slog.Info("ContinuousComplianceWorker: obligation flipped to IN_PROGRESS due to open violation",
-							"tenant_id", tenantID, "control_id", cid)
+						}); flipErr != nil {
+							slog.Warn("ContinuousComplianceWorker: obligation flip to IN_PROGRESS failed",
+								"tenant_id", tenantID, "control_id", cid, "error", flipErr)
+						} else {
+							slog.Info("ContinuousComplianceWorker: obligation flipped to IN_PROGRESS due to open violation",
+								"tenant_id", tenantID, "control_id", cid)
+						}
 					}
 				}
 			}

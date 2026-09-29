@@ -284,7 +284,7 @@ func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 			"action", "CREATE_EVIDENCE",
 			"evidence_id", record.ID,
 			"tenant_id", tenantID,
-			"actor", r.Header.Get("X-User-ID"),
+			"actor", auth.GetUserID(r.Context()),
 			"evidence_type", record.Type,
 			"hash", record.Hash,
 			"chain_hash", record.ChainHash,

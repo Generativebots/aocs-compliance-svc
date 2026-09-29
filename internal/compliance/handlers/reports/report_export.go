@@ -50,7 +50,7 @@ func HandleDeleteComplianceReport(db database.DB) http.HandlerFunc {
 			"action", "DELETE_COMPLIANCE_REPORT",
 			"report_id", id,
 			"tenant_id", tenantID,
-			"actor", r.Header.Get("X-User-ID"),
+			"actor", auth.GetUserID(r.Context()),
 			"at", time.Now().UTC().Format(time.RFC3339),
 		)
 		respond.JSON(w, http.StatusOK, map[string]string{"status": "ARCHIVED", "report_id": id})
@@ -84,7 +84,7 @@ func HandleDeleteExportJob(db database.DB) http.HandlerFunc {
 			"action", "DELETE_EXPORT_JOB",
 			"job_id", id,
 			"tenant_id", tenantID,
-			"actor", r.Header.Get("X-User-ID"),
+			"actor", auth.GetUserID(r.Context()),
 			"at", time.Now().UTC().Format(time.RFC3339),
 		)
 		respond.JSON(w, http.StatusOK, map[string]string{"status": "CANCELLED", "job_id": id})

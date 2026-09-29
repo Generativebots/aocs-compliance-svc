@@ -316,7 +316,10 @@ func HandleAddComplianceCaseComment(db database.DB) http.HandlerFunc {
 			}
 		} else {
 			// Touch updated_at timestamp on the case
-			_ = db.UpdateRowCompound(database.TblComplianceComplianceCases, "case_id", caseID, "tenant_id", tenantID, map[string]any{"updated_at": now})
+			if touchErr := db.UpdateRowCompound(database.TblComplianceComplianceCases, "case_id", caseID, "tenant_id", tenantID, map[string]any{"updated_at": now}); touchErr != nil {
+				slog.Warn("compliance_cases_crud: case updated_at touch failed (non-fatal)",
+					"case_id", caseID, "tenant_id", tenantID, "error", touchErr)
+			}
 		}
 
 		var count int

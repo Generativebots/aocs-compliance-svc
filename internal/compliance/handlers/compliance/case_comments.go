@@ -47,7 +47,7 @@ func HandleCreateCaseComment(db database.DB) http.HandlerFunc {
 				body.AuthorID = au.UserID
 			}
 			if body.AuthorID == "" {
-				body.AuthorID = r.Header.Get("X-User-Id")
+				body.AuthorID = auth.GetUserID(r.Context())
 			}
 		}
 		comment := database.CaseComment{

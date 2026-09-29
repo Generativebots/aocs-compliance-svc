@@ -423,12 +423,15 @@ func HandleSubmitHIPAAReport(db database.DB) http.HandlerFunc {
 
 		if err := db.InsertRow(database.TblComplReports, reportRow); err != nil {
 			slog.Warn("Failed to persist report into compl_reports DB (attempting update)", "error", err, "report_id", reportID)
-			_ = db.UpdateRowCompound(database.TblComplReports, "tenant_id", tenantID, "report_id", reportID, map[string]any{
+			if upErr := db.UpdateRowCompound(database.TblComplReports, "tenant_id", tenantID, "report_id", reportID, map[string]any{
 				"status":       "GENERATED",
 				"generated_at": now.Format(time.RFC3339),
 				"generated_by": certifierName,
 				"metadata":     reportRow["metadata"],
-			})
+			}); upErr != nil {
+				slog.Error("hipaa_report: both insert and update failed — report not persisted",
+					"insert_err", err, "update_err", upErr, "report_id", reportID, "tenant_id", tenantID)
+			}
 		}
 
 		slog.Info("HIPAA regulatory report certified and saved to compl_reports DB",

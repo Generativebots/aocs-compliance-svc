@@ -38,7 +38,7 @@ func HandleEscalateCase(db database.DB) http.HandlerFunc {
 		}
 		validate.BindOptional(w, r, &req) // body is optional — continue without reason if missing
 		reason := req.Reason
-		escalatedBy := r.Header.Get("X-User-Id")
+		escalatedBy := auth.GetUserID(r.Context())
 		now := time.Now().UTC().Format(time.RFC3339)
 
 		tenantID, ok := auth.MustGetTenantID(w, r)
@@ -128,7 +128,7 @@ func HandleRejectJuror(db database.DB) http.HandlerFunc {
 		}
 		jurorID := body.JurorID
 		if jurorID == "" {
-			jurorID = r.Header.Get("X-User-Id")
+			jurorID = auth.GetUserID(r.Context())
 		}
 		now := time.Now().UTC().Format(time.RFC3339)
 
