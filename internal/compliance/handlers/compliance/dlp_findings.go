@@ -41,7 +41,8 @@ func HandleListDLPFindings(db database.DB) http.HandlerFunc {
 		if err := db.QueryRowsCtx(r.Context(), database.TblDLPPolicies, colsDLPFinding, "tenant_id", tenantID, &rows); err != nil {
 			// Graceful degradation — return empty array so the UI doesn't crash
 			slog.Error("dlp/findings: list failed", "err", err)
-			respond.OK(w, map[string]any{"findings": []map[string]any{}, "total": 0})
+			// Category-D FIX: frontend expects {"data": [...], "total": N} — was {"findings": [...]}
+			respond.OK(w, map[string]any{"data": []map[string]any{}, "total": 0})
 			return
 		}
 		if rows == nil {
@@ -77,7 +78,8 @@ func HandleListDLPFindings(db database.DB) http.HandlerFunc {
 			rows = filtered
 		}
 
-		respond.OK(w, map[string]any{"findings": rows, "total": len(rows)})
+		// Category-D FIX: frontend expects {"data": [...], "total": N} — was {"findings": [...]}
+		respond.OK(w, map[string]any{"data": rows, "total": len(rows)})
 	}
 }
 

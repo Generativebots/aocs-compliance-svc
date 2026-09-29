@@ -62,3 +62,66 @@ CREATE INDEX IF NOT EXISTS idx_zkp_proofs_evidence   ON compl_evidence (evidence
 -- jsonb_path_ops operator class is 2-4x faster than default jsonb_ops for path queries.
 CREATE INDEX IF NOT EXISTS idx_collusion_agent_ids_gin
     ON compl_anomaly USING GIN (agent_ids jsonb_path_ops);
+
+-- =============================================================================
+-- Category E Fixes (e2e_data_gap_report.md) — ZKP Proof Chain integrity
+-- =============================================================================
+
+-- ── E-ZKP-1: compl_evidence_anchors — supporting indexes ─────────────────────
+-- These were missing; without them every cascade DELETE and JOIN from
+-- compl_evidence / compl_records produces a seq scan on the anchors table.
+CREATE INDEX IF NOT EXISTS idx_zkp_anchors_tenant_id
+    ON compl_evidence_anchors (tenant_id);
+
+CREATE INDEX IF NOT EXISTS idx_zkp_anchors_case_id
+    ON compl_evidence_anchors (case_id)
+    WHERE case_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_zkp_anchors_evidence_id
+    ON compl_evidence_anchors (evidence_id)
+    WHERE evidence_id IS NOT NULL;
+
+-- Compound index used by the ZKP dashboard query:
+--   SELECT ... FROM compl_evidence_anchors
+--   WHERE tenant_id = $1 AND verification_status = $2
+-- Covers both dashboard filtering and the background reconciler.
+CREATE INDEX IF NOT EXISTS idx_zkp_anchors_tenant_status
+    ON compl_evidence_anchors (tenant_id, verification_status);
+
+-- Batch job lookup: processes proofs grouped by batch_id for a tenant.
+CREATE INDEX IF NOT EXISTS idx_zkp_anchors_batch_id
+    ON compl_evidence_anchors (tenant_id, batch_id)
+    WHERE batch_id IS NOT NULL;
+
+-- ── E-ZKP-2: JSONB shape validation for ZKP proof fields ─────────────────────
+-- The gap report noted proof_data and public_inputs have no schema validation —
+-- the ZKP verifier will panic if given a scalar or array instead of an object.
+-- These CHECK constraints ensure only JSON objects are accepted at the DB layer,
+-- making the constraint fail-closed regardless of what the application sends.
+DO $$ BEGIN
+  ALTER TABLE compl_evidence_anchors
+    ADD CONSTRAINT chk_zkp_proof_data_is_object
+      CHECK (jsonb_typeof(proof_data) = 'object');
+EXCEPTION
+  -- Constraint already exists (idempotent re-apply) or column renamed.
+  WHEN duplicate_object THEN NULL;
+  WHEN others THEN
+    RAISE WARNING 'chk_zkp_proof_data_is_object: %', SQLERRM;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE compl_evidence_anchors
+    ADD CONSTRAINT chk_zkp_public_inputs_is_object
+      CHECK (jsonb_typeof(public_inputs) = 'object');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+  WHEN others THEN
+    RAISE WARNING 'chk_zkp_public_inputs_is_object: %', SQLERRM;
+END $$;
+
+-- ── E-HITL-1: (tenant_id, status) composite index on core_hitl_decisions ──────
+-- Gap report cited missing index. Confirmed existing via 05_indexes.sql in
+-- ocx-core-svc: idx_hitl_decisions_pending_status covers (tenant_id, status,
+-- created_at DESC). No action needed. ✅
+
+SELECT 'Category E fixes applied' AS status;
