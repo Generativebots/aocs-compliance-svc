@@ -59,7 +59,8 @@ func registerIntelComplianceRoutes(
 	api.HandleFunc("/violations/{id}/release", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleRestoreViolation(db)))).Methods("POST")
 	api.HandleFunc("/violations/{id}/escalate", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleEscalateViolation(db)))).Methods("POST")
 	api.HandleFunc("/violations/{id}/summary", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(compliance.HandleGetViolationSummary(db)))).Methods("GET")
-	api.HandleFunc("/violations/{id}/comments", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleCreateCaseComment(db)))).Methods("POST")
+	api.HandleFunc("/hitl/cases/{id}/comments", auth.RequireAccess(pc, "hitl", "write", middleware.RequireValidPathVars("id")(compliance.HandleCreateCaseComment(db)))).Methods("POST")
+	api.HandleFunc("/cases/{id}/comments", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleCreateCaseComment(db)))).Methods("POST")
 
 	// ── Sanctions ─────────────────────────────────────────────────────────────
 	api.HandleFunc("/sanctions", auth.RequireAccess(pc, "compliance", "read", compliance.HandleListSanctions(db))).Methods("GET")

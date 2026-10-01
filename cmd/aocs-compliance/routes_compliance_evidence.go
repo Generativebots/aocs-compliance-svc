@@ -50,8 +50,7 @@ func registerComplianceEvidenceRoutes(
 	api.HandleFunc("/zkp/export", auth.RequireAccess(pc, "compliance", "read", compliance.HandleExportVerifiableCredential(db))).Methods("POST")
 	api.HandleFunc("/zkp/batch", auth.RequireAccess(pc, "compliance", "write", compliance.HandleCreateZKPBatchJob(db))).Methods("POST")
 	api.HandleFunc("/zkp/batch/{job_id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("job_id")(compliance.HandleGetZKPBatchJob(db)))).Methods("GET")
-	// Maps to HandleGenerateZKPProof (same as /zkp/generate). GET returns the verifications list.
-	api.HandleFunc("/zkp/proofs", auth.RequireAccess(pc, "analytics", "write", zkp.HandleGenerateZKPProof(db))).Methods("POST")
+	// GET returns the verifications list.
 	api.HandleFunc("/zkp/proofs", auth.RequireAccess(pc, "analytics", "read", zkp.HandleListZKPVerifications(db))).Methods("GET")
 	api.HandleFunc("/zkp/proofs/{id}", auth.RequireAccess(pc, "compliance", "read",
 		middleware.RequireValidPathVars("id")(zkp.HandleGetZKPVerification(db)))).Methods("GET")
@@ -195,18 +194,7 @@ func registerComplianceEvidenceRoutes(
 	api.HandleFunc("/compliance/eu-ai-act/transparency", auth.RequireAccess(pc, "compliance", "write", compliance.HandleSubmitEUAIActDeclaration(db))).Methods("POST")
 	api.HandleFunc("/compliance/eu-ai-act/transparency/status", auth.RequireAccess(pc, "compliance", "read", compliance.HandleGetEUAIActDeclarationStatus(db))).Methods("GET")
 
-	// ── EU AI Act Article 13 — Formal Regulatory Report Artefact ─────────────
-	// Distinct from the interactive card above: these routes produce a downloadable,
-	// SHA-256-hashed, version-locked artefact for formal submission to a supervisory
-	// authority (Article 71) or notified body (Article 43 conformity assessment).
-	// Status lifecycle: DRAFT → FILED (immutable). To supersede, generate a new DRAFT.
-	//
-	// GET  /compliance/regulatory/eu-ai-act/report        — generate Article 13 report (DRAFT)
-	// POST /compliance/regulatory/eu-ai-act/report/submit — file report (DRAFT → FILED)
-	// GET  /compliance/regulatory/eu-ai-act/report/{id}   — retrieve filed report by ID
-	api.HandleFunc("/compliance/regulatory/eu-ai-act/report", auth.RequireAccess(pc, "compliance", "write", regulatory.HandleGenerateEUAIActReport(db, coreClient))).Methods("GET")
-	api.HandleFunc("/compliance/regulatory/eu-ai-act/reports", auth.RequireAccess(pc, "compliance", "write", regulatory.HandleSubmitEUAIActReport(db))).Methods("POST")
-	api.HandleFunc("/compliance/regulatory/eu-ai-act/report/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(regulatory.HandleGetEUAIActReport(db)))).Methods("GET")
+	// (Formal report generation routes are registered in routes_compliance.go)
 
 	// ── HIPAA Security & Privacy Continuous Assessment (45 CFR § 164) ────────
 	// Automated verification replacing manual HIPAA audits: Access control, AES-256-GCM,

@@ -34,6 +34,7 @@ services:
       <<: *common-env
       PORT: "8089"
       SERVICE_NAME: "aocs-compliance"
+      FACTORY_ROUTES_DISABLED: "true"
 
       # ── Supabase ──────────────────────────────────────────────────────────
       SUPABASE_URL: ${SUPABASE_URL}
@@ -76,9 +77,3 @@ services:
       com.aocs.tier: "compliance"
       com.aocs.service: "compliance"
       com.aocs.description: "ZKP, DLP, compliance cases, evidence vault, SOC2/EU AI Act reports"
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8089/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
