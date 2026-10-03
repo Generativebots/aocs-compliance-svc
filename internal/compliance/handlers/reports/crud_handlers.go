@@ -105,97 +105,11 @@ func HandleGetAIProviderConfig(db database.DB) http.HandlerFunc {
 		sysGetByID(w, db, database.TblAIProviderConfigs, "ai_provider_config_id", tenantID, mux.Vars(r)["id"])
 	}
 }
-func HandleCreateAIProviderConfig(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) { return }
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok { return }
-		var body map[string]any
-		if !decodeBody(w, r, &body) { return }
-		body["tenant_id"] = tenantID
-		body["created_at"] = time.Now().UTC()
-		body["updated_at"] = time.Now().UTC()
-		if _, ok := requireField(w, body, "provider_name"); !ok { return }
-		if _, ok := requireField(w, body, "model"); !ok { return }
-		if err := db.InsertRow(database.TblAIProviderConfigs, body); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "create AI provider config failed", err)
-			return
-		}
-		respond.Created(w, body)
-	}
-}
-func HandleUpdateAIProviderConfig(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) { return }
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok { return }
-		id, idOk := respond.MustGetPathParam(w, r, "id")
-		if !idOk { return }
-		var body map[string]any
-		if !decodeBody(w, r, &body) { return }
-		body["updated_at"] = time.Now().UTC()
-		delete(body, "tenant_id"); delete(body, "ai_provider_config_id"); delete(body, "api_key_encrypted")
-		if err := db.UpdateRowCompound(database.TblAIProviderConfigs, "tenant_id", tenantID, "ai_provider_config_id", id, body); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "update failed", err)
-			return
-		}
-		respond.OK(w, map[string]any{"updated": true, "id": id})
-	}
-}
-func HandleDeleteAIProviderConfig(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) { return }
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok { return }
-		id, idOk := respond.MustGetPathParam(w, r, "id")
-		if !idOk { return }
-		if err := db.DeleteRowCompound(database.TblAIProviderConfigs, "tenant_id", tenantID, "ai_provider_config_id", id); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "delete failed", err)
-			return
-		}
-		noContent(w)
-	}
-}
 
 // AGENT ROI METRICS — aocs_agent_roi_metrics  PK: metric_id
 
 func HandleListAgentROIMetrics(db database.DB) http.HandlerFunc {
 	return sysListHandler(database.TblAgentROIMetrics, "*", db)
-}
-func HandleCreateAgentROIMetric(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) { return }
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok { return }
-		var body map[string]any
-		if !decodeBody(w, r, &body) { return }
-		body["tenant_id"] = tenantID
-		body["created_at"] = time.Now().UTC()
-		if _, ok := requireField(w, body, "agent_id"); !ok { return }
-		if err := db.InsertRow(database.TblAgentROIMetrics, body); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "record ROI metric failed", err)
-			return
-		}
-		respond.Created(w, body)
-	}
-}
-func HandleUpdateAgentROIMetric(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) { return }
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok { return }
-		id, idOk := respond.MustGetPathParam(w, r, "id")
-		if !idOk { return }
-		var body map[string]any
-		if !decodeBody(w, r, &body) { return }
-		body["updated_at"] = time.Now().UTC()
-		delete(body, "tenant_id"); delete(body, "metric_id")
-		if err := db.UpdateRowCompound(database.TblAgentROIMetrics, "tenant_id", tenantID, "metric_id", id, body); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "update failed", err)
-			return
-		}
-		respond.OK(w, map[string]any{"updated": true, "id": id})
-	}
 }
 
 // AGENT STATUS TIMELINE — aocs_agent_status_timeline  PK: agent_status_timeline_id
@@ -204,48 +118,12 @@ func HandleUpdateAgentROIMetric(db database.DB) http.HandlerFunc {
 func HandleListAgentStatusTimeline(db database.DB) http.HandlerFunc {
 	return sysListHandler(database.TblCoreAgentStatus, "*", db)
 }
-func HandleCreateAgentStatusEvent(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) { return }
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok { return }
-		var body map[string]any
-		if !decodeBody(w, r, &body) { return }
-		body["tenant_id"] = tenantID
-		body["created_at"] = time.Now().UTC()
-		body["recorded_at"] = time.Now().UTC()
-		if _, ok := requireField(w, body, "agent_id"); !ok { return }
-		if _, ok := requireField(w, body, "new_status"); !ok { return }
-		if err := db.InsertRow(database.TblCoreAgentStatus, body); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "record status event failed", err)
-			return
-		}
-		respond.Created(w, body)
-	}
-}
 
 // CASE LIFECYCLE EVENTS — aocs_case_lifecycle_events  PK: event_id
 // Append-only compliance log — no update/delete
 
 func HandleListCaseLifecycleEvents(db database.DB) http.HandlerFunc {
 	return sysListHandler(database.TblCaseLifecycleEvents, "*", db)
-}
-func HandleCreateCaseLifecycleEvent(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) { return }
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok { return }
-		var body map[string]any
-		if !decodeBody(w, r, &body) { return }
-		body["tenant_id"] = tenantID
-		body["created_at"] = time.Now().UTC()
-		if _, ok := requireField(w, body, "event_type"); !ok { return }
-		if err := db.InsertRow(database.TblCaseLifecycleEvents, body); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "create lifecycle event failed", err)
-			return
-		}
-		respond.Created(w, body)
-	}
 }
 
 // COLLABORATION CHANNELS — aocs_collaboration_channels  PK: channel_id

@@ -65,104 +65,10 @@ func HandleGetTrustTaxClaims(db database.DB) http.HandlerFunc {
 //     Replaces: /impact/assumptions + /impact/estimates + /impact/simulations
 //               + /impact/reports + /impact/templates  (5 → 1)
 
-func HandleGetImpactClaims(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-
-		// OPTIMISED: Was 4 concurrent hits on the same core_evidence table.
-		// Now: 1 query loads all rows, Go partitions by impact_type in a single pass.
-		// NOTE: the real column is impact_type, not record_type (schema verified).
-		var allImpact []map[string]any
-		var reports []map[string]any
-
-		// Expanded projection includes impact_type for partitioning
-		const impactCols = "estimate_id,tenant_id,policy_id,impact_type,impact_score," +
-			"impact_description,current_monthly_cost,a2a_monthly_savings," +
-			"net_monthly_savings,annual_roi,confidence_pct,created_at"
-
-		runConcurrent(r.Context(), []dbQuery{
-			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblCoreEvidence, impactCols, "tenant_id", tenantID, &allImpact)
-			}},
-			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblSharComplianceReports, database.ColsNexusComplianceReports, "tenant_id", tenantID, &reports)
-			}},
-		})
-
-		// Partition by impact_type in one pass — avoids 3 extra DB round-trips.
-		// real column: impact_type (core_evidence schema, verified 2026-07-17)
-		var assumptions, estimates, simulations, templates []map[string]any
-		for _, row := range allImpact {
-			it, _ := row["impact_type"].(string)
-			switch it {
-			case "assumption":
-				assumptions = append(assumptions, row)
-			case "estimate":
-				estimates = append(estimates, row)
-			case "simulation":
-				simulations = append(simulations, row)
-			case "template":
-				templates = append(templates, row)
-			default:
-				// Rows with no impact_type land in estimates (backward compat)
-				estimates = append(estimates, row)
-			}
-		}
-
-		respond.JSON(w, http.StatusOK, map[string]any{
-			"assumptions": orEmpty(assumptions),
-			"estimates":   orEmpty(estimates),
-			"simulations": orEmpty(simulations),
-			"reports":     orEmpty(reports),
-			"templates":   orEmpty(templates),
-		})
-	}
-}
 
 // 18. GOV TESTING DASHBOARD — GET /api/v1/gov/testing/dashboard
 //     Replaces: /gov/tests + /gov/coverage  (2 → 1)
 
-func HandleGetGovernanceTestingClaims(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-
-		var tests []map[string]any
-		var coverage []map[string]any
-
-		runConcurrent(r.Context(), []dbQuery{
-			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblCorePolicies, database.ColsQcorePolicies, "tenant_id", tenantID, &tests)
-			}},
-			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblSharComplianceReports, database.ColsNexusComplianceReports, "tenant_id", tenantID, &coverage)
-			}},
-		})
-
-		var coverageObj map[string]any
-		if len(coverage) > 0 {
-			coverageObj = coverage[0]
-		}
-
-		respond.JSON(w, http.StatusOK, map[string]any{
-			"tests":    orEmpty(tests),
-			"coverage": coverageObj,
-		})
-	}
-}
 
 // 19. MARKETPLACE ANALYTICS DASHBOARD — GET /api/v1/marketplace/analytics/dashboard
 //     Replaces: /marketplace/revenue/analytics + /marketplace/billing/summary  (2 → 1)

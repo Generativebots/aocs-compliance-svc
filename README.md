@@ -55,7 +55,7 @@ Handles cross-ring activation when a tenant purchases the Compliance Vault add-o
 #### Request Body
 ```json
 {
-  "tenant_id": "meridian-insurance",
+  "tenant_id": "00000000-0000-4000-8000-000000000001",
   "module": "compliance",
   "mode": "forward_only",
   "watermark": "2026-09-11T13:00:00Z",

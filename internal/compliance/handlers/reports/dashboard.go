@@ -108,98 +108,10 @@ func HandleGetGRAClaims(db database.DB) http.HandlerFunc {
 // 2. CONTRACTS DASHBOARD — GET /api/v1/contracts/dashboard
 //    Replaces: /contracts/ebcl + /contracts/executions  (2 → 1)
 
-func HandleGetContractsClaims(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-
-		var contracts []map[string]any
-		var executions []map[string]any
-
-		runConcurrent(r.Context(), []dbQuery{
-			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblCoreEbcl, database.ColsNeufaEbclContracts, "tenant_id", tenantID, &contracts)
-			}},
-			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblContractExecs, database.ColsNeufaEbclContractExecutions, "tenant_id", tenantID, &executions)
-			}},
-		})
-
-		respond.JSON(w, http.StatusOK, map[string]any{
-			"contract_records":  orEmpty(contracts),
-			"executions": orEmpty(executions),
-		})
-	}
-}
 
 // 4. ESC / TRI-FACTOR DASHBOARD — GET /api/v1/esc/dashboard
 //    Replaces: /esc/history + /esc/stats + /hitl/decisions  (3 → 1)
 
-func HandleGetEscrowClaims(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-
-		var history []map[string]any
-		var decisions []map[string]any
-
-		runConcurrent(r.Context(), []dbQuery{
-			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblCoreEscrowTxns, database.ColsAocsEscrowTransactions, "tenant_id", tenantID, &history)
-			}},
-			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblCoreHitl, database.ColsHitlDecisions, "tenant_id", tenantID, &decisions)
-			}},
-		})
-
-		// Compute stats from history in-process (no extra DB call)
-		var held, released, expired int
-		var passCount int
-		for _, h := range history {
-			status, _ := h["status"].(string)
-			switch status {
-			case "HELD":
-				held++
-			case "RELEASED":
-				released++
-				if passed, _ := h["tri_factor_passed"].(bool); passed {
-					passCount++
-				}
-			case "EXPIRED":
-				expired++
-			}
-		}
-		total := len(history)
-		passRate := 0.0
-		if total > 0 {
-			passRate = float64(passCount) / float64(total) * 100
-		}
-
-		respond.JSON(w, http.StatusOK, map[string]any{
-			"history":   orEmpty(history),
-			"decisions": orEmpty(decisions),
-			"stats": map[string]any{
-				"held":      held,
-				"released":  released,
-				"expired":   expired,
-				"total":     total,
-				"pass_rate": passRate,
-			},
-		})
-	}
-}
 
 // 5. ACT DASHBOARD — GET /api/v1/act/dashboard
 //    Replaces: /act/versions + /act/deployments + /act/approvals  (3 → 1)
@@ -322,36 +234,6 @@ func HandleGetRLHCClaims(db database.DB) http.HandlerFunc {
 // 8. SECURITY DASHBOARD — GET /api/v1/security/dashboard
 //    Replaces: /security/attacks + /traffic/inspect  (2 → 1)
 
-func HandleGetSecurityClaims(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-
-		var attacks []map[string]any
-		var traffic []map[string]any
-
-		runConcurrent(r.Context(), []dbQuery{
-			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblSharAlerts, database.ColsSentiAlerts, "tenant_id", tenantID, &attacks)
-			}},
-			// nolint:tenant_filter — SuperAdmin dashboard: platform-wide event stream
-			{fn: func() error {
-				return db.QueryRowsWithin90Days(database.TblCoreEvents, database.ColsPlatformEvents, tenantID, &traffic)
-			}},
-		})
-
-		respond.JSON(w, http.StatusOK, map[string]any{
-			"attacks": orEmpty(attacks),
-			"traffic": orEmpty(traffic),
-		})
-	}
-}
 
 // 9. DLP DASHBOARD — GET /api/v1/dlp/dashboard
 //    Replaces: /dlp/status + /dlp/integrations + /marketplace/dlp  (3 → 1)
@@ -440,30 +322,6 @@ func HandleGetAccessClaims(db database.DB) http.HandlerFunc {
 // 11. SOVEREIGNTY DASHBOARD — GET /api/v1/platform/sovereignty/dashboard
 //     Replaces: /platform/tenants + /platform/config  (2 → 1)
 
-func HandleGetSovereigntyClaims(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		var tenants []map[string]any
-		var configs []map[string]any
-
-		runConcurrent(r.Context(), []dbQuery{
-			// nolint:tenant_filter — SuperAdmin dashboard: platform-wide tenant listing
-			{fn: func() error { return db.QueryRowsCtx(r.Context(), database.TblSystTenants, database.ColsAocsTenants, "", "", &tenants) }},
-			// nolint:tenant_filter — SuperAdmin: platform configuration (not tenant-scoped)
-			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblPlatformConfig, database.ColsAocsPlatformConfig, "category", "sovereign", &configs)
-			}},
-		})
-
-		respond.JSON(w, http.StatusOK, map[string]any{
-			"tenants": orEmpty(tenants),
-			"configs": orEmpty(configs),
-		})
-	}
-}
 
 // 12. ANALYTICS DASHBOARD — GET /api/v1/analytics/dashboard
 //     Replaces: analytics/overview + analytics/kpis + analytics/metrics  (3 → 1)
@@ -531,56 +389,6 @@ func HandleGetAnalyticsClaims(db database.DB) http.HandlerFunc {
 // 13. FED DASHBOARD — GET /api/v1/fed/dashboard
 //     Replaces: /fed/nodes + /fed/metrics + /neef/growth + /fed/trust  (4 → 1)
 
-func HandleGetFederationClaims(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		var nodes []map[string]any
-		var trustRelations []map[string]any
-		var growth []map[string]any
-
-		runConcurrent(r.Context(), []dbQuery{
-			// nolint:tenant_filter — SuperAdmin: platform federation registry (global)
-			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblNexusFedPeers, database.ColsNexusFederationPeers, "", "", &nodes)
-			}},
-			// nolint:tenant_filter — SuperAdmin dashboard: cross-tenant trust attestation view
-			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblNexusTrustAttest, database.ColsNexusTrustAttestations, "", "", &trustRelations)
-			}},
-			// nolint:tenant_filter — SuperAdmin dashboard: platform-wide event stream
-			{fn: func() error {
-				return db.QueryRowsGlobalWithin90Days(database.TblCoreEvents, database.ColsPlatformEvents, &growth)
-			}},
-		})
-
-		// result was used as "metrics" (just a raw event row — not federation metrics).
-		// Compute real federation metrics in-process from the already-fetched nodes slice.
-		var activeNodes, inactiveNodes int
-		for _, n := range nodes {
-			if s, _ := n["status"].(string); s == "ACTIVE" {
-				activeNodes++
-			} else {
-				inactiveNodes++
-			}
-		}
-		metricsObj := map[string]any{
-			"total_nodes":    len(nodes),
-			"active_nodes":   activeNodes,
-			"inactive_nodes": inactiveNodes,
-			"total_events":   len(growth),
-		}
-
-		respond.JSON(w, http.StatusOK, map[string]any{
-			"nodes":   orEmpty(nodes),
-			"trust":   orEmpty(trustRelations),
-			"growth":  orEmpty(growth),
-			"metrics": metricsObj,
-		})
-	}
-}
 
 // 14. FED GOV DASHBOARD — GET /api/v1/fed/gov/dashboard
 //     Replaces: /gov/proposals + /gov/committee  (2 → 1)

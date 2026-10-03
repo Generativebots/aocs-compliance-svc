@@ -14,30 +14,6 @@ import (
 	"github.com/ocx/shared/validate"
 )
 
-// GET /import-sources/{id}
-func HandleGetImportSource(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-		id, idOk := respond.MustGetPathParam(w, r, "id")
-		if !idOk {
-			return
-		}
-		var rows []map[string]any
-		if dbErr := db.QueryRowsCompound(database.TblExtcCatalog,
-			"catalog_id,name,tool_type,credential_config,status,last_sync_at,tenant_id,created_at",
-			"catalog_id", id, "tenant_id", tenantID, &rows); dbErr != nil || len(rows) == 0 {
-			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "import source not found")
-			return
-		}
-		respond.JSON(w, http.StatusOK, rows[0])
-	}
-}
 
 // PUT /import-sources/{id}
 func HandleUpdateImportSource(db database.DB) http.HandlerFunc {
@@ -86,24 +62,3 @@ func HandleUpdateImportSource(db database.DB) http.HandlerFunc {
 	}
 }
 
-// DELETE /import-sources/{id}
-func HandleDeleteImportSource(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-		id, idOk := respond.MustGetPathParam(w, r, "id")
-		if !idOk {
-			return
-		}
-		if dbErr := db.SoftDeleteRowCompound(database.TblExtcCatalog, "catalog_id", id, "tenant_id", tenantID); dbErr != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "delete import source", dbErr)
-			return
-		}
-		respond.JSON(w, http.StatusOK, map[string]string{"status": "deleted", "id": id})
-	}
-}

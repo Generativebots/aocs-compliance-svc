@@ -38,34 +38,6 @@ import (
 var verdictCache = ttlcache.New[string, []byte](30 * time.Second)
 
 
-func HandleFleetDeploymentStatus(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-		id := mux.Vars(r)["id"]
-		if id == "" {
-			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing path parameter: id")
-			return
-		}
-		respond.LimitBody(r)
-		var body map[string]any
-		if !validate.Bind(w, r, &body) {
-			return
-		}
-		update := map[string]any{"status": body["status"]}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-		if err := db.UpdateRowCompound(database.TblOpsFleetDeployments, "deployment_id", id, "tenant_id", tenantID, update); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "status update failed", nil)
-			return
-		}
-		respond.JSON(w, http.StatusOK, map[string]string{"status": "updated"})
-	}
-}
 
 // HandleGetAgentSchedule — GET /api/v1/ops/schedules/{id}
 func HandleGetAgentSchedule(db database.DB) http.HandlerFunc {

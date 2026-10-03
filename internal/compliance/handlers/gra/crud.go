@@ -386,100 +386,13 @@ func HandleListGovernanceVotes(db database.DB) http.HandlerFunc {
 	return crudListHandler(db, database.TblCoreGovRounds, "gov_round_id")
 }
 
-func HandleAddCommitteeMember(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
 
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-		// Typed struct — prevents arbitrary column injection into aocs_governance_ledger.
-		var req struct {
-			TransactionID string `json:"transaction_id" validate:"required"`
-			MemberID      string `json:"member_id"      validate:"required"`
-			Role          string `json:"role"`
-		}
-		respond.LimitBody(r)
-		if !validate.Bind(w, r, &req) {
-			return
-		}
-		row := map[string]any{
-			"tenant_id":      tenantID,
-			"transaction_id": req.TransactionID,
-			"member_id":      req.MemberID,
-			"role":           req.Role,
-			"action":         "COMMITTEE_MEMBER_ADD",
-			"previous_hash":  "",
-			"block_hash":     "",
-		}
-		if err := db.InsertRow(database.TblGovernanceLedger, row); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "failed to add committee member", nil)
-			return
-		}
-		respond.Created(w, row)
-	}
-}
-
-// HandleListCommitteeMembers — GET /api/v1/gov/committee/members
-func HandleRemoveCommitteeMember(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-		memberID := mux.Vars(r)["id"]
-		if memberID == "" {
-			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing path parameter: id")
-			return
-		}
-		// Scope delete to tenant
-		if err := db.SoftDeleteRowCompound(database.TblGovernanceLedger, "governance_ledger_id", memberID, "tenant_id", tenantID); err != nil {
-			slog.Error("RemoveCommitteeMember failed", "error", err)
-				respond.InternalError(w, http.StatusInternalServerError, "db operation failed", err)
-				return
-		}
-		respond.OK(w, map[string]string{"status": "removed"})
-	}
-}
 func HandleUpdateCommitteeMember(db database.DB) http.HandlerFunc {
 	return crudUpdateHandler(db, database.TblGovernanceLedger, "governance_ledger_id")
 }
 
 // RULES ENGINE — CRUD
 
-func HandleListRules(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-
-		// core_rules does not exist. /ops/rate-limits uses core_quota.
-		// core_quota PK is tenant_id (one row per tenant).
-		var rows []map[string]any
-		if err := db.QueryRowsCtx(r.Context(), database.TblTenantRateLimits, "tenant_id,tier,requests_per_minute,burst_size,updated_at",
-			"tenant_id", tenantID, &rows); err != nil {
-			// Return empty if no rate limit config for this tenant yet
-			respond.JSON(w, http.StatusOK, []map[string]any{})
-			return
-		}
-		if rows == nil {
-			rows = []map[string]any{}
-		}
-		respond.JSON(w, http.StatusOK, rows)
-	}
-}
 
 func HandleGetRule(db database.DB) http.HandlerFunc {
 	// core_rules does not exist. Rate-limit config is stored in core_quota.
