@@ -53,7 +53,8 @@ func HandleGetDocument(db database.DB) http.HandlerFunc {
 
 		// Also get intents extracted from this document
 		var intents []map[string]any
-		if err := db.QueryRowsCtx(r.Context(), database.TblCoreProcessIntents, database.ColsIAIntent, "tenant_id", tenantID, &intents); err != nil {
+		// SCHEMA FIX (normalization pass): intent rows live in core_intents
+		if err := db.QueryRowsCtx(r.Context(), database.TblIAIntents, database.ColsIAIntent, "tenant_id", tenantID, &intents); err != nil {
 			slog.Error("GetDocument: failed to load extracted intents", "document_id", docID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to load extracted intents", nil)
 			return

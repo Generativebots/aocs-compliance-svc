@@ -131,16 +131,22 @@ func HandleCreateDispute(db database.DB) http.HandlerFunc {
 		}
 		disputeID := generatePlatformID()
 		now := time.Now().UTC().Format(time.RFC3339)
+		// Normalization: a dispute is a compl_cases row (case_type='DISPUTE', via
+		// lv_core_disputes). case_id is the dispute row's own key, so the disputed
+		// case is stored as disputed_case_id; the dispute lifecycle lives in
+		// dispute_status while the case status follows case semantics.
 		if err := db.InsertRow(database.TblCoreDisputes, map[string]any{
-			"dispute_id":   disputeID,
-			"tenant_id":    tenantID,
-			"case_id":      body.CaseID,
-			"agent_id":     body.AgentID,
-			"reason":       body.Reason,
-			"evidence_url": body.EvidenceURL,
-			"status":       "OPEN",
-			"created_at":   now,
-			"updated_at":   now,
+			"dispute_id":       disputeID,
+			"tenant_id":        tenantID,
+			"disputed_case_id": body.CaseID,
+			"agent_id":         body.AgentID,
+			"title":            "Dispute of case " + body.CaseID,
+			"reason":           body.Reason,
+			"evidence_url":     body.EvidenceURL,
+			"dispute_status":   "OPEN",
+			"status":           "OPEN",
+			"created_at":       now,
+			"updated_at":       now,
 		}); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "create dispute", err)
 			return
@@ -187,7 +193,7 @@ func HandleResolveDispute(db database.DB) http.HandlerFunc {
 		now := time.Now().UTC().Format(time.RFC3339)
 		// Verify ownership + current status before mutation
 		var existing []map[string]any
-		if err := db.QueryRowsCompound(database.TblCoreDisputes, "dispute_id,tenant_id,status",
+		if err := db.QueryRowsCompound(database.TblCoreDisputes, "dispute_id,tenant_id,dispute_status AS status",
 			"dispute_id", id, "tenant_id", tenantID, &existing); err != nil || len(existing) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "dispute not found")
 			return
@@ -198,7 +204,8 @@ func HandleResolveDispute(db database.DB) http.HandlerFunc {
 		}
 		if txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
 			return tx.UpdateRowCompound(database.TblCoreDisputes, "dispute_id", id, "tenant_id", tenantID, map[string]any{
-				"status":            body.Verdict,
+				"dispute_status":    body.Verdict, // UPHELD | OVERTURNED
+				"status":            "RESOLVED",   // case lifecycle
 				"resolution":        body.Resolution,
 				"resolved_at":       now,
 				"updated_at":        now,
@@ -241,7 +248,8 @@ func HandleDeleteDispute(db database.DB) http.HandlerFunc {
 		now := time.Now().UTC().Format(time.RFC3339)
 		if txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
 			return tx.UpdateRowCompound(database.TblCoreDisputes, "dispute_id", id, "tenant_id", tenantID, map[string]any{
-				"status":            "WITHDRAWN",
+				"dispute_status":    "WITHDRAWN",
+				"status":            "CLOSED", // case lifecycle
 				"resolved_at":       now,
 				"updated_at":        now,
 			})

@@ -4,7 +4,6 @@
 -- Function names use public schema prefix. Table names use compl_* prefix.
 --
 -- DBA AUDIT FIXES (2026-09-29):
---   REMOVED compl_tenant_baselines and compl_evidence_vault from the FOREACH loop.
 --   Those two tables are defined at the BOTTOM of 01_tables.sql (after the other
 --   compl_* tables). When 04_triggers.sql runs, the FOREACH loop must only reference
 --   tables that already exist. The two late-defined tables are handled explicitly
@@ -77,33 +76,23 @@ END $$;
 CREATE OR REPLACE FUNCTION public.fn_compl_sync_evidence_count()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
-  -- INSERT: increment the target control's count
+  -- SCHEMA FIX: counter lives on compl_obligations (control_id PK), not compl_records.
   IF TG_OP = 'INSERT' AND NEW.control_id IS NOT NULL THEN
-    UPDATE compl_records
-    SET evidence_count = evidence_count + 1
-    WHERE control_id = NEW.control_id;
-
-  -- DELETE: decrement the old control's count (floor at 0)
+    UPDATE compl_obligations SET evidence_count = COALESCE(evidence_count, 0) + 1
+     WHERE control_id = NEW.control_id;
   ELSIF TG_OP = 'DELETE' AND OLD.control_id IS NOT NULL THEN
-    UPDATE compl_records
-    SET evidence_count = GREATEST(0, evidence_count - 1)
-    WHERE control_id = OLD.control_id;
-
-  -- UPDATE: handle control_id re-filing (decrement old, increment new)
-  ELSIF TG_OP = 'UPDATE'
-    AND OLD.control_id IS DISTINCT FROM NEW.control_id THEN
+    UPDATE compl_obligations SET evidence_count = GREATEST(0, COALESCE(evidence_count, 0) - 1)
+     WHERE control_id = OLD.control_id;
+  ELSIF TG_OP = 'UPDATE' AND OLD.control_id IS DISTINCT FROM NEW.control_id THEN
     IF OLD.control_id IS NOT NULL THEN
-      UPDATE compl_records
-      SET evidence_count = GREATEST(0, evidence_count - 1)
-      WHERE control_id = OLD.control_id;
+      UPDATE compl_obligations SET evidence_count = GREATEST(0, COALESCE(evidence_count, 0) - 1)
+       WHERE control_id = OLD.control_id;
     END IF;
     IF NEW.control_id IS NOT NULL THEN
-      UPDATE compl_records
-      SET evidence_count = evidence_count + 1
-      WHERE control_id = NEW.control_id;
+      UPDATE compl_obligations SET evidence_count = COALESCE(evidence_count, 0) + 1
+       WHERE control_id = NEW.control_id;
     END IF;
   END IF;
-
   RETURN COALESCE(NEW, OLD);
 END;
 $$;
@@ -119,3 +108,29 @@ CREATE TRIGGER trg_evidence_count_sync
   FOR EACH ROW EXECUTE FUNCTION public.fn_compl_sync_evidence_count();
 
 SELECT 'compliance triggers deployed' AS status;
+
+-- Moved from ocx-extension-svc 04_triggers.sql (2026-10-03): compl_cases is compliance-owned.
+-- fn_compliance_case_event / sync_agent_open_cases are defined in ocx-core-svc 03_functions/04_triggers.
+-- ── compl_cases: lifecycle events + open_cases sync + updated_at ─────────────
+DROP TRIGGER IF EXISTS trg_compliance_case_events ON compl_cases;
+CREATE TRIGGER trg_compliance_case_events
+    AFTER INSERT OR UPDATE ON compl_cases
+    FOR EACH ROW EXECUTE FUNCTION public.fn_compliance_case_event();
+
+DROP TRIGGER IF EXISTS trg_sync_agent_open_cases ON compl_cases;
+CREATE TRIGGER trg_sync_agent_open_cases
+    AFTER INSERT OR DELETE OR UPDATE ON compl_cases
+    FOR EACH ROW EXECUTE FUNCTION public.sync_agent_open_cases();
+
+DROP TRIGGER IF EXISTS trg_compl_cases_updated_at ON compl_cases;
+CREATE TRIGGER trg_compl_cases_updated_at
+    BEFORE UPDATE ON compl_cases
+    FOR EACH ROW EXECUTE FUNCTION public.trg_set_updated_at();
+
+-- ============================================================================
+-- Logical views (lv_*): INSTEAD OF triggers route INSERT/UPDATE/DELETE
+-- to the host table. lv_dml args: host, host PK, discriminator column,
+-- discriminator value, payload column, {view_column: host_column} synonyms.
+-- ============================================================================
+CREATE OR REPLACE TRIGGER lv_core_disputes_dml INSTEAD OF INSERT OR DELETE OR UPDATE ON public.lv_core_disputes FOR EACH ROW EXECUTE FUNCTION public.lv_dml('compl_cases', 'case_id', 'case_type', 'DISPUTE', 'metadata', '{"reason": "description", "resolution": "decision"}');
+CREATE OR REPLACE TRIGGER lv_core_gdpr_requests_dml INSTEAD OF INSERT OR DELETE OR UPDATE ON public.lv_core_gdpr_requests FOR EACH ROW EXECUTE FUNCTION public.lv_dml('compl_cases', 'case_id', 'case_type', 'GDPR_REQUEST', 'metadata', '{"request_id": "case_id"}');

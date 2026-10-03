@@ -351,7 +351,7 @@ func complianceAddComment(db database.DB) http.HandlerFunc {
 			"case_id":   id,
 			"tenant_id": tenantID,
 			"author_id": authorID,
-			"body":      commentText,
+			"content":   commentText, // compl_case_comments.content (was "body": 42703)
 		}
 		if err := db.InsertRow(database.TblCaseComments, comment); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "comment failed", nil)

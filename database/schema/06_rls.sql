@@ -62,7 +62,7 @@ DO $$ DECLARE t TEXT; BEGIN
     EXECUTE format('DROP POLICY IF EXISTS superadmin_all ON %I', t);
     EXECUTE format(
       'CREATE POLICY superadmin_all ON %I '
-      'USING ((auth.jwt()->>''app_metadata''->>''is_super_admin'')::boolean = true)',
+      'USING ((auth.jwt()->''app_metadata''->>''is_super_admin'')::boolean = true)',
       t
     );
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON %I', t);
@@ -78,7 +78,6 @@ END $$;
 DROP POLICY IF EXISTS idempotency_log_service_role ON compl_idempotency_log;
 CREATE POLICY idempotency_log_service_role ON compl_idempotency_log
     FOR ALL TO service_role USING (true) WITH CHECK (true);
-
 
 -- ── platform_signing_keys — superadmin only (no tenant_id column) ────────────
 DROP POLICY IF EXISTS signing_keys_superadmin_only ON compl_signing_keys;
@@ -106,3 +105,19 @@ GRANT SELECT ON
     compl_policy_violations, compl_regulatory, compl_policy_exceptions,
     compl_risk_assessments, compl_cases, compl_tenant_baselines, compl_evidence_vault
     TO authenticated, svc_platform;
+
+-- Logical views (lv_*): same grants as their host table.
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.lv_core_disputes TO aocs_app;
+GRANT SELECT ON public.lv_core_disputes TO authenticated;
+GRANT DELETE, INSERT, SELECT, UPDATE ON public.lv_core_disputes TO service_role;
+GRANT DELETE, INSERT, SELECT, UPDATE ON public.lv_core_disputes TO svc_compliance;
+GRANT DELETE, INSERT, SELECT, UPDATE ON public.lv_core_disputes TO svc_core;
+GRANT SELECT ON public.lv_core_disputes TO svc_platform;
+GRANT DELETE, INSERT, SELECT, UPDATE ON public.lv_core_disputes TO svc_system;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.lv_core_gdpr_requests TO aocs_app;
+GRANT SELECT ON public.lv_core_gdpr_requests TO authenticated;
+GRANT DELETE, INSERT, SELECT, UPDATE ON public.lv_core_gdpr_requests TO service_role;
+GRANT DELETE, INSERT, SELECT, UPDATE ON public.lv_core_gdpr_requests TO svc_compliance;
+GRANT DELETE, INSERT, SELECT, UPDATE ON public.lv_core_gdpr_requests TO svc_core;
+GRANT SELECT ON public.lv_core_gdpr_requests TO svc_platform;
+GRANT DELETE, INSERT, SELECT, UPDATE ON public.lv_core_gdpr_requests TO svc_system;

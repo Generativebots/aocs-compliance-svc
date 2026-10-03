@@ -7,7 +7,6 @@
 -- Run AFTER: Ring 0 (aocs-system-svc) migrations
 -- =============================================================================
 
-
 -- ── compl_records ─────────────────────────────────────────
 -- Primary compliance case tracking table.
 -- Links to Ring 1 via TEXT IDs (agent_id, hitl_decision_id, policy_id).
@@ -78,7 +77,7 @@ CREATE TABLE IF NOT EXISTS compl_evidence (
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
     case_id             TEXT        REFERENCES compl_records(case_id) ON DELETE SET NULL,
-    control_id          TEXT        REFERENCES compl_records(control_id) ON DELETE SET NULL,
+    control_id          TEXT        REFERENCES compl_obligations(control_id) ON DELETE SET NULL,
     -- Ring 1 TEXT references
     agent_id            TEXT,
     execution_id        TEXT,
@@ -100,7 +99,10 @@ CREATE TABLE IF NOT EXISTS compl_evidence (
     control_refs        TEXT[]      NOT NULL DEFAULT '{}',
     metadata            JSONB       NOT NULL DEFAULT '{}',
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    action_type text,
+    prev_hash text,
+    status text
 );
 
 -- ── compl_evidence ────────────────────────────────────────────────
@@ -127,7 +129,9 @@ CREATE TABLE IF NOT EXISTS compl_evidence_anchors (
     expires_at          TIMESTAMPTZ,
     batch_id            TEXT,
     metadata            JSONB       NOT NULL DEFAULT '{}',
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_zkp_proof_data_is_object CHECK ((jsonb_typeof(proof_data) = 'object'::text)),
+    CONSTRAINT chk_zkp_public_inputs_is_object CHECK ((jsonb_typeof(public_inputs) = 'object'::text))
 );
 
 -- ── compl_dlp_integrations ─────────────────────────────────────────────
@@ -179,7 +183,12 @@ CREATE TABLE IF NOT EXISTS compl_reports (
     generated_by        TEXT        NOT NULL DEFAULT 'system',
     metadata            JSONB       NOT NULL DEFAULT '{}',
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    certifier_name text,
+    data jsonb,
+    framework text,
+    passed_controls integer,
+    total_controls integer
 );
 
 -- ── compl_case_comments ────────────────────────────────────────────
@@ -234,7 +243,6 @@ CREATE TABLE IF NOT EXISTS compl_anomaly (
 CREATE INDEX IF NOT EXISTS idx_collusion_ip_tenant
     ON compl_anomaly (tenant_id);
 
-
 -- ── DBA Audit Fixes (applied 2026-09-04) ─────────────────────────────────────────────
 -- M2: syst_tenants defaults (data_residency_region, last_config_changed_by) → folded
 --     inline into aocs-system-svc/database/schema/01_tables.sql
@@ -266,7 +274,9 @@ CREATE TABLE IF NOT EXISTS compl_policy_violations (
     detected_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     resolved_at         TIMESTAMPTZ,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    details jsonb,
+    policy_name text
 );
 
 CREATE TABLE IF NOT EXISTS compl_regulatory (
@@ -336,12 +346,12 @@ CREATE TABLE IF NOT EXISTS compl_cases (
     assessment_id       TEXT,
     -- Case fields
     case_type           TEXT        NOT NULL DEFAULT 'COMPLIANCE'
-                            CHECK (case_type = ANY (ARRAY['COMPLIANCE','DISPUTE','ESCALATION','AUDIT','GOVERNANCE','RISK','SECURITY','FRAUD'])),
+                            CHECK (case_type = ANY (ARRAY['COMPLIANCE','DISPUTE','ESCALATION','AUDIT','GOVERNANCE','RISK','SECURITY','FRAUD','GDPR_REQUEST'])),
     status              TEXT        NOT NULL DEFAULT 'OPEN'
                             CHECK (status = ANY (ARRAY['OPEN','INVESTIGATING','RESOLVED','CLOSED','ARCHIVED'])),
     severity            TEXT        NOT NULL DEFAULT 'MEDIUM'
                             CHECK (severity = ANY (ARRAY['LOW','MEDIUM','HIGH','CRITICAL'])),
-    title               TEXT        NOT NULL,
+    title               TEXT,
     description         TEXT,
     evidence_ids        JSONB       NOT NULL DEFAULT '[]',
     remediations        JSONB       NOT NULL DEFAULT '[]',
@@ -370,12 +380,20 @@ CREATE TABLE IF NOT EXISTS compl_cases (
     -- Audit
     metadata            JSONB       NOT NULL DEFAULT '{}',
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    control_ref text,
+    framework text,
+    resolved_at timestamp with time zone,
+    CONSTRAINT lv_nn_title CHECK (((title IS NOT NULL) OR (case_type = ANY ('{DISPUTE,GDPR_REQUEST}'::text[]))))
 );
 
 COMMENT ON TABLE compl_cases IS
     'Ring 3 (FeatureCompliance): Compliance cases moved from ocx-extension-svc/extc_compliance_cases. '
     'Requires FeatureCompliance in tenant JWT. All Ring 2 FKs are TEXT-only (cross-DB boundary).';
+
+-- SCHEMA FIX (normalization pass): GDPR Art.17 requests are compl_cases rows
+-- (case_type = 'GDPR_REQUEST', view lv_core_gdpr_requests). Upgrade the CHECK on
+-- databases created before GDPR_REQUEST was added to the inline definition.
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_compliance_cases_dedup
     ON compl_cases (dedup_key) WHERE dedup_key IS NOT NULL;

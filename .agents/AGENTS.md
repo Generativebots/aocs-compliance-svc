@@ -38,8 +38,8 @@ Compliance **will 403** every request if the tenant's JWT does not include `"com
 ## Database
 
 - **Same Supabase project** as System, Extension, and Core
-- **Schema**: `compliance` (NOT `public`)
-- **DATABASE_URL** must include `search_path=compliance,public`
+- **Schema**: `public` (all services share the public schema; tables are prefixed `compl_`)
+- **DATABASE_URL** must include `search_path=public`
 - **FK to System**: Hard FK to `public.syst_tenants(tenant_id)` — System must exist first
 - **FK to Core**: TEXT-only references (no hard FK) — enforced at application layer
 
@@ -57,6 +57,6 @@ docker compose up -d
 
 1. **PAID Module**: `LicenseFeatureGuard("compliance")` is wired on the ENTIRE `svc.API` router — every request to this service requires the `compliance` feature in the JWT.
 2. **Fail-open on Core**: If Core is down, compliance STILL RECORDS evidence (inbound audit ingestion is not gated by Core availability). Only READS (reports, dashboards) require Core.
-3. **Separate schema**: `compliance.*` tables never pollute foundation `public` schema.
+3. **Public schema**: all `compl_*` tables live in `public` (no separate schema).
 4. **ZKP proofs**: Ed25519 signatures + Merkle chain ensure tamper-evidence.
 <!-- END:aocs-compliance-svc-rules -->

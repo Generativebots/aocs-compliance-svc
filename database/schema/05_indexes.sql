@@ -17,8 +17,6 @@ CREATE INDEX IF NOT EXISTS idx_comp_evidence_type   ON compl_evidence (evidence_
 CREATE INDEX IF NOT EXISTS idx_comp_evidence_date   ON compl_evidence (collected_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_comp_zkp_tenant      ON compl_evidence (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_comp_zkp_status      ON compl_evidence (verification_status);
-CREATE INDEX IF NOT EXISTS idx_comp_zkp_batch       ON compl_evidence (batch_id);
 
 CREATE INDEX IF NOT EXISTS idx_comp_dlp_tenant      ON compl_dlp_integrations (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_comp_dlp_severity    ON compl_dlp_integrations (severity);
@@ -29,7 +27,6 @@ CREATE INDEX IF NOT EXISTS idx_comp_reports_type    ON compl_reports (report_typ
 CREATE INDEX IF NOT EXISTS idx_comp_reports_date    ON compl_reports (period_start DESC);
 
 CREATE INDEX IF NOT EXISTS idx_comp_controls_tenant ON compl_records (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_comp_controls_fw     ON compl_records (framework);
 CREATE INDEX IF NOT EXISTS idx_comp_controls_status ON compl_records (status);
 
 -- shar_trust indexes removed: table merged into core_trust_events.
@@ -98,26 +95,6 @@ CREATE INDEX IF NOT EXISTS idx_zkp_anchors_batch_id
 -- the ZKP verifier will panic if given a scalar or array instead of an object.
 -- These CHECK constraints ensure only JSON objects are accepted at the DB layer,
 -- making the constraint fail-closed regardless of what the application sends.
-DO $$ BEGIN
-  ALTER TABLE compl_evidence_anchors
-    ADD CONSTRAINT chk_zkp_proof_data_is_object
-      CHECK (jsonb_typeof(proof_data) = 'object');
-EXCEPTION
-  -- Constraint already exists (idempotent re-apply) or column renamed.
-  WHEN duplicate_object THEN NULL;
-  WHEN others THEN
-    RAISE WARNING 'chk_zkp_proof_data_is_object: %', SQLERRM;
-END $$;
-
-DO $$ BEGIN
-  ALTER TABLE compl_evidence_anchors
-    ADD CONSTRAINT chk_zkp_public_inputs_is_object
-      CHECK (jsonb_typeof(public_inputs) = 'object');
-EXCEPTION
-  WHEN duplicate_object THEN NULL;
-  WHEN others THEN
-    RAISE WARNING 'chk_zkp_public_inputs_is_object: %', SQLERRM;
-END $$;
 
 -- ── E-HITL-1: (tenant_id, status) composite index on core_hitl_decisions ──────
 -- Gap report cited missing index. Confirmed existing via 05_indexes.sql in
@@ -125,3 +102,23 @@ END $$;
 -- created_at DESC). No action needed. ✅
 
 SELECT 'Category E fixes applied' AS status;
+
+-- Moved from ocx-extension-svc 05_indexes.sql (2026-10-03): compl_cases is compliance-owned.
+CREATE INDEX IF NOT EXISTS idx_ocx_compliance_cases_tenant ON compl_cases USING btree (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_compliance_cases_agent_id ON compl_cases USING btree (agent_id);
+CREATE INDEX IF NOT EXISTS idx_compliance_cases_assignee ON compl_cases USING btree (tenant_id, assigned_to, status) WHERE (assigned_to IS NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_compliance_cases_dedup ON compl_cases USING btree (dedup_key) WHERE (dedup_key IS NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_compliance_cases_enforcement_id ON compl_cases USING btree (enforcement_action_id);
+CREATE INDEX IF NOT EXISTS idx_compliance_cases_hitl_decision_id ON compl_cases USING btree (hitl_decision_id) WHERE (hitl_decision_id IS NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_compliance_cases_policy_id ON compl_cases USING btree (policy_id);
+CREATE INDEX IF NOT EXISTS idx_compliance_cases_severity ON compl_cases USING btree (tenant_id, severity, created_at DESC) WHERE (severity IS NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_compliance_cases_status ON compl_cases USING btree (tenant_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_compliance_cases_tenant_status ON compl_cases USING btree (tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_compliance_cases_type ON compl_cases USING btree (tenant_id, case_type, status);
+CREATE INDEX IF NOT EXISTS idx_compliance_tenant_type_status ON compl_cases USING btree (tenant_id, case_type, status, created_at DESC);
+
+-- ============================================================================
+-- Discriminator indexes for the lv_* logical views (tenant_id, subtype)
+-- ============================================================================
+CREATE INDEX IF NOT EXISTS idx_compl_cases_case_type ON compl_cases (tenant_id, case_type) WHERE (case_type IS NOT NULL)
+;

@@ -491,13 +491,17 @@ func HandleCreateDLPIntegration(store *DLPStore) http.HandlerFunc {
 		intg.EventCount = 0
 
 		// Persist via ocx-core-svc API (boundary enforcement: no direct senti_dlp_integrations writes)
+		// SCHEMA FIX (normalization pass): core_dlp_integrations.provider has a
+		// CHECK (INTERNAL|GOOGLE_DLP|AWS_MACIE|AZURE_PURVIEW|CUSTOM); vendor slugs
+		// such as "symantec" violated it. Store the canonical code and keep the
+		// vendor slug in config.
 		row := map[string]any{
 			"tenant_id":   tenantID,
 			"name":        intg.Name,
-			"provider":    intg.Provider,
+			"provider":    dlpProviderCode(intg.Provider),
+			"config":      map[string]any{"vendor": intg.Provider},
 			"webhook_url": intg.WebhookURL,
 			"api_key":     intg.APIKey,
-			"enabled":     true,
 			"is_active":   true,
 		}
 		if store.coreClient != nil {
@@ -672,5 +676,22 @@ func HandleUpdateDLPIntegration(store *DLPStore) http.HandlerFunc {
 			"status": "updated",
 			"id":     integrationID,
 		})
+	}
+}
+
+// dlpProviderCode maps a vendor slug onto the core_dlp_integrations.provider
+// CHECK domain. Unknown vendors are CUSTOM (slug preserved in config.vendor).
+func dlpProviderCode(vendor string) string {
+	switch strings.ToLower(strings.TrimSpace(vendor)) {
+	case "internal", "ocx":
+		return "INTERNAL"
+	case "google", "google_dlp", "gcp", "gcp_dlp":
+		return "GOOGLE_DLP"
+	case "aws", "aws_macie", "macie":
+		return "AWS_MACIE"
+	case "microsoft", "azure", "purview", "azure_purview", "microsoft_purview":
+		return "AZURE_PURVIEW"
+	default:
+		return "CUSTOM"
 	}
 }
