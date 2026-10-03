@@ -397,8 +397,6 @@ COMMENT ON TABLE compl_cases IS
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_compliance_cases_dedup
     ON compl_cases (dedup_key) WHERE dedup_key IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_compliance_cases_tenant_status
-    ON compl_cases (tenant_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_compliance_cases_type
     ON compl_cases (tenant_id, case_type, status);
 CREATE INDEX IF NOT EXISTS idx_compliance_cases_agent_id
@@ -426,8 +424,6 @@ CREATE TABLE IF NOT EXISTS compl_tenant_baselines (
     CONSTRAINT uq_compliance_baseline_tenant UNIQUE (tenant_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_compliance_baseline_tenant
-    ON compl_tenant_baselines (tenant_id);
 
 -- ── compl_evidence_vault — seeded by AGENT_REGISTERED ────────────
 -- Per-agent evidence registry seeded when a new agent is registered in Ring 2.

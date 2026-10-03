@@ -16,7 +16,6 @@ CREATE INDEX IF NOT EXISTS idx_comp_evidence_agent  ON compl_evidence (agent_id)
 CREATE INDEX IF NOT EXISTS idx_comp_evidence_type   ON compl_evidence (evidence_type);
 CREATE INDEX IF NOT EXISTS idx_comp_evidence_date   ON compl_evidence (collected_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_comp_zkp_tenant      ON compl_evidence (tenant_id);
 
 CREATE INDEX IF NOT EXISTS idx_comp_dlp_tenant      ON compl_dlp_integrations (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_comp_dlp_severity    ON compl_dlp_integrations (severity);
@@ -26,8 +25,6 @@ CREATE INDEX IF NOT EXISTS idx_comp_reports_tenant  ON compl_reports (tenant_id)
 CREATE INDEX IF NOT EXISTS idx_comp_reports_type    ON compl_reports (report_type);
 CREATE INDEX IF NOT EXISTS idx_comp_reports_date    ON compl_reports (period_start DESC);
 
-CREATE INDEX IF NOT EXISTS idx_comp_controls_tenant ON compl_records (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_comp_controls_status ON compl_records (status);
 
 -- shar_trust indexes removed: table merged into core_trust_events.
 
@@ -41,7 +38,6 @@ CREATE INDEX IF NOT EXISTS idx_case_comments_case_id   ON compl_case_comments (c
 CREATE INDEX IF NOT EXISTS idx_case_comments_tenant_id ON compl_case_comments (tenant_id);
 
 -- core_dlp_integrations
-CREATE INDEX IF NOT EXISTS idx_dlp_findings_tenant_id  ON compl_dlp_integrations (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_dlp_findings_case_id    ON compl_dlp_integrations (case_id);
 
 -- core_evidence chain traversal
@@ -51,9 +47,6 @@ CREATE INDEX IF NOT EXISTS idx_evidence_prev_id        ON compl_evidence (prev_e
 -- shar_trust compound index removed: table merged into core_trust_events.
 
 -- core_evidence (ZKP batch jobs join on all three)
-CREATE INDEX IF NOT EXISTS idx_zkp_proofs_tenant     ON compl_evidence (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_zkp_proofs_case_id    ON compl_evidence (case_id);
-CREATE INDEX IF NOT EXISTS idx_zkp_proofs_evidence   ON compl_evidence (evidence_id);
 
 -- GIN index on agent_ids JSONB (for @> containment queries during collusion detection)
 -- jsonb_path_ops operator class is 2-4x faster than default jsonb_ops for path queries.
@@ -113,7 +106,6 @@ CREATE INDEX IF NOT EXISTS idx_compliance_cases_hitl_decision_id ON compl_cases 
 CREATE INDEX IF NOT EXISTS idx_compliance_cases_policy_id ON compl_cases USING btree (policy_id);
 CREATE INDEX IF NOT EXISTS idx_compliance_cases_severity ON compl_cases USING btree (tenant_id, severity, created_at DESC) WHERE (severity IS NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_compliance_cases_status ON compl_cases USING btree (tenant_id, status, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_compliance_cases_tenant_status ON compl_cases USING btree (tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_compliance_cases_type ON compl_cases USING btree (tenant_id, case_type, status);
 CREATE INDEX IF NOT EXISTS idx_compliance_tenant_type_status ON compl_cases USING btree (tenant_id, case_type, status, created_at DESC);
 
