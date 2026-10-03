@@ -12,9 +12,11 @@ package compliance
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
+
 	"github.com/gorilla/mux"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
@@ -96,7 +98,7 @@ func HandleCreateDLPFinding(db database.DB) http.HandlerFunc {
 		respond.LimitBody(r)
 
 		var req CreateDLPFindingRequest
-	// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
+		// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &req) {
 			return
 		}
@@ -135,11 +137,11 @@ func HandleCreateDLPFinding(db database.DB) http.HandlerFunc {
 		findingID := generatePlatformID()
 		finding := map[string]any{
 			"audit_log_id": findingID,
-			"tenant_id":   tenantID,
-			"action_type": "dlp.finding",
-			"severity":    req.Severity,
-			"description": req.Description,
-			"metadata":    string(metaJSON),
+			"tenant_id":    tenantID,
+			"action_type":  "dlp.finding",
+			"severity":     req.Severity,
+			"description":  req.Description,
+			"metadata":     string(metaJSON),
 		}
 		if err := db.InsertRow(database.TblCoreAudit, finding); err != nil {
 			slog.Error("dlp/findings: create failed", "err", err)
@@ -154,6 +156,39 @@ func HandleCreateDLPFinding(db database.DB) http.HandlerFunc {
 	}
 }
 
+// colsDLPFindingRecord — lv_core_audit columns for a single finding
+// (schema-contract checked). Status/rule/source live in metadata.
+const colsDLPFindingRecord = "audit_log_id,tenant_id,action_type,severity,entity_type,entity_id," +
+	"actor_id,description,metadata,created_at,updated_at"
+
+// dlpFindingActionType is the core_audit discriminator for DLP findings.
+const dlpFindingActionType = "dlp.finding"
+
+// errDLPFindingNotFound distinguishes "no such finding" from read failures.
+var errDLPFindingNotFound = errors.New("dlp finding not found")
+
+// compoundReader is the single DB capability loadDLPFinding needs.
+type compoundReader interface {
+	QueryRowsCompound(table, selectCols, col1, val1, col2, val2 string, dest interface{}) error
+}
+
+// loadDLPFinding reads one finding scoped to tenantID. It returns
+// errDLPFindingNotFound when the row is absent or is not a DLP finding, and
+// the underlying error when the read itself fails.
+func loadDLPFinding(db compoundReader, tenantID, findingID string) (map[string]any, error) {
+	var rows []map[string]any
+	if err := db.QueryRowsCompound(database.TblCoreAudit, colsDLPFindingRecord,
+		"audit_log_id", findingID, "tenant_id", tenantID, &rows); err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		if at, _ := row["action_type"].(string); at == dlpFindingActionType {
+			return row, nil
+		}
+	}
+	return nil, errDLPFindingNotFound
+}
+
 // HandleGetDLPFinding — GET /dlp/findings/{id}
 func HandleGetDLPFinding(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -164,28 +199,16 @@ func HandleGetDLPFinding(db database.DB) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		findingID := mux.Vars(r)["id"]
-
-		// (dlp_policy_id, name, policy_type...) which don't exist in that table.
-		// core_audit has: audit_log_id, action_type, severity, entity_type,
-		// entity_id, actor_id, details, created_at, updated_at.
-		const colsIAAuditLog = "audit_log_id,tenant_id,action_type,severity,entity_type,entity_id,actor_id,details,created_at,updated_at"
-		var rows []map[string]any
-		if err := db.QueryRowsCompound(
-			"core_audit", colsIAAuditLog,
-			"audit_log_id", findingID,
-			"tenant_id", tenantID,
-			&rows,
-		); err != nil || len(rows) == 0 {
+		row, err := loadDLPFinding(db, tenantID, mux.Vars(r)["id"])
+		switch {
+		case errors.Is(err, errDLPFindingNotFound):
 			respond.NotFound(w, "DLP finding not found")
-			return
+		case err != nil:
+			slog.Error("dlp/findings: get failed", "err", err)
+			respond.InternalError(w, http.StatusInternalServerError, "get DLP finding", err)
+		default:
+			respond.OK(w, row)
 		}
-		// Verify it is a dlp finding
-		if at, _ := rows[0]["action_type"].(string); at != "dlp.finding" {
-			respond.NotFound(w, "DLP finding not found")
-			return
-		}
-		respond.OK(w, rows[0])
 	}
 }
 

@@ -67,9 +67,12 @@ func HandleGetComplianceDashboardSummary(db database.DB) http.HandlerFunc {
 
 		// 3. Frameworks from compl_obligations
 		var obligations []map[string]any
-		_ = db.QueryRows(database.TblComplObligations,  //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
-			"control_id, name, control_ref, framework, status, severity",
-			"tenant_id", tenantID, &obligations)
+		if err := db.QueryRows(database.TblComplObligations,
+			"control_id,name,control_ref,framework,status",
+			"tenant_id", tenantID, &obligations); err != nil {
+			slog.Warn("READ_DEGRADED: compliance dashboard obligations read failed",
+				"tenant_id", tenantID, "error", err)
+		}
 		if obligations == nil {
 			obligations = []map[string]any{}
 		}

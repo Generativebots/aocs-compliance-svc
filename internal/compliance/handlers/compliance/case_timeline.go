@@ -23,9 +23,11 @@ import (
 
 const tblCaseEvents = "core_events"
 
+// colsCaseEvents — core_events columns (schema-contract checked). core_events
+// has no actor_type or notes column; the event's free text is reason.
 const colsCaseEvents = `event_id, case_id, case_type, tenant_id,
 	event_type, from_status, to_status,
-	actor_id, actor_type, notes, metadata, occurred_at`
+	actor_id, reason AS notes, metadata, occurred_at`
 
 // HandleGetCaseTimeline returns the full timeseries of events for a compliance case.
 // GET /api/v1/hitl/cases/{case_id}/timeline
