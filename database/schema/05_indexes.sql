@@ -28,7 +28,6 @@ CREATE INDEX IF NOT EXISTS idx_comp_reports_date    ON compl_reports (period_sta
 
 -- shar_trust indexes removed: table merged into core_trust_events.
 
-SELECT 'compliance indexes created' AS status;
 
 -- Relational integrity: every FK column must have a supporting index.
 -- Missing these caused seq scans on cascade deletes and JOIN queries.
@@ -60,8 +59,6 @@ CREATE INDEX IF NOT EXISTS idx_collusion_agent_ids_gin
 -- ── E-ZKP-1: compl_evidence_anchors — supporting indexes ─────────────────────
 -- These were missing; without them every cascade DELETE and JOIN from
 -- compl_evidence / compl_records produces a seq scan on the anchors table.
-CREATE INDEX IF NOT EXISTS idx_zkp_anchors_tenant_id
-    ON compl_evidence_anchors (tenant_id);
 
 CREATE INDEX IF NOT EXISTS idx_zkp_anchors_case_id
     ON compl_evidence_anchors (case_id)
@@ -94,10 +91,8 @@ CREATE INDEX IF NOT EXISTS idx_zkp_anchors_batch_id
 -- ocx-core-svc: idx_hitl_decisions_pending_status covers (tenant_id, status,
 -- created_at DESC). No action needed. ✅
 
-SELECT 'Category E fixes applied' AS status;
 
 -- Moved from ocx-extension-svc 05_indexes.sql (2026-10-03): compl_cases is compliance-owned.
-CREATE INDEX IF NOT EXISTS idx_ocx_compliance_cases_tenant ON compl_cases USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_compliance_cases_agent_id ON compl_cases USING btree (agent_id);
 CREATE INDEX IF NOT EXISTS idx_compliance_cases_assignee ON compl_cases USING btree (tenant_id, assigned_to, status) WHERE (assigned_to IS NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_compliance_cases_dedup ON compl_cases USING btree (dedup_key) WHERE (dedup_key IS NOT NULL);
@@ -106,7 +101,6 @@ CREATE INDEX IF NOT EXISTS idx_compliance_cases_hitl_decision_id ON compl_cases 
 CREATE INDEX IF NOT EXISTS idx_compliance_cases_policy_id ON compl_cases USING btree (policy_id);
 CREATE INDEX IF NOT EXISTS idx_compliance_cases_severity ON compl_cases USING btree (tenant_id, severity, created_at DESC) WHERE (severity IS NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_compliance_cases_status ON compl_cases USING btree (tenant_id, status, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_compliance_cases_type ON compl_cases USING btree (tenant_id, case_type, status);
 CREATE INDEX IF NOT EXISTS idx_compliance_tenant_type_status ON compl_cases USING btree (tenant_id, case_type, status, created_at DESC);
 
 -- ============================================================================

@@ -240,8 +240,6 @@ CREATE TABLE IF NOT EXISTS compl_anomaly (
     PRIMARY KEY (tenant_id, ip_address)
 );
 
-CREATE INDEX IF NOT EXISTS idx_collusion_ip_tenant
-    ON compl_anomaly (tenant_id);
 
 -- ── DBA Audit Fixes (applied 2026-09-04) ─────────────────────────────────────────────
 -- M2: syst_tenants defaults (data_residency_region, last_config_changed_by) → folded
@@ -397,8 +395,6 @@ COMMENT ON TABLE compl_cases IS
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_compliance_cases_dedup
     ON compl_cases (dedup_key) WHERE dedup_key IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_compliance_cases_type
-    ON compl_cases (tenant_id, case_type, status);
 CREATE INDEX IF NOT EXISTS idx_compliance_cases_agent_id
     ON compl_cases (agent_id);
 CREATE INDEX IF NOT EXISTS idx_compliance_cases_severity
@@ -445,8 +441,6 @@ CREATE TABLE IF NOT EXISTS compl_evidence_vault (
 
 CREATE INDEX IF NOT EXISTS idx_vault_tenant
     ON compl_evidence_vault (tenant_id, vault_status);
-CREATE INDEX IF NOT EXISTS idx_vault_agent
-    ON compl_evidence_vault (agent_id);
 
 -- ── compl_idempotency_log — Layer 2 consumer guard ─────────────────────
 CREATE TABLE IF NOT EXISTS compl_idempotency_log (

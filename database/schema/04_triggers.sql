@@ -107,7 +107,6 @@ CREATE TRIGGER trg_evidence_count_sync
   AFTER INSERT OR UPDATE OR DELETE ON compl_evidence
   FOR EACH ROW EXECUTE FUNCTION public.fn_compl_sync_evidence_count();
 
-SELECT 'compliance triggers deployed' AS status;
 
 -- Moved from ocx-extension-svc 04_triggers.sql (2026-10-03): compl_cases is compliance-owned.
 -- fn_compliance_case_event / sync_agent_open_cases are defined in ocx-core-svc 03_functions/04_triggers.
