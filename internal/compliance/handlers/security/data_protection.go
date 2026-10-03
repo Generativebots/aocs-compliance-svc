@@ -36,7 +36,7 @@ import (
 func NewDLPStore(db database.DB, coreClient *serviceclient.Client) *DLPStore {
 	s := &DLPStore{
 		db:            db,
-		coreClient:      coreClient,
+		coreClient:    coreClient,
 		monitoredPIDs: make(map[int]string),
 	}
 	// Hydrate in-memory PID map from DB on startup so monitored PIDs
@@ -51,18 +51,23 @@ func (s *DLPStore) LoadFromDB() {
 	if s.db == nil {
 		return
 	}
+	// Metadata is JSONB (an object on the wire): json.RawMessage, not []byte,
+	// which would expect a base64 string and fail on every row.
 	var rows []struct {
-		Metadata []byte `json:"metadata"`
+		Metadata json.RawMessage `json:"metadata"`
 	}
 	// Fetch via ocx-core-svc internal API (boundary enforcement: no direct core_enforcement_actions access)
 	if s.coreClient != nil {
 		actions, err := s.coreClient.ListEnforcementActionsByType(context.Background(), "dlp_pid_monitor")
 		if err != nil {
 			// Non-fatal: PID map starts empty; registered PIDs will be added on next POST
+			slog.Warn("DLP PID hydration failed — monitored PID map starts empty", "error", err)
 			return
 		}
 		for _, a := range actions {
-			rows = append(rows, struct{ Metadata []byte `json:"metadata"` }{Metadata: a.Metadata})
+			rows = append(rows, struct {
+				Metadata json.RawMessage `json:"metadata"`
+			}{Metadata: a.Metadata})
 		}
 	} else {
 		// Fallback: direct DB access only when coreClient is unavailable (e.g. test mode)
