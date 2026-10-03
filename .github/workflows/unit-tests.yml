@@ -1,0 +1,101 @@
+# =============================================================================
+# aocs-compliance-svc — Unit tests (go vet + go test -race)
+# =============================================================================
+# Runs on every push and PR. The repo is checked out next to ocx-shared-go
+# (go.mod: replace ../ocx-shared-go), and the other schema-owning repos are
+# sparse-checked-out (database/schema only) so the schema contract test in
+# internal/schemacontract verifies cross-repo reads instead of skipping them.
+# =============================================================================
+name: Unit tests — aocs-compliance-svc
+
+on:
+  push:
+    branches: [main, dev, develop, "feat/**", "fix/**"]
+  pull_request:
+    branches: [main, dev, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: unit-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: go vet + go test -race
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout aocs-compliance-svc
+        uses: actions/checkout@v4
+        with:
+          path: aocs-compliance-svc
+
+      - name: Checkout ocx-shared-go
+        uses: actions/checkout@v4
+        with:
+          repository: Generativebots/ocx-shared-go
+          ref: dev
+          token: ${{ secrets.REPO_ACCESS_TOKEN }}
+          path: ocx-shared-go
+
+      - name: Checkout aocs-system-svc schema (contract test)
+        uses: actions/checkout@v4
+        with:
+          repository: Generativebots/aocs-system-svc
+          ref: dev
+          token: ${{ secrets.REPO_ACCESS_TOKEN }}
+          path: aocs-system-svc
+          sparse-checkout: database/schema
+
+      - name: Checkout ocx-core-svc schema (contract test)
+        uses: actions/checkout@v4
+        with:
+          repository: Generativebots/ocx-core-svc
+          ref: dev
+          token: ${{ secrets.REPO_ACCESS_TOKEN }}
+          path: ocx-core-svc
+          sparse-checkout: database/schema
+
+      - name: Checkout ocx-extension-svc schema (contract test)
+        uses: actions/checkout@v4
+        with:
+          repository: Generativebots/ocx-extension-svc
+          ref: dev
+          token: ${{ secrets.REPO_ACCESS_TOKEN }}
+          path: ocx-extension-svc
+          sparse-checkout: database/schema
+
+      - name: Checkout ocx-connectors-svc schema (contract test)
+        uses: actions/checkout@v4
+        with:
+          repository: Generativebots/ocx-connectors-svc
+          ref: dev
+          token: ${{ secrets.REPO_ACCESS_TOKEN }}
+          path: ocx-connectors-svc
+          sparse-checkout: database/schema
+
+      - name: Checkout aocs-studio-svc schema (contract test)
+        uses: actions/checkout@v4
+        with:
+          repository: Generativebots/aocs-studio-svc
+          ref: dev
+          token: ${{ secrets.REPO_ACCESS_TOKEN }}
+          path: aocs-studio-svc
+          sparse-checkout: database/schema
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: aocs-compliance-svc/go.mod
+          cache-dependency-path: aocs-compliance-svc/go.sum
+
+      - name: go vet
+        working-directory: aocs-compliance-svc
+        run: go vet ./...
+
+      - name: go test -race
+        working-directory: aocs-compliance-svc
+        env:
+          OCX_ENV: development
+          OCX_REDIS_ENABLED: "false"
+          CORS_ALLOWED_ORIGINS: http://localhost:3000
+        run: go test -race -count=1 -timeout=300s ./...

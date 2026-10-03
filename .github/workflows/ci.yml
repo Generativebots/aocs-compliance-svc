@@ -6,7 +6,7 @@
 #
 # Jobs:
 #   lint-build  — go vet + go build (every push + PR)
-#   test        — go test -race (every push + PR)
+#   (unit tests: see unit-tests.yml)
 #   trivy       — container CVE scan (main branch only)
 # =============================================================================
 name: CI — aocs-compliance-svc
@@ -52,33 +52,7 @@ jobs:
           CGO_ENABLED=0 go build -ldflags="-w -s" -o /dev/null ./cmd/aocs-compliance/...
           echo "✅ aocs-compliance binary builds clean"
 
-  test:
-    name: Unit Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Checkout ocx-shared-go
-        uses: actions/checkout@v4
-        with:
-          repository: Generativebots/ocx-shared-go
-          token: ${{ secrets.REPO_ACCESS_TOKEN }}
-          path: ../ocx-shared-go
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-          cache-dependency-path: go.sum
-
-      - name: go test -race
-        run: go test -race -timeout=120s ./...
-        env:
-          OCX_ENV: development
-          CORS_ALLOWED_ORIGINS: 'http://localhost:3000'
-          OCX_REDIS_ENABLED: 'false'
-          # S2: dummy master key for test (32 bytes = 64 hex chars)
-          PLATFORM_MASTER_KEY: '0000000000000000000000000000000000000000000000000000000000000000'
+  # Unit tests (go vet + go test -race) run in unit-tests.yml.
 
   trivy:
     name: Trivy CVE Scan
