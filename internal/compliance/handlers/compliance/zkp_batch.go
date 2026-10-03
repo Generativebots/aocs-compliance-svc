@@ -213,12 +213,24 @@ func HandleGetComplianceSIEMConfig(db database.DB) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		var rows []map[string]any
-		if err := db.QueryRowsCursor(database.TblCoreTenantCreds, database.ColsSiemConfigs, "tenant_id", tenantID, database.CursorPage{Limit: 200}, &rows); err != nil || len(rows) == 0 {
+		// B7 FIX: shared SIEM config row (core_tenant_creds CUSTOM/"siem").
+		cred, err := database.GetTenantCredentialAny(r.Context(), db, tenantID, database.CredTypeCustom, database.CredProviderSIEM)
+		if err != nil {
 			respond.OK(w, map[string]any{"tenant_id": tenantID, "webhook_url": "", "format": "CEF", "enabled": false})
 			return
 		}
-		respond.OK(w, rows[0])
+		webhook := cred.String("webhook_url")
+		if webhook == "" {
+			webhook = cred.String("endpoint")
+		}
+		respond.OK(w, map[string]any{
+			"tenant_id":         tenantID,
+			"webhook_url":       webhook,
+			"format":            cred.String("format"),
+			"enabled":           cred.IsActive && cred.Bool("enabled"),
+			"has_secret_header": cred.String("secret_header") != "",
+			"updated_at":        cred.UpdatedAt,
+		})
 	}
 }
 
@@ -238,25 +250,13 @@ func HandleUpdateComplianceSIEMConfig(db database.DB) http.HandlerFunc {
 			return
 		}
 		cfg := map[string]any{
-			"tenant_id": tenantID, "webhook_url": body.WebhookURL, "format": body.Format,
-			"enabled": body.Enabled, "secret_header": body.SecretHeader,
+			"webhook_url": body.WebhookURL, "endpoint": body.WebhookURL, "format": body.Format,
+			"enabled": body.Enabled, "is_enabled": body.Enabled,
 		}
-		var ex []map[string]any
-		// L0-E CAT-D FIX: existence check determines INSERT vs UPDATE path.
-		// If this read fails and we default to INSERT, we get a duplicate-key error on every call.
-		// Role enrichment: non-critical — if this fails, user response is returned without roles.
-		readErr := db.QueryRowsCursor(database.TblCoreTenantCreds, "tenant_id", "tenant_id", tenantID, database.CursorPage{Limit: 200}, &ex)
-		if readErr != nil {
-			slog.Error("HandleUpsertSIEMConfig: existence check failed", "tenant_id", tenantID, "error", readErr)
-			respond.ErrorWithCode(w, http.StatusServiceUnavailable, respond.ErrCodeUnavailable, "SIEM config temporarily unavailable — retry")
-			return
+		if body.SecretHeader != "" {
+			cfg["secret_header"] = body.SecretHeader
 		}
-		var err error
-		if len(ex) == 0 {
-			err = db.InsertRow(database.TblSIEMConfigs, cfg)
-		} else {
-			err = db.UpdateRow(database.TblSIEMConfigs, "tenant_id", tenantID, cfg)
-		}
+		_, err := database.MergeTenantCredential(r.Context(), db, tenantID, database.CredTypeCustom, database.CredProviderSIEM, cfg, auth.GetUserID(r.Context()))
 		if err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "save SIEM config", err)
 			return
@@ -275,15 +275,17 @@ func HandleTestSIEMWebhook(db database.DB) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		var rows []map[string]any
-		if err := db.QueryRowsCursor(database.TblCoreTenantCreds, database.ColsSiemConfigs, "tenant_id", tenantID, database.CursorPage{Limit: 200}, &rows); err != nil || len(rows) == 0 {
+		cfg, cerr := database.GetTenantCredential(r.Context(), db, tenantID, database.CredTypeCustom, database.CredProviderSIEM)
+		if cerr != nil {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "no SIEM config found")
 			return
 		}
-		cfg := rows[0]
-		url, _ := cfg["webhook_url"].(string)
-		secret, _ := cfg["secret_header"].(string)
-		format, _ := cfg["format"].(string)
+		url := cfg.String("webhook_url")
+		if url == "" {
+			url = cfg.String("endpoint")
+		}
+		secret := cfg.String("secret_header")
+		format := cfg.String("format")
 		if url == "" {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "webhook_url not configured")
 			return

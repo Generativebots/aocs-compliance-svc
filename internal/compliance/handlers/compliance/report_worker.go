@@ -104,9 +104,8 @@ func generateDailyReports(ctx context.Context, db database.DB, coreClient *servi
 		// Fallback: direct DB only when coreClient is unavailable (e.g. test/offline mode).
 		var tenants []struct {
 			TenantID string `json:"tenant_id"`
-			Slug     string `json:"slug"`
 		}
-		if err := db.QueryRowsLimited(database.TblSystTenants, "tenant_id, slug", "status", "ACTIVE",
+		if err := db.QueryRowsLimited(database.TblSystTenants, "tenant_id", "status", "ACTIVE",
 			database.PageParams{Limit: 200, Offset: 0}, &tenants); err != nil {
 			slog.Error("failed to load tenants (fallback)", "error", err)
 			return

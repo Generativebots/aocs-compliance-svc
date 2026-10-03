@@ -198,43 +198,23 @@ func deliverScheduledReport(ctx context.Context, db database.DB, coreClient *ser
 		PassEnc     string
 		FromEmail   string
 	}
+	// B7 FIX: read the typed SMTP credential directly (core_tenant_creds is in the
+	// shared public schema). The core client path hit GET /tenant/smtp on core,
+	// which core does not serve (system does, and it masks the key), and the DB
+	// fallback selected smtp_* columns that do not exist.
+	_ = coreClient
 	var cfg localSMTP
-	if coreClient != nil {
-		smtpCfg, err := coreClient.GetSMTPConfig(ctx, tenantID)
-		if err != nil || smtpCfg == nil {
-			slog.Warn("scheduled-delivery: no SMTP config via coreClient — skipping", "tenant_id", tenantID)
-			return nil // non-fatal
-		}
-		cfg = localSMTP{
-			Host:      smtpCfg.Host,
-			Port:      smtpCfg.Port,
-			User:      smtpCfg.Username,
-			PassEnc:   smtpCfg.APIKeyEnc,
-			FromEmail: smtpCfg.FromEmail,
-		}
-	} else {
-		type smtpRow struct {
-			SMTPHost    string `json:"smtp_host"`
-			SMTPPort    int    `json:"smtp_port"`
-			SMTPUser    string `json:"smtp_username"`
-			SMTPPassEnc string `json:"smtp_password_enc"`
-			FromEmail   string `json:"from_email"`
-		}
-		var smtpRows []smtpRow
-		if err := db.QueryRowsCtx(ctx, database.TblTenantSMTPConfigs,
-			"smtp_host,smtp_port,smtp_username,smtp_password_enc,from_email",
-			"tenant_id", tenantID, &smtpRows); err != nil || len(smtpRows) == 0 {
-			slog.Warn("scheduled-delivery: no SMTP config (fallback) — skipping", "tenant_id", tenantID)
-			return nil // non-fatal
-		}
-		row := smtpRows[0]
-		cfg = localSMTP{
-			Host:      row.SMTPHost,
-			Port:      row.SMTPPort,
-			User:      row.SMTPUser,
-			PassEnc:   row.SMTPPassEnc,
-			FromEmail: row.FromEmail,
-		}
+	smtpCfg, err := database.LoadTenantSMTP(ctx, db, tenantID)
+	if err != nil {
+		slog.Warn("scheduled-delivery: no SMTP config — skipping", "tenant_id", tenantID, "error", err)
+		return nil // non-fatal
+	}
+	cfg = localSMTP{
+		Host:      smtpCfg.Host,
+		Port:      smtpCfg.Port,
+		User:      smtpCfg.Username,
+		PassEnc:   smtpCfg.APIKeyEnc,
+		FromEmail: smtpCfg.FromEmail,
 	}
 	if cfg.Host == "" {
 		return nil

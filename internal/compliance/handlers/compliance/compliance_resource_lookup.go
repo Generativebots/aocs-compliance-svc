@@ -1,7 +1,12 @@
 package compliance
 
 import (
+	"errors"
 	"net/http"
+
+	"github.com/gorilla/mux"
+	"github.com/ocx/shared/infra/auth"
+	"github.com/ocx/shared/respond"
 
 	"github.com/ocx/shared/infra/byid"
 	"github.com/ocx/shared/infra/database"
@@ -22,10 +27,27 @@ func HandleDeleteComplianceObligation(db *database.SupabaseClient) http.HandlerF
 	return byid.DeleteByID(db, database.TblComplianceObligations, "obligation_id")
 }
 
-// HandleRevokeCredential — POST /compliance/credentials/:id/revoke.
-// Sets status = 'REVOKED' and records the revoker.
+// HandleRevokeCredential — DELETE /compliance/credentials/:id.
+// B7 FIX: core_tenant_creds has no status/revoked_by columns; revocation is
+// is_active=false, scoped to the caller's tenant.
 func HandleRevokeCredential(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.RevokeByID(db, database.TblCredentials, "credential_id")
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID, ok := auth.MustGetTenantID(w, r)
+		if !ok {
+			return
+		}
+		id := mux.Vars(r)["id"]
+		err := database.SetTenantCredentialActiveByID(r.Context(), db, tenantID, id, false)
+		if errors.Is(err, database.ErrCredentialNotFound) {
+			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "credential not found")
+			return
+		}
+		if err != nil {
+			respond.InternalError(w, http.StatusInternalServerError, "revoke credential", err)
+			return
+		}
+		respond.OK(w, map[string]any{"credential_id": id, "is_active": false, "status": "REVOKED"})
+	}
 }
 
 // HandleGetGRAFramework — GET /compliance/gra/frameworks/:id.

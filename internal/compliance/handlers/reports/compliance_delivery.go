@@ -346,22 +346,14 @@ type smtpDeliveryConfig struct {
 // authentication always fails. Fixed: decrypt using AES-GCM + OCX_ENCRYPTION_KEY
 // (same approach as tenant.decryptValue). Falls back to base64 decode when
 // OCX_ENCRYPTION_KEY is not set (matching the original tenant.loadSMTPConfig behavior).
-func loadTenantSMTPForDelivery(_ context.Context, db database.DB, tenantID string) (*smtpDeliveryConfig, error) {
-	type smtpRow struct {
-		Host      string `json:"host"`
-		Port      int    `json:"port"`
-		Username  string `json:"username"`
-		APIKeyEnc string `json:"api_key_enc"`
-		FromEmail string `json:"from_email"`
-		FromName  string `json:"from_name"`
+func loadTenantSMTPForDelivery(ctx context.Context, db database.DB, tenantID string) (*smtpDeliveryConfig, error) {
+	// B7 FIX: SMTP config is a typed SMTP credential in core_tenant_creds
+	// (written by aocs-system-svc tenant/smtp.go). The previous query selected
+	// host/port/... columns that core_tenant_creds does not have.
+	r, err := database.LoadTenantSMTP(ctx, db, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("no SMTP config found for tenant %s: %w", tenantID, err)
 	}
-	var rows []smtpRow
-	if err := db.QueryRows(database.TblTenantSMTPConfigs,
-		"host,port,username,api_key_enc,from_email,from_name",
-		"tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
-		return nil, fmt.Errorf("no SMTP config found for tenant %s", tenantID)
-	}
-	r := rows[0]
 
 	// CQ-04 FIX: Decrypt the stored API key before use.
 	// The tenant SMTP handler (tenant/smtp.go) stores the password via encryptValue()

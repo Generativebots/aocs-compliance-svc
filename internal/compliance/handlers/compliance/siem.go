@@ -6,6 +6,7 @@ package compliance
 // audit references in core_events.
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/ocx/shared/infra/auth"
@@ -24,19 +25,14 @@ func HandleDeleteSIEMConfig(db database.DB) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		// Check config exists first
-		var existing []map[string]any
-		if dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreTenantCreds, database.ColsSiemConfigs, "tenant_id", tenantID, &existing); dbErr != nil || len(existing) == 0 {
+		// B7 FIX: soft-disable the shared SIEM credential (keeps audit trail).
+		err := database.SetTenantCredentialActive(r.Context(), db, tenantID, database.CredTypeCustom, database.CredProviderSIEM, false)
+		if errors.Is(err, database.ErrCredentialNotFound) {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "no SIEM config found for tenant")
 			return
 		}
-		// Soft-delete: disable without removing the audit record
-		updates := map[string]any{
-			"enabled":          false,
-			"webhook_endpoint": "",
-		}
-		if dbErr := db.UpdateRow(database.TblSIEMConfigs, "tenant_id", tenantID, updates); dbErr != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "delete siem config", dbErr)
+		if err != nil {
+			respond.InternalError(w, http.StatusInternalServerError, "delete siem config", err)
 			return
 		}
 		respond.JSON(w, http.StatusOK, map[string]string{"status": "disabled", "tenant_id": tenantID})
