@@ -681,13 +681,7 @@ func HandleAdminCreatePolicy(db database.DB) http.HandlerFunc {
 				if agentID == "" {
 					continue
 				}
-				binding := map[string]any{
-					"tenant_id": tenantID,
-					"policy_id": policyID,
-					"agent_id":  agentID,
-					"bound_by":  "policy-create@aocs",
-					"is_active": true,
-				}
+				binding := database.AgentPolicyBindingRow(tenantID, agentID, policyID, "DEFAULT", "policy-create@aocs")
 				if err := db.InsertRow(database.TblPolicyAgentBindings, binding); err != nil {
 					slog.Warn("HandleAdminCreatePolicy: agent binding failed",
 						"policy_id", policyID, "agent_id", agentID, "error", err)
@@ -699,14 +693,7 @@ func HandleAdminCreatePolicy(db database.DB) http.HandlerFunc {
 				if intentID == "" {
 					continue
 				}
-				binding := map[string]any{
-					"tenant_id":    tenantID,
-					"intent_id":    intentID,
-					"policy_id":    policyID,
-					"binding_type": "enforcement",
-					"is_active":    true,
-					"bound_by":     "policy-create@aocs",
-				}
+				binding := database.IntentPolicyBindingRow(tenantID, intentID, policyID, "REQUIRED", 0, "", "policy-create@aocs")
 				if err := db.InsertRow(database.TblIntentPolicyBindings, binding); err != nil {
 					slog.Warn("HandleAdminCreatePolicy: intent binding failed",
 						"policy_id", policyID, "intent_id", intentID, "error", err)

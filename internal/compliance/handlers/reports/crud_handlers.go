@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/ocx/shared/handlers/factory"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/respond"
@@ -535,40 +536,12 @@ func HandleUpdateActivityExecution(db database.DB) http.HandlerFunc {
 // MCP TENANT CONFIGS — extc_installs  PK: config_id
 
 func HandleCreateMCPTenantConfig(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) { return }
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok { return }
-		var body map[string]any
-		if !decodeBody(w, r, &body) { return }
-		body["tenant_id"] = tenantID
-		body["created_at"] = time.Now().UTC()
-		body["updated_at"] = time.Now().UTC()
-		if _, ok := requireField(w, body, "server_id"); !ok { return }
-		if err := db.InsertRow(database.TblMCPTenantConfigs, body); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "create MCP config failed", err)
-			return
-		}
-		respond.Created(w, body)
-	}
+	// B7: typed MCP store (extc_installs.config.vars / core_mcp_log); shared with core+compliance.
+	return factory.MCPTenantConfigCreate(db)
 }
 func HandleUpdateMCPTenantConfig(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) { return }
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok { return }
-		id, idOk := respond.MustGetPathParam(w, r, "id")
-		if !idOk { return }
-		var body map[string]any
-		if !decodeBody(w, r, &body) { return }
-		body["updated_at"] = time.Now().UTC()
-		delete(body, "tenant_id"); delete(body, "config_id")
-		if err := db.UpdateRowCompound(database.TblMCPTenantConfigs, "tenant_id", tenantID, "config_id", id, body); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "update failed", err)
-			return
-		}
-		respond.OK(w, map[string]any{"updated": true, "id": id})
-	}
+	// B7: typed MCP store (extc_installs.config.vars / core_mcp_log); shared with core+compliance.
+	return factory.MCPTenantConfigUpdate(db)
 }
 
 // EXPORT HISTORY — aocs_export_history  PK: export_id

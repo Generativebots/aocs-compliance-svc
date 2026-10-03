@@ -70,12 +70,9 @@ func HandleListFederationPeers(db database.DB) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		var rows []map[string]any
-		// Filter by record_type='PEER' to avoid returning HANDSHAKE/CONSENT/etc rows
-		if err := db.QueryRowsCompound(database.TblNexusFedPeers,
-			"record_id,peer_id,peer_name,status,trust_level,region,organization,endpoint_url,"+
-				"handshake_count,failure_count,last_handshake_at,created_at,updated_at",
-			"tenant_id", tenantID, "record_type", "PEER", &rows); err != nil {
+		// B7 FIX: peers live in core_a2a_peers (connection_type FEDERATION).
+		rows, err := database.ListFedPeers(r.Context(), db, tenantID, database.FedPeerKindPeer)
+		if err != nil {
 			slog.Error("HandleListFederationPeers: query failed", "tenant", tenantID, "err", err)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to list federation peers", err)
 			return
@@ -89,7 +86,18 @@ func HandleListFederationPeers(db database.DB) http.HandlerFunc {
 
 // HandleAdminGetFederationPeer — GET /federation/peers/{id}
 func HandleAdminGetFederationPeer(db database.DB) http.HandlerFunc {
-	return crudGetHandler(db, database.TblNexusFedPeers, "peer_id")
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID, ok := auth.MustGetTenantID(w, r)
+		if !ok {
+			return
+		}
+		row, err := database.GetFedPeer(r.Context(), db, tenantID, database.FedPeerKindPeer, mux.Vars(r)["id"])
+		if err != nil {
+			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "federation peer not found")
+			return
+		}
+		respond.JSON(w, http.StatusOK, row)
+	}
 }
 
 // Superadmin Cross-Tenant Views

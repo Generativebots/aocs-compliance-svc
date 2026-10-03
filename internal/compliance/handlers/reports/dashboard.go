@@ -299,7 +299,10 @@ func HandleGetAccessClaims(db database.DB) http.HandlerFunc {
 		runConcurrent(r.Context(), []dbQuery{
 			// nolint:tenant_filter — SuperAdmin RBAC view: cross-tenant permission data
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblSystRolePerms, database.ColsAocsDepartmentPermissions, "", "", &permissions)
+				// B7: syst_role_perms is dropped — expand syst_roles.permissions (platform roles).
+				rows, err := database.ListRolePerms(r.Context(), db, "", "")
+				permissions = rows
+				return err
 			}},
 			// nolint:tenant_filter — SuperAdmin RBAC view: cross-tenant roles
 			{fn: func() error {

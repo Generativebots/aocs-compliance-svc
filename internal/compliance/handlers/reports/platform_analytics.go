@@ -41,6 +41,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/ocx/shared/handlers/factory"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/respond"
@@ -158,11 +159,13 @@ func HandleListIAActivities(db database.DB) http.HandlerFunc {
 // Lists active MCP server sessions. Each session represents an active
 // connection between an agent and a connected MCP tool server.
 func HandleListMCPServerSessions(db database.DB) http.HandlerFunc {
-	return sysListHandler(database.TblMCPServerSessions, "*", db)
+	// B7: typed MCP store (extc_installs.config.vars / core_mcp_log); shared with core+compliance.
+	return factory.MCPServerSessionList(db)
 }
 
 // HandleListMCPTenantConfigs — GET /api/v1/system/mcp-tenant-configs
 // Lists per-tenant MCP configuration overrides (rate limits, allowed tools, etc).
 func HandleListMCPTenantConfigs(db database.DB) http.HandlerFunc {
-	return sysListHandler(database.TblMCPTenantConfigs, "*", db)
+	// B7: typed MCP store (extc_installs.config.vars / core_mcp_log); shared with core+compliance.
+	return factory.MCPTenantConfigList(db)
 }

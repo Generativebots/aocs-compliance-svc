@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 	"github.com/gorilla/mux"
+	"github.com/ocx/shared/handlers/factory"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/respond"
@@ -566,196 +567,29 @@ func HandleExportDownload(db database.DB) http.HandlerFunc {
 // HandleListDashboards lists all dashboards.
 // GET /api/v1/dashboards
 func HandleListDashboards(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-
-		var result []map[string]any
-		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblPlatformConfig, database.ColsAocsPlatformConfig, "category", "dashboard_"+tenantID, &result); _dbErr != nil {
-			slog.Error("db.QueryRows failed (best-effort)", "error", _dbErr)
-		}
-		if result == nil {
-			result = []map[string]any{}
-		}
-
-		dashboards := make([]map[string]any, 0, len(result))
-		for _, cfg := range result {
-			// BUG FIX: column is "record_key" not "key" — fix list response
-			dashboards = append(dashboards, map[string]any{
-				"id":          cfg["record_key"],
-				"name":        cfg["record_key"],
-				"description": "",
-				"widgets": []map[string]any{
-					{
-						"id":          "w1",
-						"type":        "chart",
-						"title":       "Overview",
-						"data_source": database.TblCoreAgents,
-						"config": map[string]any{
-							"refresh_interval": 30,
-							"color_scheme":     "default",
-							"show_legend":      true,
-						},
-						"position": map[string]any{
-							"x":      0,
-							"y":      0,
-							"width":  6,
-							"height": 4,
-						},
-					},
-				},
-			})
-		}
-		respond.OK(w, dashboards)
-	}
+	// B7: delegated to shared typed store (see ocx-shared-go/handlers/factory).
+	return factory.DashboardList(db)
 }
 
 // HandleGetDashboard returns a single dashboard from syst_governance_config.
 // GET /api/v1/dashboards/{id}
 func HandleGetDashboard(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-		dashID := mux.Vars(r)["id"]
-		if dashID == "" {
-			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing path parameter: id")
-			return
-		}
-		var rows []map[string]any
-		// BUG FIX: column is "record_key" not "key"
-		if _dbErr := db.QueryRowsCompound(database.TblPlatformConfig, database.ColsAocsPlatformConfig,
-			"category", "dashboard_"+tenantID, "record_key", dashID, &rows); _dbErr != nil {
-			slog.Error("db.QueryRowsCompound failed (best-effort)", "error", _dbErr)
-		}
-		if len(rows) == 0 {
-			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "dashboard not found")
-			return
-		}
-		respond.OK(w, rows[0])
-	}
+	// B7: delegated to shared typed store (see ocx-shared-go/handlers/factory).
+	return factory.DashboardGet(db)
 }
 
 // HandleCreateDashboard creates a new dashboard in syst_governance_config.
 // POST /api/v1/dashboards
 func HandleCreateDashboard(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-		respond.LimitBody(r)
-		// are structured. Inner widget config is preserved as JSONB.
-		// Previously the full raw body was stored, allowing category/key/tenant injection.
-		var req struct {
-			Name        string         `json:"name"`
-			Description string         `json:"description"`
-			Layout      map[string]any `json:"layout"`
-			Widgets     []map[string]any `json:"widgets"`
-			Settings    map[string]any `json:"settings"`
-		}
-		if !validate.Bind(w, r, &req) {
-			return
-		}
-		name := req.Name
-		if name == "" {
-			name = "untitled-" + time.Now().UTC().Format("20060102T150405")
-		}
-		// Use UUID as the PK so concurrent creates don't collide.
-		dashID := generatePlatformID()
-		now := time.Now().UTC().Format(time.RFC3339)
-		dashContent := map[string]any{
-			"name":        name,
-			"description": req.Description,
-			"layout":      req.Layout,
-			"widgets":     req.Widgets,
-			"settings":    req.Settings,
-		}
-		// syst_governance_config: record_key (NOT NULL), record_value, category, tenant_id.
-		// updated_at is DB-managed. No key/value columns — use record_key/record_value.
-		cfg := map[string]any{
-			"tenant_id":    tenantID,
-			"category":     "dashboard_" + tenantID,
-			"record_key":   dashID,
-			"record_value": dashContent,
-		}
-		if err := db.InsertRow(database.TblPlatformConfig, cfg); err != nil {
-			slog.Error("CreateDashboard insert failed", "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to create dashboard", nil)
-			return
-		}
-		respond.JSON(w, http.StatusCreated, map[string]any{
-			"id":         dashID,
-			"name":       name,
-			"created_at": now,
-		})
-	}
+	// B7: delegated to shared typed store (see ocx-shared-go/handlers/factory).
+	return factory.DashboardCreate(db)
 }
 
 // HandleUpdateDashboard persists dashboard changes to syst_governance_config.
 // PUT /api/v1/dashboards/{id}
 func HandleUpdateDashboard(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-		dashID := mux.Vars(r)["id"]
-		if dashID == "" {
-			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing path parameter: id")
-			return
-		}
-		respond.LimitBody(r)
-		var req struct {
-			Name        string         `json:"name"`
-			Description string         `json:"description"`
-			Layout      map[string]any `json:"layout"`
-			Widgets     []map[string]any `json:"widgets"`
-			Settings    map[string]any `json:"settings"`
-		}
-		if !validate.Bind(w, r, &req) {
-			return
-		}
-		dashContent := map[string]any{
-			"name":        req.Name,
-			"description": req.Description,
-			"layout":      req.Layout,
-			"widgets":     req.Widgets,
-			"settings":    req.Settings,
-		}
-		// BUG FIX: column is "record_value" (NOT "value") — matches CreateDashboard
-		patch := map[string]any{
-			"record_value": dashContent,
-		}
-		// Propagate update errors to client instead of silently swallowing.
-		// BUG FIX: column is "record_key" (NOT "key") — matches the CreateDashboard insert
-		if err := db.UpdateRowCompound(database.TblPlatformConfig,
-			"category", "dashboard_"+tenantID, "record_key", dashID, patch); err != nil {
-			slog.Error("UpdateDashboard failed", "dashboard_id", dashID, "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to update dashboard", nil)
-			return
-		}
-		respond.OK(w, map[string]any{"status": "updated", "id": dashID})
-	}
+	// B7: delegated to shared typed store (see ocx-shared-go/handlers/factory).
+	return factory.DashboardUpdate(db)
 }
 
 // NOTE: HandleDeleteDashboard is declared in analytics_economics.go.

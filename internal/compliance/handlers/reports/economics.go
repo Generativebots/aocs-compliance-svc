@@ -13,39 +13,14 @@ import (
 	"github.com/ocx/shared/respond"
 	"github.com/ocx/shared/validate"
 
-	"github.com/gorilla/mux"
+	"github.com/ocx/shared/handlers/factory"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
 )
 
 func HandleDeleteDashboard(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-		dashID := mux.Vars(r)["id"]
-		if dashID == "" {
-			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing path parameter: id")
-			return
-		}
-		// Was returning {"status":"deleted"} without touching the DB.
-		// Dashboards are stored in syst_governance_config keyed by (category, key).
-		// category = "dashboard_<tenantID>", key = dashID (UUID set on create).
-		if err := db.UpdateRowCompound(database.TblPlatformConfig,
-			"category", "dashboard_"+tenantID,
-			"key", dashID,
-			map[string]any{"is_active": false}); err != nil {
-			slog.Error("DeactivateDashboard failed", "dashboard_id", dashID, "tenant_id", tenantID, "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to deactivate dashboard", nil)
-			return
-		}
-		respond.OK(w, map[string]string{"status": "deactivated", "id": dashID})
-	}
+	// B7: delegated to shared typed store (see ocx-shared-go/handlers/factory).
+	return factory.DashboardDelete(db)
 }
 
 // ESC — Missing routes called by frontend
@@ -91,7 +66,7 @@ func HandleGetEscrowHistory(db database.DB) http.HandlerFunc {
 			rows = []map[string]any{}
 		}
 		respond.OK(w, map[string]any{
-			"data": rows,
+			"data":  rows,
 			"total": len(rows),
 			"data_window": map[string]any{
 				"days":       database.DefaultListWindowDays,
