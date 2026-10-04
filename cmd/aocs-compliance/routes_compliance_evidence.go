@@ -56,7 +56,6 @@ func registerComplianceEvidenceRoutes(
 		middleware.RequireValidPathVars("id")(zkp.HandleGetZKPVerification(db)))).Methods("GET")
 
 	// Real route is /zkp/verifications. Both now return the same ZKP list data.
-	api.HandleFunc("/qcore/zkp-proofs", auth.RequireAccess(pc, "analytics", "read", zkp.HandleListZKPVerifications(db))).Methods("GET")
 	api.HandleFunc("/qcore/zkp-proofs/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(zkp.HandleGetZKPVerification(db)))).Methods("GET")
 
 	// Frontend compatibility alias for ZKP proof chain lookup
