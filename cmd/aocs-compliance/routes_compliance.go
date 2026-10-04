@@ -98,8 +98,11 @@ func registerIntelComplianceRoutes(
 	api.HandleFunc("/dlp/findings/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(compliance.HandleGetDLPFinding(db)))).Methods("GET")
 	api.HandleFunc("/dlp/findings/{id}", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleUpdateDLPFinding(db)))).Methods("PATCH")
 	api.HandleFunc("/dlp/findings/{id}", auth.RequireAccess(pc, "compliance", "delete", middleware.RequireValidPathVars("id")(compliance.HandleDeleteDLPFinding(db)))).Methods("DELETE")
-	api.HandleFunc("/dlp/policies", auth.RequireAccess(pc, "compliance", "read", compliance.HandleListDLPFindings(db))).Methods("GET")
-	api.HandleFunc("/dlp/policies", auth.RequireAccess(pc, "compliance", "write", compliance.HandleCreateDLPFinding(db))).Methods("POST")
+	// DLP policies (detection patterns) are config, not findings — own handlers.
+	api.HandleFunc("/dlp/policies", auth.RequireAccess(pc, "compliance", "read", compliance.HandleListDLPPolicies(db))).Methods("GET")
+	api.HandleFunc("/dlp/policies", auth.RequireAccess(pc, "compliance", "write", compliance.HandleCreateDLPPolicy(db))).Methods("POST")
+	api.HandleFunc("/dlp/policies/{id}", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleUpdateDLPPolicy(db)))).Methods("PATCH")
+	api.HandleFunc("/dlp/policies/{id}", auth.RequireAccess(pc, "compliance", "delete", middleware.RequireValidPathVars("id")(compliance.HandleDeleteDLPPolicy(db)))).Methods("DELETE")
 	api.HandleFunc("/gra/compliance-summary/dlp-findings", auth.RequireAccess(pc, "compliance", "read", compliance.HandleListDLPFindings(db))).Methods("GET")
 	api.HandleFunc("/compliance/dlp/monitors", auth.RequireAccess(pc, "compliance", "read", hsecurity.HandleDLPMonitorPID(dlpStore))).Methods("GET")
 	// ── DLP quarantine & incident log ───────────────────────────────────────────────
