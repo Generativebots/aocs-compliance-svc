@@ -112,13 +112,17 @@ func HandleCreateComplianceReport(db database.DB) http.HandlerFunc {
 			return
 		}
 
-		// DB CHECK constraint: report_type IN ('DAILY','WEEKLY','MONTHLY','QUARTERLY','ANNUAL')
+		// DB CHECK constraint (core_compliance_reports_report_type_check):
+		// report_type IN ('SOC2','GDPR','ISO27001','EU_AI_ACT','HIPAA','CCPA','CUSTOM').
+		// The old list (DAILY/WEEKLY/…) is a cadence, not a framework, and
+		// every insert with it violated the constraint (23514 in Supabase logs).
 		validReportTypes := map[string]bool{
-			"DAILY": true, "WEEKLY": true, "MONTHLY": true,
-			"QUARTERLY": true, "ANNUAL": true,
+			"SOC2": true, "GDPR": true, "ISO27001": true, "EU_AI_ACT": true,
+			"HIPAA": true, "CCPA": true, "CUSTOM": true,
 		}
+		req.ReportType = strings.ToUpper(strings.TrimSpace(req.ReportType))
 		if !validReportTypes[req.ReportType] {
-			req.ReportType = "DAILY" // safe default matching DB DEFAULT
+			req.ReportType = "CUSTOM"
 		}
 		if req.StartDate == "" {
 			req.StartDate = time.Now().UTC().Format("2006-01-02")

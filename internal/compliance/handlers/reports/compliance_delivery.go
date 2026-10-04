@@ -42,7 +42,11 @@ import (
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/respond"
 	"github.com/ocx/shared/validate"
+	"sync/atomic"
 )
+
+// pgcronDenied caches a permission-denied result for the cron schema.
+var pgcronDenied atomic.Bool
 
 // GET /compliance/delivery-status — pg_cron health check
 
@@ -96,8 +100,22 @@ func HandleComplianceDeliveryStatus(pgx *database.PGXPool) http.HandlerFunc {
 			WHERE j.jobname LIKE 'aocs%' OR j.command LIKE '%fn_%'
 			ORDER BY j.jobname
 		`
+		// The app role has no USAGE on the cron schema (42501 in Supabase logs).
+		// Once denied, stop re-querying on every page load — the answer won't
+		// change until a DBA grants access and the service restarts.
+		if pgcronDenied.Load() {
+			respond.JSON(w, http.StatusOK, map[string]any{
+				"pgcron_available": false,
+				"note":             "pg_cron schema not accessible to the application role (GRANT USAGE ON SCHEMA cron required).",
+				"jobs":             []any{},
+			})
+			return
+		}
 		rows, err := pgx.Query(ctx, q)
 		if err != nil {
+			if strings.Contains(err.Error(), "42501") || strings.Contains(err.Error(), "permission denied") {
+				pgcronDenied.Store(true)
+			}
 			// pg_cron extension not installed or cron schema not accessible
 			slog.Warn("GAP-R3: cron.job_run_details not accessible — pg_cron extension may not be enabled on this Supabase tier",
 				"error", err)

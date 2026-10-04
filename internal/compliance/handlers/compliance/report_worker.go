@@ -294,8 +294,12 @@ func generateTenantReport(ctx context.Context, db database.DB, coreClient *servi
 	return db.InsertRow(database.TblSharComplianceReports, map[string]any{
 		"compliance_report_id": reportID,
 		"tenant_id":            tenantID,
-		"report_type":          "DAILY",
-		"status":               "READY", // valid values: PENDING|GENERATING|READY|FAILED
+		// core_compliance_reports CHECK: report_type IN ('SOC2','GDPR','ISO27001',
+		// 'EU_AI_ACT','HIPAA','CCPA','CUSTOM'). "DAILY" violated it (23514 in
+		// Supabase logs) so no daily report was ever stored. The cadence is
+		// already recorded in metadata.period ("24h").
+		"report_type":          "CUSTOM",
+		"status":               "COMPLETED", // CHECK: DRAFT|PENDING|GENERATING|COMPLETED|FAILED|EXPIRED ("READY" is not allowed)
 		"metadata":             reportData,
 		"period_start":         now.Add(-consts.DefaultLookbackWindow).Format(time.RFC3339),
 		"period_end":           now.Format(time.RFC3339),
