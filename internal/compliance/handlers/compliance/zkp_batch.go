@@ -4,22 +4,22 @@
 package compliance
 
 import (
-	"context"
-	"github.com/ocx/shared/infra/httpclient"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log/slog"
-	"net/http"
-	"time"
 	"github.com/gorilla/mux"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
+	"github.com/ocx/shared/infra/httpclient"
 	"github.com/ocx/shared/infra/statemachine"
 	"github.com/ocx/shared/respond"
 	"github.com/ocx/shared/validate"
+	"log/slog"
+	"net/http"
+	"time"
 )
 
 // processPendingBatchJobs is a trusted server-side background goroutine.
@@ -122,9 +122,9 @@ func HandleCreateZKPBatchJob(db database.DB) http.HandlerFunc {
 		import_hash := fmt.Sprintf("%x", sha256Hash(import_payload))
 		batchJobID := fmt.Sprintf("batch-%s-%s", tenantID[:8], body.Period)
 		if err := db.InsertRow(database.TblZKPBatchJobs, map[string]any{
-			"tenant_id": tenantID,
-			"job_id":    batchJobID,
-			"root_hash": import_hash, // deterministic: same agents+period = same hash
+			"tenant_id":  tenantID,
+			"job_id":     batchJobID,
+			"root_hash":  import_hash, // deterministic: same agents+period = same hash
 			"created_by": "api:" + tenantID,
 		}); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "create batch job", err)
@@ -296,13 +296,13 @@ func HandleTestSIEMWebhook(db database.DB) http.HandlerFunc {
 		} else {
 			payload, _ = json.Marshal(map[string]any{"tenant_id": tenantID, "msg": "SIEM test"})
 		}
-		req, _ := http.NewRequest("POST", url, bytes.NewBuffer(payload))
+		req, _ := http.NewRequest("POST", url, bytes.NewBuffer(payload)) // #nosec G704 -- base URL comes from deployment configuration, not request input
 		req.Header.Set("Content-Type", "application/json")
 		if secret != "" {
 			req.Header.Set("X-SIEM-Secret", secret)
 		}
 		client := httpclient.Default
-		resp, err := client.Do(req)
+		resp, err := client.Do(req) // #nosec G704 -- base URL comes from deployment configuration, not request input
 		if err != nil {
 			respond.JSON(w, http.StatusBadGateway, map[string]any{"success": false, "error": "batch zkp request failed"})
 			slog.Error("zkp batch request failed", "error", err)

@@ -51,7 +51,7 @@ func HandleGetMonitorAuditSummary(db database.DB) http.HandlerFunc {
 		}
 
 		cutoff24h := time.Now().UTC().Add(-24 * time.Hour).Format(time.RFC3339)
-		cutoff30d  := time.Now().UTC().AddDate(0, 0, -30).Format(time.RFC3339)
+		cutoff30d := time.Now().UTC().AddDate(0, 0, -30).Format(time.RFC3339)
 
 		// PERF: DB-side COUNT aggregations — avoids fetching thousands of rows into Go memory.
 		type countRow struct {
@@ -74,10 +74,10 @@ WHERE tenant_id = $1 AND created_at >= $3`
 		if err := db.QueryRawCtx(r.Context(), aggSQL, &rows, tenantID, cutoff24h, cutoff30d); err != nil {
 			slog.Debug("monitor/audit-summary: aggregation query failed", "tenant_id", tenantID, "err", err)
 		} else if len(rows) > 0 {
-			sum.TotalEvents   = rows[0].Total
-			sum.Events24h     = rows[0].Events24h
+			sum.TotalEvents = rows[0].Total
+			sum.Events24h = rows[0].Events24h
 			sum.Violations24h = rows[0].Violations24h
-			sum.Warnings24h   = rows[0].Warnings24h
+			sum.Warnings24h = rows[0].Warnings24h
 		}
 
 		respond.OK(w, sum)
@@ -112,14 +112,14 @@ func HandleGetSystemOverview(db database.DB, internalAPIURL string) http.Handler
 		// Agent counts via Core internal API
 		if internalAPIURL != "" {
 			apiURL := fmt.Sprintf("%s/internal/v1/agents/counts?tenant_id=%s", internalAPIURL, tenantID)
-			apiReq, reqErr := http.NewRequestWithContext(r.Context(), http.MethodGet, apiURL, nil)
+			apiReq, reqErr := http.NewRequestWithContext(r.Context(), http.MethodGet, apiURL, nil) // #nosec G704 -- base URL comes from deployment configuration, not request input
 			if reqErr == nil {
 				if svcJWT := r.Header.Get("X-Service-JWT"); svcJWT != "" {
 					apiReq.Header.Set("Authorization", "Bearer "+svcJWT)
 				}
 				apiReq.Header.Set("X-Tenant-ID", tenantID)
 				cl := &http.Client{Timeout: 5 * time.Second}
-				apiResp, apiErr := cl.Do(apiReq)
+				apiResp, apiErr := cl.Do(apiReq) // #nosec G704 -- base URL comes from deployment configuration, not request input
 				if apiErr == nil {
 					defer apiResp.Body.Close()
 					if apiResp.StatusCode == http.StatusOK {
@@ -129,7 +129,7 @@ func HandleGetSystemOverview(db database.DB, internalAPIURL string) http.Handler
 							Active int `json:"active"`
 						}
 						if jsonErr := json.Unmarshal(body, &payload); jsonErr == nil {
-							ov.AgentCount   = payload.Total
+							ov.AgentCount = payload.Total
 							ov.ActiveAgents = payload.Active
 						}
 					}
@@ -153,7 +153,7 @@ WHERE tenant_id = $1 AND created_at >= $2`
 
 		var gs []gateStats
 		if err := db.QueryRawCtx(r.Context(), gateSQL, &gs, tenantID, cutoff24h); err == nil && len(gs) > 0 {
-			ov.GateCalls24h  = gs[0].GateCalls24h
+			ov.GateCalls24h = gs[0].GateCalls24h
 			ov.Violations24h = gs[0].Violations24h
 		}
 

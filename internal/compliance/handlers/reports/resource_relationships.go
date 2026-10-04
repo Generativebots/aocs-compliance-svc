@@ -20,10 +20,10 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/ocx/shared/infra/concurrent"
+	"github.com/ocx/shared/infra/config"
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/respond"
 	"github.com/ocx/shared/validate"
-	"github.com/ocx/shared/infra/config"
 )
 
 func HandleGetDocument(db database.DB) http.HandlerFunc {
@@ -312,7 +312,7 @@ func HandleImportSourceExtract(db database.DB) http.HandlerFunc {
 			// Zero data-residency guarantee: raw document bytes are NEVER
 			// written to DB or disk; they exist only in memory during this call.
 			apeURL := os.Getenv("OCX_APE_HTTP_URL")
-				if apeURL != "" && externalRef != "" {
+			if apeURL != "" && externalRef != "" {
 				// Step 1: Fetch the document bytes in-memory via the external ref URL.
 				// Timeout driven by EXTERNAL_HTTP_TIMEOUT_SEC (default 30s) — consistent with
 				// the http.Client timeout below and tunable without a redeploy.
@@ -351,14 +351,14 @@ func HandleImportSourceExtract(db database.DB) http.HandlerFunc {
 					"content":         string(docBytes), // UTF-8 assumption; APE decodes
 				})
 				apeEndpoint := strings.TrimRight(apeURL, "/") + "/extract"
-				apeReq, _ := http.NewRequestWithContext(r.Context(), http.MethodPost,
+				apeReq, _ := http.NewRequestWithContext(r.Context(), http.MethodPost, // #nosec G704 -- base URL comes from deployment configuration, not request input
 					apeEndpoint, bytes.NewReader(apePayload))
 				apeReq.Header.Set("Content-Type", "application/json")
 				apeReq.Header.Set("X-Tenant-ID", tenantID)
 				apeReq.Header.Set("X-Extraction-ID", extractionID)
 
 				apeHTTPClient := &http.Client{Timeout: time.Duration(config.Get().Services.ExternalHTTPTimeoutSec*2) * time.Second}
-				apeResp, apeErr := apeHTTPClient.Do(apeReq)
+				apeResp, apeErr := apeHTTPClient.Do(apeReq) // #nosec G704 -- base URL comes from deployment configuration, not request input
 				if apeErr != nil {
 					slog.Error("APE: HTTP call failed",
 						"extraction_id", extractionID, "ape_url", apeEndpoint, "error", apeErr)

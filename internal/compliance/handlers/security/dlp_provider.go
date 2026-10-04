@@ -80,7 +80,7 @@ func scanViaPythonDLP(ctx context.Context, addr, tenantID, payload string) *prov
 	reqCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
 	defer cancel()
 
-	httpReq, err := http.NewRequestWithContext(reqCtx, http.MethodPost, strings.TrimRight(addr, "/")+"/dlp/scan", bytes.NewReader(reqBody))
+	httpReq, err := http.NewRequestWithContext(reqCtx, http.MethodPost, strings.TrimRight(addr, "/")+"/dlp/scan", bytes.NewReader(reqBody)) // #nosec G704 -- base URL comes from deployment configuration, not request input
 	if err != nil {
 		return nil
 	}
@@ -88,7 +88,7 @@ func scanViaPythonDLP(ctx context.Context, addr, tenantID, payload string) *prov
 	serviceclient.SetInternalAuth(httpReq, "")
 
 	client := &http.Client{Timeout: 1500 * time.Millisecond}
-	resp, err := client.Do(httpReq)
+	resp, err := client.Do(httpReq) // #nosec G704 -- base URL comes from deployment configuration, not request input
 	if err != nil || resp == nil {
 		return nil
 	}
@@ -173,14 +173,14 @@ func (p *CrowdStrikeDLPProvider) refreshTokenIfNeeded(ctx context.Context) {
 	tokenURL := p.APIURL + "/oauth2/token"
 	form := fmt.Sprintf("client_id=%s&client_secret=%s&grant_type=client_credentials",
 		p.clientID, p.clientSecret)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL,
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, // #nosec G704 -- base URL comes from deployment configuration, not request input
 		bytes.NewBufferString(form))
 	if err != nil {
 		slog.Error("crowdstrike dlp: token refresh build failed", "err", err)
 		return
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := httpClient().Do(req)
+	resp, err := httpClient().Do(req) // #nosec G704 -- base URL comes from deployment configuration, not request input
 	if err != nil {
 		slog.Error("crowdstrike dlp: token refresh request failed", "err", err)
 		return
@@ -208,7 +208,7 @@ func (p *CrowdStrikeDLPProvider) Scan(ctx context.Context, tenantID, payload str
 		"content": payload,
 	})
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody)) // #nosec G704 -- base URL comes from deployment configuration, not request input
 	if err != nil {
 		slog.Error("crowdstrike dlp: build request failed", "err", err)
 		return &providers.DLPResult{ProviderName: "crowdstrike_dlp"}
@@ -217,7 +217,7 @@ func (p *CrowdStrikeDLPProvider) Scan(ctx context.Context, tenantID, payload str
 	req.Header.Set("Authorization", "Bearer "+p.accessToken)
 
 	client := httpClient()
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G704 -- base URL comes from deployment configuration, not request input
 	if err != nil {
 		slog.Error("crowdstrike dlp: request failed", "err", err)
 		return &providers.DLPResult{ProviderName: "crowdstrike_dlp"}
@@ -272,14 +272,14 @@ func (p *AzurePurviewDLPProvider) refreshTokenIfNeeded(ctx context.Context) {
 	form := fmt.Sprintf(
 		"client_id=%s&client_secret=%s&scope=https%%3A%%2F%%2Fpurview.azure.com%%2F.default&grant_type=client_credentials",
 		p.ClientID, p.clientSecret)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL,
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, // #nosec G704 -- base URL comes from deployment configuration, not request input
 		bytes.NewBufferString(form))
 	if err != nil {
 		slog.Error("azure purview dlp: token refresh build failed", "err", err)
 		return
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := httpClient().Do(req)
+	resp, err := httpClient().Do(req) // #nosec G704 -- base URL comes from deployment configuration, not request input
 	if err != nil {
 		slog.Error("azure purview dlp: token refresh request failed", "err", err)
 		return

@@ -168,7 +168,7 @@ func HandleUniversalAgentChatProxy(db database.DB, dlpStore *security.DLPStore) 
 		if upstreamURL != "" {
 			// Forward to real upstream LLM provider
 			bodyBytes, _ := json.Marshal(req)
-			upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, strings.NewReader(string(bodyBytes)))
+			upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, strings.NewReader(string(bodyBytes))) // #nosec G704 -- base URL comes from deployment configuration, not request input
 			if err == nil {
 				upstreamReq.Header.Set("Content-Type", "application/json")
 				// Never forward the caller's AOCS JWT to a third-party provider.
@@ -176,7 +176,7 @@ func HandleUniversalAgentChatProxy(db database.DB, dlpStore *security.DLPStore) 
 					upstreamReq.Header.Set("Authorization", "Bearer "+key)
 				}
 				client := &http.Client{Timeout: 60 * time.Second}
-				resp, err := client.Do(upstreamReq)
+				resp, err := client.Do(upstreamReq) // #nosec G704 -- base URL comes from deployment configuration, not request input
 				if err == nil && resp.StatusCode == http.StatusOK {
 					defer func() { _ = resp.Body.Close() }()
 					var upResp ChatCompletionResponse
@@ -218,7 +218,7 @@ func HandleUniversalAgentChatProxy(db database.DB, dlpStore *security.DLPStore) 
 		prevHash := "0000000000000000000000000000000000000000000000000000000000000000"
 		if db != nil {
 			var lastEvRows []map[string]any
-			_ = db.QueryRows(database.TblComplEvidence, "chain_hash", "tenant_id", tenantID, &lastEvRows)  //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+			_ = db.QueryRows(database.TblComplEvidence, "chain_hash", "tenant_id", tenantID, &lastEvRows) //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
 			if len(lastEvRows) > 0 {
 				if lastH, ok := lastEvRows[len(lastEvRows)-1]["chain_hash"].(string); ok && lastH != "" {
 					prevHash = lastH

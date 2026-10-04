@@ -73,7 +73,7 @@ func HandleAnalyticsSummary(db database.DB, internalAPIURL string) http.HandlerF
 		agents := agentCounts{}
 		{
 			apiURL := fmt.Sprintf("%s/internal/v1/agents/counts?tenant_id=%s", internalAPIURL, tenantID)
-			apiReq, reqErr := http.NewRequestWithContext(r.Context(), http.MethodGet, apiURL, nil)
+			apiReq, reqErr := http.NewRequestWithContext(r.Context(), http.MethodGet, apiURL, nil) // #nosec G704 -- base URL comes from deployment configuration, not request input
 			if reqErr == nil {
 				// Forward the service JWT so Core trusts this internal call
 				if svcJWT := r.Header.Get("X-Service-JWT"); svcJWT != "" {
@@ -81,7 +81,7 @@ func HandleAnalyticsSummary(db database.DB, internalAPIURL string) http.HandlerF
 				}
 				apiReq.Header.Set("X-Tenant-ID", tenantID)
 				cl := &http.Client{Timeout: 5 * time.Second}
-				apiResp, apiErr := cl.Do(apiReq)
+				apiResp, apiErr := cl.Do(apiReq) // #nosec G704 -- base URL comes from deployment configuration, not request input
 				if apiErr != nil {
 					slog.Warn("analytics_summary: Core agent counts API unavailable", "error", apiErr)
 					dbErrors = append(dbErrors, "agents: core_api_unavailable")
@@ -180,4 +180,3 @@ WHERE c.tenant_id = $1`
 		})
 	}
 }
-

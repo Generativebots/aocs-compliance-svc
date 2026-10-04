@@ -194,10 +194,10 @@ var injectionRegexPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\|\s*system\s*\|`),
 	regexp.MustCompile(`<\s*\|\s*im_start\s*\|\s*>`),
 	// Additional evasion patterns
-	regexp.MustCompile(`b[\s\-\.]y[\s\-\.]p[\s\-\.]a[\s\-\.]s[\s\-\.]s`),               // b-y-p-a-s-s
+	regexp.MustCompile(`b[\s\-\.]y[\s\-\.]p[\s\-\.]a[\s\-\.]s[\s\-\.]s`),                   // b-y-p-a-s-s
 	regexp.MustCompile(`o[\s\-\.]v[\s\-\.]e[\s\-\.]r[\s\-\.]r[\s\-\.]i[\s\-\.]d[\s\-\.]e`), // o-v-e-r-r-i-d-e
-	regexp.MustCompile(`j[\s\-\.]a[\s\-\.]i[\s\-\.]l`),                                  // j-a-i-l (short form)
-	regexp.MustCompile(`s[\s\-\.]u[\s\-\.]d[\s\-\.]o`),                                  // s-u-d-o mode
+	regexp.MustCompile(`j[\s\-\.]a[\s\-\.]i[\s\-\.]l`),                                     // j-a-i-l (short form)
+	regexp.MustCompile(`s[\s\-\.]u[\s\-\.]d[\s\-\.]o`),                                     // s-u-d-o mode
 	// Repeated punctuation injection (--- SYSTEM --- style)
 	regexp.MustCompile(`-{2,}\s*system\s*-{2,}`),
 	regexp.MustCompile(`={2,}\s*instructions?\s*={2,}`),
@@ -667,6 +667,7 @@ func rot13Decode(s string) string {
 	}
 	return b.String()
 }
+
 // hexDecodePayload finds hex-encoded substrings in text (≥16 hex chars, even length)
 // and returns the decoded string. Catches "69676e6f72652070726576696f7573..." attacks.
 func hexDecodePayload(text string) string {
@@ -696,7 +697,7 @@ func hexDecodePayload(text string) string {
 				isHex = false
 				break
 			}
-			b[i/2] = byte(hi<<4 | lo)
+			b[i/2] = byte(hi<<4 | lo) // #nosec G115 -- hi and lo are hex nibbles in [0, 15]
 		}
 		if isHex && len(b) > 0 {
 			return string(b)
