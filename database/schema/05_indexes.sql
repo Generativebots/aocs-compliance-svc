@@ -108,3 +108,10 @@ CREATE INDEX IF NOT EXISTS idx_compliance_tenant_type_status ON compl_cases USIN
 -- ============================================================================
 CREATE INDEX IF NOT EXISTS idx_compl_cases_case_type ON compl_cases (tenant_id, case_type) WHERE (case_type IS NOT NULL)
 ;
+
+-- 2026-10-04 schema hardening: PKs, FK indexes, tenant RLS
+CREATE INDEX IF NOT EXISTS idx_compl_signing_keys_superseded_by ON public.compl_signing_keys (superseded_by);
+CREATE INDEX IF NOT EXISTS idx_compl_policy_violations_tenant_id ON public.compl_policy_violations (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_compl_regulatory_tenant_id ON public.compl_regulatory (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_compl_policy_exceptions_tenant_id ON public.compl_policy_exceptions (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_compl_risk_assessments_tenant_id ON public.compl_risk_assessments (tenant_id);
