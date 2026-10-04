@@ -1,20 +1,21 @@
 // compliance_delivery.go — GAP-R3 FIX: Compliance report delivery verification and on-demand delivery.
 //
 // cron_expression + notify_emails to schedule_config JSONB, but there was NO:
-//   1. Background worker / pg_cron job reading scheduled_reports and sending emails
-//   2. Endpoint to check whether pg_cron jobs are actually running
-//   3. On-demand "send now" fallback when the cron hasn't fired
+//  1. Background worker / pg_cron job reading scheduled_reports and sending emails
+//  2. Endpoint to check whether pg_cron jobs are actually running
+//  3. On-demand "send now" fallback when the cron hasn't fired
 //
 // This file adds:
-//   GET  /compliance/delivery-status          — Check pg_cron health for all AOCS jobs.
-//     Queries cron.job_run_details to verify scheduled jobs ran recently. Returns
-//     per-job last_run_at, status, and failure flags. Operators can see at a glance
-//     whether the Supabase pg_cron extension is running.
 //
-//   POST /compliance/reports/{id}/deliver     — On-demand report delivery.
-//     Generates the compliance report for the given report_id and emails it to
-//     the recipients in schedule_config. Uses the tenant's SMTP config
-//     (same pattern as SendInviteViaSMTP). Also writes last_sent_at to the report row.
+//	GET  /compliance/delivery-status          — Check pg_cron health for all AOCS jobs.
+//	  Queries cron.job_run_details to verify scheduled jobs ran recently. Returns
+//	  per-job last_run_at, status, and failure flags. Operators can see at a glance
+//	  whether the Supabase pg_cron extension is running.
+//
+//	POST /compliance/reports/{id}/deliver     — On-demand report delivery.
+//	  Generates the compliance report for the given report_id and emails it to
+//	  the recipients in schedule_config. Uses the tenant's SMTP config
+//	  (same pattern as SendInviteViaSMTP). Also writes last_sent_at to the report row.
 //
 // Industry precedent: AWS Audit Manager, Vanta, Drata all expose a "deliver now"
 // API that bypasses scheduler — critical for auditors who need ad-hoc evidence packages.
@@ -30,6 +31,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/mail"
 	"net/smtp"
 	"os"
 	"strings"
@@ -166,7 +168,6 @@ func HandleComplianceDeliveryStatus(pgx *database.PGXPool) http.HandlerFunc {
 }
 
 // POST /compliance/reports/{id}/deliver — on-demand delivery
-
 
 // HandleDeliverComplianceReport sends a compliance report immediately to its recipients.
 //
@@ -318,12 +319,12 @@ If you did not expect this report, contact your OCX administrator.
 			statusCode = http.StatusInternalServerError
 		}
 		respond.JSON(w, statusCode, map[string]any{
-			"report_id":     reportID,
-			"standard":      standard,
-			"period":        period,
-			"sent":          sent,
-			"failed":        failed,
-			"last_sent_at":  now.Format(time.RFC3339),
+			"report_id":    reportID,
+			"standard":     standard,
+			"period":       period,
+			"sent":         sent,
+			"failed":       failed,
+			"last_sent_at": now.Format(time.RFC3339),
 		})
 	}
 }
@@ -420,6 +421,18 @@ func decryptSMTPKey(ciphertext string) (string, error) {
 
 // sendComplianceEmail sends a compliance report email via SMTP.
 func sendComplianceEmail(cfg *smtpDeliveryConfig, to, subject, body string) error {
+	// Header values must not contain CR/LF (SMTP header injection, CWE-93),
+	// and the recipient must be a single valid address.
+	for _, v := range []string{to, subject, cfg.FromName, cfg.FromEmail} {
+		if strings.ContainsAny(v, "\r\n") {
+			return fmt.Errorf("sendComplianceEmail: header value contains a line break")
+		}
+	}
+	rcpt, err := mail.ParseAddress(to)
+	if err != nil {
+		return fmt.Errorf("sendComplianceEmail: invalid recipient: %w", err)
+	}
+	to = rcpt.Address
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 	auth := smtp.PlainAuth("", cfg.Username, cfg.Password, cfg.Host)
 	msg := fmt.Sprintf(

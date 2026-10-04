@@ -17,10 +17,11 @@ package compliance
 
 import (
 	"context"
+	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math/rand"
+	"math/big"
 	"os"
 	"strconv"
 	"time"
@@ -286,7 +287,7 @@ func generateTenantReport(ctx context.Context, db database.DB, coreClient *servi
 	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, 8)
 	for i := range b {
-		b[i] = chars[rand.Intn(36)] //nolint:gosec — non-crypto ID generation
+		b[i] = chars[cryptoIndex(36)]
 	}
 	reportID := fmt.Sprintf("%d%02d", now.Year(), int(now.Month())) + string(b)
 
@@ -300,4 +301,13 @@ func generateTenantReport(ctx context.Context, db database.DB, coreClient *servi
 		"period_end":           now.Format(time.RFC3339),
 		"created_by":           "system@ocx.ai", // background worker — no user context
 	})
+}
+
+// cryptoIndex returns a uniform random index in [0, n) from crypto/rand.
+func cryptoIndex(n int) int {
+	v, err := crand.Int(crand.Reader, big.NewInt(int64(n)))
+	if err != nil {
+		panic("crypto/rand unavailable: " + err.Error())
+	}
+	return int(v.Int64())
 }
