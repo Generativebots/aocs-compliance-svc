@@ -177,10 +177,11 @@ func main() {
 		slog.Info("UsageMetering wired on aocs-compliance API")
 	}
 
-	// ── Studio palette manifest (internal VPC, no license guard) ────────────
-	// Registered on svc.Router directly so it is NOT blocked by LicenseFeatureGuard("compliance").
+	// ── Studio palette manifest (static catalog, no login, no license guard) ──
+	// On svc.PublicAPI so it is NOT blocked by JWT or LicenseFeatureGuard("compliance").
 	// Studio calls this to populate the canvas palette even when the tenant hasn't purchased compliance yet.
-	svc.Router.HandleFunc("/api/v1/compliance/palette-manifest", hcompliance.HandleGetPaletteManifest()).Methods("GET")
+	// (A svc.Router registration under /api/v1 was unreachable: svc.API answered first.)
+	svc.PublicAPI.HandleFunc("/compliance/palette-manifest", hcompliance.HandleGetPaletteManifest()).Methods("GET")
 	svc.Router.HandleFunc("/compliance/palette-manifest", hcompliance.HandleGetPaletteManifest()).Methods("GET")
 
 	// ── Route registration ──────────────────────────────────────────────────────────────────
