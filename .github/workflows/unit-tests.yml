@@ -4,7 +4,7 @@
 # Runs on every push and PR. The repo is checked out next to ocx-shared-go
 # (go.mod: replace ../ocx-shared-go), and the other schema-owning repos are
 # sparse-checked-out (database/schema only) so the schema contract test in
-# internal/schemacontract verifies cross-repo reads instead of skipping them.
+# aocs-testing-block/contract/schema verifies cross-repo reads instead of skipping them.
 # =============================================================================
 name: Unit tests — aocs-compliance-svc
 
