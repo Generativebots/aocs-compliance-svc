@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ocx/shared/infra/serviceclient"
 	"io"
 	"log/slog"
 	"net/http"
@@ -84,6 +85,7 @@ func scanViaPythonDLP(ctx context.Context, addr, tenantID, payload string) *prov
 		return nil
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	serviceclient.SetInternalAuth(httpReq, "")
 
 	client := &http.Client{Timeout: 1500 * time.Millisecond}
 	resp, err := client.Do(httpReq)
@@ -153,11 +155,11 @@ func (b *BuiltinDLPProvider) Scan(ctx context.Context, tenantID, payload string)
 // using the tenant's encrypted client_id/client_secret from the vault.
 // Token is refreshed automatically 60 seconds before expiry.
 type CrowdStrikeDLPProvider struct {
-	APIURL          string
-	clientID        string `json:"-"`
-	clientSecret    string `json:"-"`
-	accessToken     string `json:"-"` // obtained via OAuth, never logged
-	tokenExpiresAt  time.Time            // zero = not yet fetched
+	APIURL         string
+	clientID       string    `json:"-"`
+	clientSecret   string    `json:"-"`
+	accessToken    string    `json:"-"` // obtained via OAuth, never logged
+	tokenExpiresAt time.Time // zero = not yet fetched
 }
 
 // refreshTokenIfNeeded re-fetches the OAuth2 token if it has expired or will
@@ -255,11 +257,11 @@ func (p *CrowdStrikeDLPProvider) Scan(ctx context.Context, tenantID, payload str
 // AzurePurviewDLPProvider delegates to Microsoft Purview Information Protection.
 // Token is refreshed automatically 60 seconds before expiry.
 type AzurePurviewDLPProvider struct {
-	TenantID        string
-	ClientID        string
-	clientSecret    string `json:"-"`
-	accessToken     string `json:"-"`
-	tokenExpiresAt  time.Time
+	TenantID       string
+	ClientID       string
+	clientSecret   string `json:"-"`
+	accessToken    string `json:"-"`
+	tokenExpiresAt time.Time
 }
 
 func (p *AzurePurviewDLPProvider) refreshTokenIfNeeded(ctx context.Context) {
