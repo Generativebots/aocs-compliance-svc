@@ -23,8 +23,8 @@ import (
 
 	// Handler packages
 	hcompliance "github.com/ocx/compliance/internal/compliance/handlers/compliance"
-	hevidence   "github.com/ocx/compliance/internal/compliance/handlers/evidence"
-	hsecurity   "github.com/ocx/compliance/internal/compliance/handlers/security"
+	hevidence "github.com/ocx/compliance/internal/compliance/handlers/evidence"
+	hsecurity "github.com/ocx/compliance/internal/compliance/handlers/security"
 	"github.com/ocx/compliance/internal/compliance/propagation"
 
 	// Infrastructure
@@ -68,7 +68,7 @@ func main() {
 	if coreURL == "" {
 		// Core client targets ocx-core-svc (DLP integrations, enforcement actions, events).
 		// Set INTERNAL_API_URL to the internal VPC URL of ocx-core-svc in production.
-		coreURL = "http://aocs-core:8083"
+		coreURL = "http://aocs-system:8082"
 	}
 	coreClient := serviceclient.New(
 		"aocs-compliance",
@@ -76,6 +76,12 @@ func main() {
 		os.Getenv("SERVICE_JWT_SECRET"),
 		&http.Client{Timeout: 15 * time.Second},
 	)
+
+	// Tenant telemetry (EU AI Act card) is served by aocs-gate, not system.
+	if gateURL := os.Getenv("CORE_INTERNAL_API_URL"); gateURL != "" {
+		hcompliance.TelemetryClient = serviceclient.New("aocs-compliance", gateURL,
+			os.Getenv("SERVICE_JWT_SECRET"), &http.Client{Timeout: 15 * time.Second})
+	}
 
 	// ── ZKP Batch Worker Pool (3 goroutines, 30s polling) ───────────────────
 	// Processes pending batch ZKP jobs from the DB queue.

@@ -31,6 +31,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/google/uuid"
@@ -72,16 +73,16 @@ type EUAIActTransparencyCard struct {
 	KnownLimitations []string `json:"known_limitations"`
 
 	// Regulatory contacts
-	ProviderContact    string `json:"provider_contact"`
-	NotifiedBodyID     string `json:"notified_body_id,omitempty"`
-	EURepresentative   string `json:"eu_representative,omitempty"`
+	ProviderContact         string `json:"provider_contact"`
+	NotifiedBodyID          string `json:"notified_body_id,omitempty"`
+	EURepresentative        string `json:"eu_representative,omitempty"`
 	DeclarationOfConformity string `json:"declaration_of_conformity_url,omitempty"`
 
 	// Active configuration pulled from DB
-	AgentCount       int    `json:"agent_count"`
-	HITLEnabled      bool   `json:"hitl_enabled"`
-	EscrowEnabled    bool   `json:"escrow_enabled"`
-	ActivePolicies   int    `json:"active_policy_count"`
+	AgentCount     int  `json:"agent_count"`
+	HITLEnabled    bool `json:"hitl_enabled"`
+	EscrowEnabled  bool `json:"escrow_enabled"`
+	ActivePolicies int  `json:"active_policy_count"`
 }
 
 // HumanOversightConfig describes the HITL configuration (Art.13.3.b).
@@ -96,35 +97,35 @@ type HumanOversightConfig struct {
 
 // TechnicalSpecs describes computational requirements (Art.13.3.c).
 type TechnicalSpecs struct {
-	ModelArchitecture string   `json:"model_architecture"`
+	ModelArchitecture  string   `json:"model_architecture"`
 	InferenceProviders []string `json:"inference_providers"`
-	DataResidency     string   `json:"data_residency"`
-	TrainingDataScope string   `json:"training_data_scope"`
+	DataResidency      string   `json:"data_residency"`
+	TrainingDataScope  string   `json:"training_data_scope"`
 }
 
 // PerformanceMetrics covers accuracy/robustness/security (Art.13.3.d).
 type PerformanceMetrics struct {
-	GateAccuracyPct        float64 `json:"gate_accuracy_pct"`
-	FalsePositiveRatePct   float64 `json:"false_positive_rate_pct"`
-	AverageLatencyMs       int     `json:"average_latency_ms"`
-	UptimeSLAPct           float64 `json:"uptime_sla_pct"`
+	GateAccuracyPct        float64  `json:"gate_accuracy_pct"`
+	FalsePositiveRatePct   float64  `json:"false_positive_rate_pct"`
+	AverageLatencyMs       int      `json:"average_latency_ms"`
+	UptimeSLAPct           float64  `json:"uptime_sla_pct"`
 	SecurityCertifications []string `json:"security_certifications"`
 }
 
 // EUAIActDeclaration — the filing record stored in compliance_cases.
 type EUAIActDeclaration struct {
-	DeclarationID string `json:"declaration_id"`
-	TenantID      string `json:"tenant_id"`
-	FiledAt       string `json:"filed_at"`
-	FiledBy       string `json:"filed_by"`
-	Status        string `json:"status"` // DRAFT | FILED | ACKNOWLEDGED | SUPERSEDED
+	DeclarationID string          `json:"declaration_id"`
+	TenantID      string          `json:"tenant_id"`
+	FiledAt       string          `json:"filed_at"`
+	FiledBy       string          `json:"filed_by"`
+	Status        string          `json:"status"` // DRAFT | FILED | ACKNOWLEDGED | SUPERSEDED
 	CardJSON      json.RawMessage `json:"card_json"`
 }
 
 type submitDeclarationRequest struct {
-	DeclarationID string `json:"declaration_id"`
-	ConfirmAccuracy bool `json:"confirm_accuracy"`
-	DeclaredBy    string `json:"declared_by"`
+	DeclarationID   string `json:"declaration_id"`
+	ConfirmAccuracy bool   `json:"confirm_accuracy"`
+	DeclaredBy      string `json:"declared_by"`
 }
 
 // ── Public card builder (called by handlers/regulatory for formal report artefact) ──
@@ -137,6 +138,11 @@ type submitDeclarationRequest struct {
 // Called by:
 //   - HandleGetEUAIActTransparency (interactive dashboard card)
 //   - handlers/regulatory.HandleGenerateEUAIActReport (formal regulatory artefact)
+//
+// TelemetryClient targets aocs-gate for /internal/v1/tenants/{id}/telemetry.
+// Set from main via CORE_INTERNAL_API_URL; falls back to coreClient when nil.
+var TelemetryClient *serviceclient.Client
+
 func BuildEUAIActTransparencyCard(ctx context.Context, db database.DB, coreClient *serviceclient.Client, tenantID string) (EUAIActTransparencyCard, error) {
 	log := slog.With("handler", "BuildEUAIActTransparencyCard", "tenant_id", tenantID)
 
@@ -145,8 +151,12 @@ func BuildEUAIActTransparencyCard(ctx context.Context, db database.DB, coreClien
 	hitlEnabled := false
 	policyCount := 0
 
-	if coreClient != nil {
-		telemetryResp, err := coreClient.Get(ctx, "/internal/v1/tenants/"+tenantID+"/telemetry")
+	telClient := TelemetryClient
+	if telClient == nil {
+		telClient = coreClient
+	}
+	if telClient != nil {
+		telemetryResp, err := telClient.Get(ctx, "/internal/v1/tenants/"+url.PathEscape(tenantID)+"/telemetry")
 		if err != nil {
 			log.Warn("telemetry fetch failed — continuing with zero counts", "error", err)
 		} else {
@@ -156,7 +166,7 @@ func BuildEUAIActTransparencyCard(ctx context.Context, db database.DB, coreClien
 				PolicyCount int  `json:"policy_count"`
 			}
 			if decErr := serviceclient.DecodeJSON(telemetryResp, &tel); decErr == nil {
-				agentCount  = tel.AgentCount
+				agentCount = tel.AgentCount
 				hitlEnabled = tel.HITLEnabled
 				policyCount = tel.PolicyCount
 			}
@@ -213,10 +223,10 @@ func BuildEUAIActTransparencyCard(ctx context.Context, db database.DB, coreClien
 
 		// Art.13.3.d
 		PerformanceMetrics: PerformanceMetrics{
-			GateAccuracyPct:      98.7,
-			FalsePositiveRatePct: 1.3,
-			AverageLatencyMs:     450,
-			UptimeSLAPct:         99.9,
+			GateAccuracyPct:        98.7,
+			FalsePositiveRatePct:   1.3,
+			AverageLatencyMs:       450,
+			UptimeSLAPct:           99.9,
 			SecurityCertifications: []string{"ISO 27001 (in progress)", "SOC2 Type II (in progress)"},
 		},
 
