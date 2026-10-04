@@ -42,7 +42,22 @@ ALTER TABLE compl_idempotency_log              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE compl_idempotency_log              FORCE  ROW LEVEL SECURITY;
 
 -- ── Tenant isolation + superadmin bypass (all tenant-scoped compl_* tables) ──
-DO $$ DECLARE t TEXT; BEGIN
+-- On Supabase the identity comes from the JWT (auth.jwt()); on plain Postgres
+-- (local / on-prem) auth.jwt() does not exist, so fall back to the same app.*
+-- GUCs that ocx-core-svc policies use. Without this the loop aborted and the
+-- FORCE RLS tables above were left with no policies at all.
+DO $$ DECLARE
+  t TEXT;
+  admin_expr  TEXT;
+  tenant_expr TEXT;
+BEGIN
+  IF to_regprocedure('auth.jwt()') IS NOT NULL THEN
+    admin_expr  := '(auth.jwt()->''app_metadata''->>''is_super_admin'')::boolean = true';
+    tenant_expr := 'tenant_id = (auth.jwt()->''app_metadata''->>''tenant_id'')';
+  ELSE
+    admin_expr  := 'current_setting(''app.is_super_admin'', true) = ''true''';
+    tenant_expr := 'tenant_id = current_setting(''app.current_tenant_id'', true)';
+  END IF;
   FOREACH t IN ARRAY ARRAY[
     'compl_records',
     'compl_obligations',
@@ -60,17 +75,9 @@ DO $$ DECLARE t TEXT; BEGIN
     'compl_evidence_vault'
   ] LOOP
     EXECUTE format('DROP POLICY IF EXISTS superadmin_all ON %I', t);
-    EXECUTE format(
-      'CREATE POLICY superadmin_all ON %I '
-      'USING ((auth.jwt()->''app_metadata''->>''is_super_admin'')::boolean = true)',
-      t
-    );
+    EXECUTE format('CREATE POLICY superadmin_all ON %I USING (%s)', t, admin_expr);
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON %I', t);
-    EXECUTE format(
-      'CREATE POLICY tenant_isolation ON %I '
-      'USING (tenant_id = (auth.jwt()->''app_metadata''->>''tenant_id''))',
-      t
-    );
+    EXECUTE format('CREATE POLICY tenant_isolation ON %I USING (%s)', t, tenant_expr);
   END LOOP;
 END $$;
 
