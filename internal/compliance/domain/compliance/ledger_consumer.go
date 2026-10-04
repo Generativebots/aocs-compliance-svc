@@ -115,27 +115,29 @@ func (c *LedgerConsumer) handleMessage(ctx context.Context, msg *pubsub.Message)
 }
 
 func (c *LedgerConsumer) insertEvidence(ctx context.Context, e database.QCoreEvidenceRecord) error {
-	// SLA-GUARANTEE: Supply both `timestamp` (composite PK partner) and `created_at` explicitly
-	// from the same instant. The frontend reads `created_at` for all time-window filtering;
-	// `timestamp` is the legacy PK field for ON CONFLICT resolution.
+	// SLA-GUARANTEE: Supply both `timestamp` and `created_at` explicitly from the
+	// same instant. The frontend reads `created_at` for all time-window filtering.
 	// Using the same `now` value ensures the two columns are always identical and deterministic.
 	now := time.Now().UTC()
-	// Fix-8: created_by stamps the originating agent (or "ledger.consumer" for system events).
-	createdBy := e.AgentID
-	if createdBy == "" {
-		createdBy = "ledger.consumer"
-	}
+	// core_evidence_records PK is evidence_record_id (no created_by column;
+	// the originating agent is carried in agent_id). Upsert is tenant-guarded so a
+	// replayed message for another tenant can never overwrite this tenant's row.
 	query := `
 		INSERT INTO core_evidence_records (
-			id, type, transaction_id, tenant_id, agent_id,
-			hash, payload, timestamp, created_at, created_by
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9)
-		ON CONFLICT (id, timestamp) DO UPDATE SET
+			evidence_record_id, type, transaction_id, tenant_id, agent_id,
+			hash, payload, timestamp, created_at
+		) VALUES (COALESCE(NULLIF($1, ''), gen_random_uuid()::text), $2, $3, $4, $5,
+		          $6, $7::jsonb, $8, $8)
+		ON CONFLICT (evidence_record_id) DO UPDATE SET
 			hash       = EXCLUDED.hash,
 			payload    = EXCLUDED.payload,
-			created_at = EXCLUDED.created_at,
-			created_by = EXCLUDED.created_by
+			created_at = EXCLUDED.created_at
+		WHERE core_evidence_records.tenant_id = EXCLUDED.tenant_id
 	`
+	payload := string(e.Payload)
+	if payload == "" {
+		payload = "{}"
+	}
 	_, err := c.pgx.Pool().Exec(ctx, query,
 		e.ID,
 		e.Type,
@@ -143,9 +145,8 @@ func (c *LedgerConsumer) insertEvidence(ctx context.Context, e database.QCoreEvi
 		e.TenantID,
 		nullIfEmpty(e.AgentID),
 		e.Hash,
-		string(e.Payload),
+		payload,
 		now,
-		createdBy,
 	)
 	return err
 }

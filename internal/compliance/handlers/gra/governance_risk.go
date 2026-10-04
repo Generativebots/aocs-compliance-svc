@@ -607,28 +607,32 @@ func HandleFlagAuditLogEntry(db database.DB, pgxPool *database.PGXPool) http.Han
 			return
 		}
 
-		// Merge flag metadata into details JSONB — non-destructive update
+		// Merge flag metadata into the payload JSONB — non-destructive update.
+		// core_audit PK is audit_id; it has no dedicated details column.
 		updateSQL := `
 			UPDATE core_audit
-			   SET details    = details || jsonb_build_object(
+			   SET payload    = COALESCE(payload, '{}'::jsonb) || jsonb_build_object(
 			                       'flagged',     $1::boolean,
 			                       'flagged_at',  NOW()::text,
 			                       'flag_reason', $2::text
 			                    ),
 			       updated_at = NOW()
-			 WHERE audit_log_id = $3`
+			 WHERE audit_id = $3`
 
-		if pgxPool != nil && pgxPool.Pool() != nil {
-			_, err := pgxPool.Pool().Exec(r.Context(), updateSQL, body.Flag, body.Reason, auditLogID)
-			if err != nil {
-				slog.Error("HandleFlagAuditLogEntry: update failed", "audit_log_id", auditLogID, "error", err)
-				respond.InternalError(w, http.StatusInternalServerError, "flag audit log", err)
-				return
-			}
-		} else {
-			// Fallback for environments where pgxPool is unavailable — log and accept
-			slog.Warn("HandleFlagAuditLogEntry: pgxPool unavailable, flag not persisted",
-				"audit_log_id", auditLogID, "flag", body.Flag)
+		if pgxPool == nil || pgxPool.Pool() == nil {
+			respond.ErrorWithCode(w, http.StatusServiceUnavailable, respond.ErrCodeUnavailable,
+				"database unavailable — audit flag not persisted")
+			return
+		}
+		tag, err := pgxPool.Pool().Exec(r.Context(), updateSQL, body.Flag, body.Reason, auditLogID)
+		if err != nil {
+			slog.Error("HandleFlagAuditLogEntry: update failed", "audit_log_id", auditLogID, "error", err)
+			respond.InternalError(w, http.StatusInternalServerError, "flag audit log", err)
+			return
+		}
+		if tag.RowsAffected() == 0 {
+			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "audit log entry not found")
+			return
 		}
 
 		respond.OK(w, map[string]any{

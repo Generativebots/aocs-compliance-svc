@@ -135,24 +135,18 @@ WHERE tenant_id = $1 AND created_at >= $2`
 			gate = gs[0]
 		}
 
-		// 3. Compliance posture score — normalised per active agent
-		// score = SUM(score) / GREATEST(total_active_agents, 1)
-		// where total_active_agents comes from core_agents for this tenant.
-		// An agent with no compliance record counts as 0.0 (uncovered = non-compliant).
+		// 3. Compliance posture score — latest tenant governance-health score.
+		// core_compliance carries case state only (no score column); the
+		// authoritative posture score is core_gov_health.overall_score, the same
+		// source used by ocx-core-svc's analytics digest so both views agree.
 		type complianceRow struct {
 			Score float64 `json:"score"`
 		}
 		const complianceSQL = `
-SELECT
-  COALESCE(
-    SUM(c.score) / GREATEST(
-      (SELECT COUNT(*) FROM core_agents WHERE tenant_id = $1 AND status = 'ACTIVE'),
-      1
-    ),
-    0
-  )::float8 AS score
-FROM core_compliance c
-WHERE c.tenant_id = $1`
+SELECT COALESCE((
+    SELECT overall_score FROM core_gov_health
+     WHERE tenant_id = $1
+     ORDER BY computed_at DESC LIMIT 1), 0)::float8 AS score`
 
 		var cr []complianceRow
 		if _qErr := db.QueryRawCtx(r.Context(), complianceSQL, &cr, tenantID); _qErr != nil {

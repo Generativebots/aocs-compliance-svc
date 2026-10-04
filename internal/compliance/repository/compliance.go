@@ -65,7 +65,7 @@ func NewComplianceRepositoryFromQuerier(q ComplianceQuerier) *ComplianceReposito
 // ListReports returns compliance reports for a tenant.
 func (r *ComplianceRepository) ListReports(ctx context.Context, tenantID string) ([]ComplianceReport, error) {
 	const q = `
-		SELECT id, tenant_id, report_type, status, generated_at, summary, created_at, updated_at
+		SELECT report_id, tenant_id, report_type, status, generated_at, summary, created_at, updated_at
 		FROM compl_reports
 		WHERE tenant_id = $1
 		ORDER BY created_at DESC`
@@ -96,9 +96,9 @@ func (r *ComplianceRepository) ListReports(ctx context.Context, tenantID string)
 // GetReportByID returns a single compliance report.
 func (r *ComplianceRepository) GetReportByID(ctx context.Context, tenantID, id string) (*ComplianceReport, error) {
 	const q = `
-		SELECT id, tenant_id, report_type, status, generated_at, summary, created_at, updated_at
+		SELECT report_id, tenant_id, report_type, status, generated_at, summary, created_at, updated_at
 		FROM compl_reports
-		WHERE tenant_id = $1 AND id = $2`
+		WHERE tenant_id = $1 AND report_id = $2`
 
 	var cr ComplianceReport
 	err := r.db.QueryRow(ctx, q, tenantID, id).Scan(
@@ -117,11 +117,15 @@ func (r *ComplianceRepository) GetReportByID(ctx context.Context, tenantID, id s
 // CreateReport inserts a new compliance report.
 func (r *ComplianceRepository) CreateReport(ctx context.Context, cr ComplianceReport) (*ComplianceReport, error) {
 	now := time.Now().UTC()
+	// compl_reports: PK report_id (gen_id default when empty), period_start/period_end
+	// NOT NULL — default to the trailing 30-day window ending now.
 	const q = `
 		INSERT INTO compl_reports
-		  (id, tenant_id, report_type, status, summary, created_at, updated_at, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-		RETURNING id, tenant_id, report_type, status, generated_at, summary, created_at, updated_at`
+		  (report_id, tenant_id, report_type, status, summary, period_start, period_end,
+		   created_at, updated_at, generated_by)
+		VALUES (COALESCE(NULLIF($1,''), gen_id('')), $2, $3, COALESCE(NULLIF($4,''),'DRAFT'), $5,
+		        $6::timestamptz - INTERVAL '30 days', $6::timestamptz, $6, $7, $8)
+		RETURNING report_id, tenant_id, report_type, status, generated_at, summary, created_at, updated_at`
 
 	summary := cr.Summary
 	if summary == nil {
@@ -141,12 +145,12 @@ func (r *ComplianceRepository) CreateReport(ctx context.Context, cr ComplianceRe
 }
 
 // MarkReportGenerated marks a report as generated with a summary.
-// updated_at is trigger-managed; updated_by stamps the actor.
+// updated_at is trigger-managed; generated_by stamps the actor.
 func (r *ComplianceRepository) MarkReportGenerated(ctx context.Context, id string, summary map[string]any) error {
 	const q = `
 		UPDATE compl_reports
-		SET status = 'GENERATED', generated_at=NOW(), summary=$1, updated_by='system.compliance'
-		WHERE id=$2`
+		SET status = 'GENERATED', generated_at=NOW(), summary=$1, generated_by='system.compliance'
+		WHERE report_id=$2`
 	_, err := r.db.Exec(ctx, q, summary, id)
 	if err != nil {
 		return fmt.Errorf("compliance.MarkReportGenerated: %w", err)
@@ -157,9 +161,11 @@ func (r *ComplianceRepository) MarkReportGenerated(ctx context.Context, id strin
 // ListViolations returns compliance violation events for a tenant.
 func (r *ComplianceRepository) ListViolations(ctx context.Context, tenantID string, limit int) ([]ViolationEvent, error) {
 	const q = `
-		SELECT id, tenant_id, agent_id, policy_id, severity, description, evidence, remediated, created_at
+		SELECT case_id, tenant_id, COALESCE(agent_id,''), COALESCE(policy_id,''), severity,
+		       COALESCE(description, title), metadata->'evidence',
+		       status IN ('RESOLVED','CLOSED'), created_at
 		FROM compl_records
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND case_type = 'VIOLATION'
 		ORDER BY created_at DESC
 		LIMIT $2`
 
@@ -188,10 +194,14 @@ func (r *ComplianceRepository) ListViolations(ctx context.Context, tenantID stri
 
 // RecordViolation inserts a new violation event.
 func (r *ComplianceRepository) RecordViolation(ctx context.Context, v ViolationEvent) error {
+	// compl_records: PK case_id; evidence is kept in metadata.evidence and the
+	// creating actor in metadata.created_by (no dedicated columns).
 	const q = `
 		INSERT INTO compl_records
-		  (id, tenant_id, agent_id, policy_id, severity, description, evidence, remediated, created_at, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,false,NOW(),$8)`
+		  (case_id, tenant_id, agent_id, policy_id, case_type, severity, status, title, description, metadata, created_at)
+		VALUES (COALESCE(NULLIF($1,''), gen_id('')), $2, NULLIF($3,''), NULLIF($4,''), 'VIOLATION',
+		        COALESCE(NULLIF(UPPER($5),''),'MEDIUM'), 'OPEN', LEFT(COALESCE(NULLIF($6,''),'Policy violation'), 200), $6,
+		        jsonb_build_object('evidence', $7::jsonb, 'created_by', $8::text), NOW())`
 	_, err := r.db.Exec(ctx, q,
 		v.ID, v.TenantID, v.AgentID, v.PolicyID, v.Severity, v.Description, v.Evidence, "system.compliance",
 	)
@@ -203,7 +213,9 @@ func (r *ComplianceRepository) RecordViolation(ctx context.Context, v ViolationE
 
 // MarkRemediated marks a violation as remediated.
 func (r *ComplianceRepository) MarkRemediated(ctx context.Context, tenantID, id string) error {
-	const q = `UPDATE compl_records SET remediated=true WHERE tenant_id=$1 AND id=$2`
+	const q = `UPDATE compl_records
+		SET status='RESOLVED', resolved_at=NOW(), resolved_by='system.compliance'
+		WHERE tenant_id=$1 AND case_id=$2`
 	_, err := r.db.Exec(ctx, q, tenantID, id)
 	if err != nil {
 		return fmt.Errorf("compliance.MarkRemediated: %w", err)

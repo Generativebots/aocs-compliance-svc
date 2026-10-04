@@ -70,11 +70,28 @@ func HandleGetPolicySummary(pgx *database.PGXPool) http.HandlerFunc {
 }
 
 func getPolicySummary(ctx context.Context, p *database.PGXPool, tenantID string) ([]PolicySummaryRow, error) {
+	// Direct query on core_policies (get_policy_summary() returns only 6 columns).
+	// coverage_pct = bound agents / active agents for the tenant (0-100).
+	// last_verdict = most recent gate action recorded against the policy.
 	const query = `
-		SELECT id, name, description, status, version,
-		       rules, metadata, rule_count::int, coverage_pct::float8,
-		       is_active, updated_at, created_at, last_verdict
-		FROM get_policy_summary($1)
+		SELECT p.policy_id, p.name, COALESCE(p.description, ''), COALESCE(p.status, ''),
+		       COALESCE(p.version, 1)::text,
+		       COALESCE(p.rules, '[]'::jsonb), COALESCE(p.metadata, '{}'::jsonb),
+		       CASE WHEN jsonb_typeof(p.rules) = 'array' THEN jsonb_array_length(p.rules) ELSE 0 END,
+		       LEAST(100.0, 100.0 * COALESCE(array_length(p.bound_agents, 1), 0) / ta.n)::float8,
+		       COALESCE(p.is_active, p.status = 'ACTIVE') AS is_active,
+		       COALESCE(p.updated_at, p.created_at, NOW()) AS updated_at,
+		       COALESCE(p.created_at, NOW()),
+		       lv.action
+		FROM core_policies p
+		CROSS JOIN (SELECT GREATEST(COUNT(*), 1) AS n FROM core_agents
+		             WHERE tenant_id = $1 AND status = 'ACTIVE') ta
+		LEFT JOIN LATERAL (
+		    SELECT COALESCE(v.action, v.decision, v.verdict) AS action
+		      FROM core_case_verdicts v
+		     WHERE v.tenant_id = p.tenant_id AND v.policy_id = p.policy_id
+		     ORDER BY v.created_at DESC LIMIT 1) lv ON true
+		WHERE p.tenant_id = $1 AND p.deleted_at IS NULL
 		ORDER BY is_active DESC, updated_at DESC`
 
 	pgxRows, err := p.Query(ctx, query, tenantID)
@@ -156,43 +173,49 @@ func getComplianceObligations(ctx context.Context, p *database.PGXPool, tenantID
 	//   total_policies   = COUNT(*) WHERE tenant_id = $1 (all active policies, any framework)
 	//   score = active_policies / GREATEST(total_policies, 1)
 	// Range: [0.0, 1.0]. 0.0 = no policies covering this framework. 1.0 = full coverage.
+	// Frameworks live in lv_gra_frameworks (syst_tenant_settings subtype=gra_frameworks;
+	// enforcement level in record_value/payload). A policy covers a framework when its
+	// regulatory_frameworks JSON or applicable_regulations[] names the framework id or name.
 	const query = `
-		WITH policy_coverage AS (
-			SELECT
-				framework_id,
-				COUNT(*) FILTER (WHERE status = 'ACTIVE')  AS active_for_framework,
-				COUNT(*)                                     AS total_for_framework
-			FROM core_policies
-			WHERE tenant_id = $1
-			GROUP BY framework_id
-		),
-		total_active AS (
+		WITH total_active AS (
 			SELECT GREATEST(COUNT(*) FILTER (WHERE status = 'ACTIVE'), 1) AS n
 			FROM core_policies
-			WHERE tenant_id = $1
+			WHERE tenant_id = $1 AND deleted_at IS NULL
+		), fw AS (
+			SELECT COALESCE(f.framework_id, f.record_key, f.setting_id) AS framework_id,
+			       COALESCE(f.name, f.record_key, '')                    AS name,
+			       COALESCE(f.record_value->>'enforcement_level',
+			                f.payload->>'enforcement_level', 'RECOMMENDED') AS enforcement_level,
+			       COALESCE(f.region_code, f.jurisdiction, '')           AS region_code,
+			       COALESCE(f.is_active, true)                           AS is_active
+			FROM lv_gra_frameworks f
+			WHERE (f.tenant_id = $1 OR f.tenant_id IS NULL) AND COALESCE(f.is_active, true)
 		)
 		SELECT
-			f.framework_id        AS id,
-			f.framework_id        AS framework_id,
-			f.name                AS framework_name,
-			f.name                AS title,
-			CASE f.enforcement_level
+			fw.framework_id AS id,
+			fw.framework_id,
+			fw.name         AS framework_name,
+			fw.name         AS title,
+			CASE fw.enforcement_level
 				WHEN 'MANDATORY'   THEN 'HIGH'
 				WHEN 'RECOMMENDED' THEN 'MEDIUM'
 				ELSE 'LOW'
-			END                   AS severity,
-			COALESCE(f.enforcement_level, 'RECOMMENDED') AS enforcement,
-			COALESCE(f.jurisdiction, '') AS region_code,
-			COALESCE(
-				(pc.active_for_framework::float8 / GREATEST(ta.n, 1)),
-				0.0
-			)::float8             AS compliance_score,
-			f.is_active
-		FROM gra_frameworks f
+			END             AS severity,
+			fw.enforcement_level AS enforcement,
+			fw.region_code,
+			(pc.active_for_framework::float8 / ta.n)::float8 AS compliance_score,
+			fw.is_active
+		FROM fw
 		CROSS JOIN total_active ta
-		LEFT JOIN policy_coverage pc ON pc.framework_id = f.framework_id
-		WHERE (f.tenant_id = $1 OR f.tenant_id IS NULL) AND f.is_active = true
-		ORDER BY f.enforcement_level DESC, f.name ASC`
+		CROSS JOIN LATERAL (
+			SELECT COUNT(*) AS active_for_framework
+			  FROM core_policies p
+			 WHERE p.tenant_id = $1 AND p.deleted_at IS NULL AND p.status = 'ACTIVE'
+			   AND (COALESCE(p.regulatory_frameworks, '[]'::jsonb) ?| ARRAY[fw.framework_id, fw.name]
+			        OR fw.framework_id = ANY(COALESCE(p.applicable_regulations, '{}'))
+			        OR fw.name = ANY(COALESCE(p.applicable_regulations, '{}')))
+		) pc
+		ORDER BY fw.enforcement_level DESC, fw.name ASC`
 
 	pgxRows, err := p.Query(ctx, query, tenantID)
 	if err != nil {
@@ -260,71 +283,65 @@ func HandleGetPolicyImpact(pgx *database.PGXPool) http.HandlerFunc {
 	}
 }
 
+// policyImpactSQL scores each policy from its gate verdict history in
+// core_case_verdicts. impact_score is on a 0-1 scale (fraction of evaluated
+// actions the policy blocked); policies with no verdicts fall back to
+// priority/10. $2 = '' returns all policies, otherwise only that policy.
+const policyImpactSQL = `
+	WITH stats AS (
+		SELECT p.policy_id, p.name, COALESCE(p.status, '') AS status, p.priority,
+		       COALESCE(array_length(p.bound_agents, 1), 0) AS bound_agents,
+		       COALESCE(p.updated_at, p.created_at, NOW()) AS policy_ts,
+		       COUNT(v.verdict_id) AS total,
+		       COUNT(*) FILTER (WHERE COALESCE(v.action, v.decision) IN ('BLOCK', 'DENY')) AS blocked,
+		       COUNT(DISTINCT v.agent_id) AS verdict_agents,
+		       MAX(v.created_at) AS last_verdict_at
+		FROM core_policies p
+		LEFT JOIN core_case_verdicts v ON v.policy_id = p.policy_id AND v.tenant_id = p.tenant_id
+		WHERE p.tenant_id = $1 AND p.deleted_at IS NULL AND ($2 = '' OR p.policy_id = $2)
+		GROUP BY p.policy_id
+	), scored AS (
+		SELECT *, CASE WHEN total > 0 THEN blocked::float8 / total
+		               ELSE LEAST(1.0, COALESCE(priority, 5) / 10.0) END AS impact
+		FROM stats
+	)
+	SELECT policy_id, name, status, impact::float8,
+	       GREATEST(verdict_agents, bound_agents)::bigint,
+	       CASE WHEN impact >= 0.8 THEN 'CRITICAL' WHEN impact >= 0.6 THEN 'HIGH'
+	            WHEN impact >= 0.4 THEN 'MEDIUM' ELSE 'LOW' END,
+	       CASE WHEN total > 0 THEN LEAST(1.0, total / 100.0)::float8 END,
+	       COALESCE(last_verdict_at, policy_ts)
+	FROM scored
+	ORDER BY impact DESC
+	LIMIT 500`
+
 func getPolicyImpactAnalysis(ctx context.Context, p *database.PGXPool, tenantID string) ([]PolicyImpactRow, error) {
+	return queryPolicyImpact(ctx, p, tenantID, "")
+}
+
+func queryPolicyImpact(ctx context.Context, p *database.PGXPool, tenantID, policyID string) ([]PolicyImpactRow, error) {
 	if p == nil {
 		return []PolicyImpactRow{}, nil
 	}
-	const query = `
-		SELECT policy_id::text, policy_name, policy_status,
-		       impact_score::float8, affected_agents::bigint,
-		       risk_level, confidence, last_evaluated
-		FROM get_policy_impact_analysis($1)
-		ORDER BY impact_score DESC`
-
-	pgxRows, err := p.Query(ctx, query, tenantID)
-	if err == nil {
-		defer pgxRows.Close()
-
-		var out []PolicyImpactRow
-		for pgxRows.Next() {
-			var r PolicyImpactRow
-			if err := pgxRows.Scan(
-				&r.PolicyID, &r.PolicyName, &r.PolicyStatus,
-				&r.ImpactScore, &r.AffectedAgents,
-				&r.RiskLevel, &r.Confidence, &r.LastEvaluated,
-			); err != nil {
-				continue
-			}
-			out = append(out, r)
-		}
-		if pgxRows.Err() == nil {
-			return out, nil
-		}
+	pgxRows, err := p.Query(ctx, policyImpactSQL, tenantID, policyID)
+	if err != nil {
+		return nil, fmt.Errorf("policy impact query: %w", err)
 	}
+	defer pgxRows.Close()
 
-	// Fallback query if get_policy_impact_analysis stored procedure is missing or fails
-	const fallbackQuery = `
-		SELECT id::text, name, status,
-		       COALESCE(priority::float8 * 10.0, 50.0), 0::bigint,
-		       CASE WHEN priority >= 8 THEN 'HIGH' WHEN priority >= 4 THEN 'MEDIUM' ELSE 'LOW' END,
-		       0.95::float8, updated_at
-		FROM core_policies
-		WHERE tenant_id = $1
-		ORDER BY priority DESC LIMIT 100`
-
-	fbRows, fbErr := p.Query(ctx, fallbackQuery, tenantID)
-	if fbErr != nil {
-		logger.For("compliance/handlers/compliance").Warn("getPolicyImpactAnalysis fallback query failed", "tenant_id", tenantID, "err", fbErr)
-		return []PolicyImpactRow{}, nil
-	}
-	defer fbRows.Close()
-
-	var out []PolicyImpactRow
-	for fbRows.Next() {
+	out := []PolicyImpactRow{}
+	for pgxRows.Next() {
 		var r PolicyImpactRow
-		if err := fbRows.Scan(
+		if err := pgxRows.Scan(
 			&r.PolicyID, &r.PolicyName, &r.PolicyStatus,
 			&r.ImpactScore, &r.AffectedAgents,
 			&r.RiskLevel, &r.Confidence, &r.LastEvaluated,
 		); err != nil {
-			continue
+			return nil, fmt.Errorf("policy impact scan: %w", err)
 		}
 		out = append(out, r)
 	}
-	if out == nil {
-		out = []PolicyImpactRow{}
-	}
-	return out, nil
+	return out, pgxRows.Err()
 }
 
 // POST /api/v1/gov/rules/{id}/impact-preview
@@ -384,38 +401,7 @@ func HandleGetPolicyImpactPreview(pgx *database.PGXPool) http.HandlerFunc {
 		// then filters in Go. For tenants with 500+ policies this is a full table scan on
 		// every impact preview click. Now passes policyID directly to the DB function/query
 		// so only the requested policy is scanned. Falls back to full scan if no ID given.
-		var rows []PolicyImpactRow
-		var err error
-		if policyID != "" {
-			// Targeted query: fetch only the requested policy's impact data
-			const previewQuery = `
-				SELECT policy_id::text, policy_name, policy_status,
-				       impact_score::float8, affected_agents::bigint,
-				       risk_level, confidence, last_evaluated
-				FROM get_policy_impact_analysis($1)
-				WHERE policy_id = $2
-				LIMIT 1`
-			pgxRows, qErr := pgx.Query(r.Context(), previewQuery, tenantID, policyID)
-			if qErr == nil {
-				defer pgxRows.Close()
-				for pgxRows.Next() {
-					var row PolicyImpactRow
-					if sErr := pgxRows.Scan(
-						&row.PolicyID, &row.PolicyName, &row.PolicyStatus,
-						&row.ImpactScore, &row.AffectedAgents,
-						&row.RiskLevel, &row.Confidence, &row.LastEvaluated,
-					); sErr == nil {
-						rows = append(rows, row)
-					}
-				}
-				err = pgxRows.Err()
-			} else {
-				// DB function may not accept $2 filter — fall back to full scan
-				rows, err = getPolicyImpactAnalysis(r.Context(), pgx, tenantID)
-			}
-		} else {
-			rows, err = getPolicyImpactAnalysis(r.Context(), pgx, tenantID)
-		}
+		rows, err := queryPolicyImpact(r.Context(), pgx, tenantID, policyID)
 		if err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "policy impact analysis", err)
 			return

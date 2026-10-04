@@ -8,6 +8,7 @@
 package compliance
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"time"
@@ -70,6 +71,9 @@ func HandleResolveBulkHITL(db database.DB, coreClients ...*serviceclient.Client)
 			reviewerID = "system:bulk-resolve"
 		}
 		now := time.Now().UTC().Format(time.RFC3339)
+		// Audit payload: marshalled (not concatenated) so quotes in the reason
+		// cannot break the JSON or inject keys into the audit record.
+		reasonJSON, _ := json.Marshal(map[string]string{"reason": req.Reason})
 
 		results := make([]map[string]any, 0, len(req.DecisionIDs))
 		for _, decisionID := range req.DecisionIDs {
@@ -98,7 +102,7 @@ func HandleResolveBulkHITL(db database.DB, coreClients ...*serviceclient.Client)
 						"target_id":  decisionID,
 						"action":     req.Verdict,
 						"severity":   "INFO",
-						"new_value":  `{"reason":"` + req.Reason + `"}`,
+						"new_value":  string(reasonJSON),
 					}); _sErr != nil {
 						slog.Error("PostEvent failed (best-effort)", "decision_id", decisionID, "error", _sErr)
 					}
@@ -129,7 +133,7 @@ func HandleResolveBulkHITL(db database.DB, coreClients ...*serviceclient.Client)
 						TargetID:  decisionID,
 						Action:    req.Verdict,
 						Severity:  "INFO",
-						NewValue:  []byte(`{"reason":"` + req.Reason + `"}`),
+						NewValue:  reasonJSON,
 					})
 				})
 				if txErr != nil {
