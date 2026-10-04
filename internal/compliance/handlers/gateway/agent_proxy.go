@@ -171,8 +171,9 @@ func HandleUniversalAgentChatProxy(db database.DB, dlpStore *security.DLPStore) 
 			upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, strings.NewReader(string(bodyBytes)))
 			if err == nil {
 				upstreamReq.Header.Set("Content-Type", "application/json")
-				if authHdr := r.Header.Get("Authorization"); authHdr != "" {
-					upstreamReq.Header.Set("Authorization", authHdr)
+				// Never forward the caller's AOCS JWT to a third-party provider.
+				if key := os.Getenv("UPSTREAM_OPENAI_API_KEY"); key != "" {
+					upstreamReq.Header.Set("Authorization", "Bearer "+key)
 				}
 				client := &http.Client{Timeout: 60 * time.Second}
 				resp, err := client.Do(upstreamReq)
