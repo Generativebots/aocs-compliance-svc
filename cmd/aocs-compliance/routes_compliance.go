@@ -1,12 +1,12 @@
 package main
 
 import (
+	"github.com/gorilla/mux"
 	compliance "github.com/ocx/compliance/internal/compliance/handlers/compliance"
 	gateway "github.com/ocx/compliance/internal/compliance/handlers/gateway"
-	hsecurity "github.com/ocx/compliance/internal/compliance/handlers/security"
 	regulatory "github.com/ocx/compliance/internal/compliance/handlers/regulatory"
 	reports "github.com/ocx/compliance/internal/compliance/handlers/reports"
-	"github.com/gorilla/mux"
+	hsecurity "github.com/ocx/compliance/internal/compliance/handlers/security"
 	"github.com/ocx/shared/contracts"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
@@ -112,7 +112,6 @@ func registerIntelComplianceRoutes(
 	api.HandleFunc("/hitl/cases/{id}/comments", auth.RequireAccess(pc, "hitl", "read", middleware.RequireValidPathVars("id")(compliance.HandleListCaseComments(db)))).Methods("GET")
 	api.HandleFunc("/hitl/cases/{id}/recusal-log", auth.RequireAccess(pc, "hitl", "read", middleware.RequireValidPathVars("id")(compliance.HandleGetRecusalLog(db)))).Methods("GET")
 	api.HandleFunc("/hitl/cases/{id}/votes", auth.RequireAccess(pc, "hitl", "read", middleware.RequireValidPathVars("id")(compliance.HandleListHITLVotes(db)))).Methods("GET")
-	api.HandleFunc("/hitl/departments/{id}/cases", auth.RequireAccess(pc, "hitl", "read", middleware.RequireValidPathVars("id")(compliance.HandleListCases(db)))).Methods("GET")
 	api.HandleFunc("/hitl/jurors/{member_id}/recuse", auth.RequireAccess(pc, "hitl", "write", middleware.RequireValidPathVars("member_id")(compliance.HandleRejectJuror(db)))).Methods("POST")
 	api.HandleFunc("/ops/cases/{id}", auth.RequireAccess(pc, "ops", "read", middleware.RequireValidPathVars("id")(compliance.HandleGetCase(db, coreClient)))).Methods("GET")
 	api.HandleFunc("/ops/cases/{id}/arbitrate", auth.RequireAccess(pc, "ops", "write", middleware.RequireValidPathVars("id")(compliance.HandleResolveCase(db, nil, coreClient)))).Methods("POST")

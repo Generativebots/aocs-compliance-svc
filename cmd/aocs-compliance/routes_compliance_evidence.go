@@ -9,12 +9,12 @@ import (
 
 	"github.com/gorilla/mux"
 	compliance "github.com/ocx/compliance/internal/compliance/handlers/compliance"
-	zkp "github.com/ocx/compliance/internal/compliance/handlers/zkp"
-	gra "github.com/ocx/compliance/internal/compliance/handlers/gra"
-	analytics "github.com/ocx/compliance/internal/compliance/handlers/reports"
 	evaluation "github.com/ocx/compliance/internal/compliance/handlers/evidence"
+	gra "github.com/ocx/compliance/internal/compliance/handlers/gra"
 	regulatory "github.com/ocx/compliance/internal/compliance/handlers/regulatory"
+	analytics "github.com/ocx/compliance/internal/compliance/handlers/reports"
 	compliancesync "github.com/ocx/compliance/internal/compliance/handlers/sync"
+	zkp "github.com/ocx/compliance/internal/compliance/handlers/zkp"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/infra/middleware"
@@ -108,7 +108,6 @@ func registerComplianceEvidenceRoutes(
 	// ── Audit Log ─────────────────────────────────────────────────────────────
 	api.HandleFunc("/governance/audit-log", auth.RequireAccess(pc, "compliance", "read", gra.HandleListAllAuditLog(db))).Methods("GET")
 	api.HandleFunc("/audit-log", auth.RequireAccess(pc, "compliance", "read", gra.HandleListAllAuditLog(db))).Methods("GET")
-	api.HandleFunc("/admin/platform/audit-log", auth.RequireAccess(pc, "compliance", "read", gra.HandleListAllAuditLog(db))).Methods("GET")
 	api.HandleFunc("/admin/audit-log", auth.RequireAccess(pc, "compliance", "read", gra.HandleListAllAuditLog(db))).Methods("GET")
 
 	// ── Compliance reports ────────────────────────────────────────────────────
@@ -163,7 +162,6 @@ func registerComplianceEvidenceRoutes(
 	api.HandleFunc("/gra/compliance-obligations/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(compliance.HandleGetGRAObligation(db)))).Methods("GET")
 	api.HandleFunc("/gra/compliance-regions", auth.RequireAccess(pc, "governance", "write", compliance.HandleCreateComplianceRegion(db))).Methods("POST")
 	api.HandleFunc("/gra/compliance-regions", auth.RequireAccess(pc, "governance", "read", compliance.HandleListComplianceRegions(db))).Methods("GET")
-	api.HandleFunc("/gra/frameworks", auth.RequireAccess(pc, "compliance", "read", gra.HandleListGRARegulatoryFrameworks(db, coreClient))).Methods("GET")
 	api.HandleFunc("/gra/frameworks/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(compliance.HandleGetGRAFramework(db)))).Methods("GET")
 	api.HandleFunc("/gra/frameworks/{id}", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleUpdateGRAFramework(db)))).Methods("PATCH")
 	api.HandleFunc("/gra/risk-config/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(compliance.HandleGetGRARiskConfig(db)))).Methods("GET")
@@ -337,5 +335,3 @@ func registerComplianceEvidenceRoutes(
 		auth.RequireAccess(pc, "compliance", "read",
 			analytics.HandleGetResourceGraphSnapshot(db))).Methods("GET")
 }
-
-
