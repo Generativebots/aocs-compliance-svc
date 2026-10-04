@@ -111,16 +111,18 @@ func NormalizeDLPPolicy(base DLPPolicy, in DLPPolicyInput) (DLPPolicy, error) {
 	return p, nil
 }
 
-// DLPPolicyColumns maps a policy onto core_dlp_integrations columns.
+// DLPPolicyColumns maps a policy onto core_dlp_integrations columns. JSONB
+// values are sent as JSON text (the driver cannot encode []map parameters).
 func DLPPolicyColumns(p DLPPolicy) map[string]any {
+	js := func(v any) string { b, _ := json.Marshal(v); return string(b) }
 	return map[string]any{
 		"policy_name": p.Name,
 		"policy_type": "PATTERN_MATCH",
-		"rules":       []map[string]any{{"regex": p.Regex, "category": p.Category}},
-		"actions":     map[string]any{"on_match": p.Action},
+		"rules":       js([]map[string]any{{"regex": p.Regex, "category": p.Category}}),
+		"actions":     js(map[string]any{"on_match": p.Action}),
 		"severity":    p.Severity,
 		"is_active":   p.Enabled,
-		"config":      map[string]any{"kind": dlpPolicyKind, "category": p.Category, "regex": p.Regex, "action": p.Action},
+		"config":      js(map[string]any{"kind": dlpPolicyKind, "category": p.Category, "regex": p.Regex, "action": p.Action}),
 	}
 }
 
