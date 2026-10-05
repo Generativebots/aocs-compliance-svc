@@ -29,16 +29,10 @@ import (
 // StartCompliancePropagationConsumers starts all domain event consumers for compliance.
 // Must be called in goroutines. All consumers run until ctx is cancelled.
 func StartCompliancePropagationConsumers(ctx context.Context, db database.DB, projectID string) {
-	go startConsumer(ctx, db, projectID,
-		eventbus.TopicTenantProvisioned(),
-		"aocs-compliance-tenant-provisioned-sub",
-		handleComplianceTenantProvisioned,
-	)
-	go startConsumer(ctx, db, projectID,
-		eventbus.TopicTenantDeleted(),
-		"aocs-compliance-tenant-deleted-sub",
-		handleComplianceTenantDeleted,
-	)
+	// tenant.provisioned / tenant.deleted are delivered by
+	// SystemComplianceConsumer (Pub/Sub subscription compliance-aocs-tenant-*-sub
+	// or compliance's addressed syst_outbox_events rows). Subscribing here too
+	// would process every tenant event twice, so those listeners are not started.
 	go startConsumer(ctx, db, projectID,
 		eventbus.TopicAgentRegistered(),
 		"aocs-compliance-agent-registered-sub",

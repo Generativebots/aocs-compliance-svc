@@ -65,9 +65,10 @@ services:
       SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:-}
       PLATFORM_MASTER_KEY: ${PLATFORM_MASTER_KEY:-}
 
-      # ── GCP Pub/Sub ───────────────────────────────────────────────────────
-      GCP_PROJECT_ID: ${GCP_PROJECT_ID:-}
-      PUBSUB_EMULATOR_HOST: ${PUBSUB_EMULATOR_HOST:-}
+      # ── GCP Pub/Sub — shared local emulator (aocs-system-svc compose) ─────
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID:-local-dev}
+      PUBSUB_EMULATOR_HOST: ${PUBSUB_EMULATOR_HOST:-pubsub:8681}
+      SYSTEM_EVENTS_TRANSPORT: ${SYSTEM_EVENTS_TRANSPORT:-}
       LEDGER_PUBSUB_TOPIC: ${LEDGER_PUBSUB_TOPIC:-aocs-compliance-ledger}
 
       # ── Feature control ───────────────────────────────────────────────────

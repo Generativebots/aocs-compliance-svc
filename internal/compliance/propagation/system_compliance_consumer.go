@@ -50,7 +50,7 @@ import (
 
 // SystemComplianceConsumer polls system syst_outbox_events and seeds compliance tables.
 type SystemComplianceConsumer struct {
-	poller *eventbus.SystemOutboxPoller
+	poller *eventbus.SystemEventConsumer
 	db     database.DB
 }
 
@@ -60,7 +60,7 @@ type SystemComplianceConsumer struct {
 //   - db:   compliance SupabaseClient (DATABASE_URL) — for compl_* writes.
 func NewSystemComplianceConsumer(pool *pgxpool.Pool, db database.DB) *SystemComplianceConsumer {
 	c := &SystemComplianceConsumer{db: db}
-	c.poller = eventbus.NewSystemOutboxPoller(pool, c.dispatch, "")
+	c.poller = eventbus.NewSystemEventConsumer(pool, eventbus.ConsumerCompliance, c.dispatch) // Pub/Sub subscriptions when GCP is configured; own addressed DB rows otherwise
 	return c
 }
 

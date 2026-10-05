@@ -29,6 +29,7 @@ import (
 
 	// Infrastructure
 	"github.com/ocx/shared/infra/config"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/infra/license"
 	"github.com/ocx/shared/infra/middleware"
@@ -136,11 +137,12 @@ func main() {
 		} else {
 			slog.Warn("compliance: SYSTEM_DATABASE_URL not set — SystemComplianceConsumer skipped (dev: LocalEventBus handles delivery)")
 		}
+		var pool *pgxpool.Pool
 		if systemPool != nil {
-			systemConsumer := propagation.NewSystemComplianceConsumer(systemPool.Pool(), db)
-			systemConsumer.Start(svc.BgCtx)
-			slog.Info("SystemComplianceConsumer started — polling syst_outbox_events (production path)")
+			pool = systemPool.Pool()
 		}
+		propagation.NewSystemComplianceConsumer(pool, db).Start(svc.BgCtx)
+		slog.Info("SystemComplianceConsumer started", "db_transport", pool != nil)
 
 		// Complementary: GCP Pub/Sub / LocalEventBus (dev fallback only).
 		propagation.StartCompliancePropagationConsumers(svc.BgCtx, db, os.Getenv("GCP_PROJECT_ID"))
