@@ -5,21 +5,23 @@ package compliance
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/ocx/shared/infra/concurrent"
 	"github.com/gorilla/mux"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/infra/eventbus"
 	"github.com/ocx/shared/infra/serviceclient"
-	"strings"
 
 	"github.com/ocx/shared/respond"
 	"github.com/ocx/shared/validate"
@@ -418,6 +420,16 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 // HandleAssignCase assigns a HITL case to a user/role and auto-routes to departments.
 // When department_ids is not provided in the request body, the IntentClassifier is used
 // to determine routing via AI (falling back to local keyword scoring if AI is unavailable).
+var (
+	errAssignNotFound = errors.New("case not found")
+	errAssignTerminal = errors.New("case is in terminal status")
+	// assignTerminalStatuses — chk_hitl_status values after which a case can no longer be (re)assigned.
+	assignTerminalStatuses = map[string]bool{
+		"RESOLVED": true, "APPROVED": true, "REJECTED": true, "CANCELLED": true, "CLOSED": true,
+		"OVERRIDDEN": true, "COURSE_CORRECTED": true, "TIMED_OUT": true, "TIMEOUT": true,
+	}
+)
+
 func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if respond.RequireDB(w, db) {
@@ -441,7 +453,10 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 		// Previously any JSON key could leak into the classifier or downstream update logic.
 		var req struct {
 			AssignedTo     string   `json:"assigned_to"`
+			ReviewerID     string   `json:"reviewer_id"`
+			DepartmentID   string   `json:"department_id"`
 			DepartmentIDs  []string `json:"department_ids"`
+			Reason         string   `json:"reason"`
 			CaseType       string   `json:"case_type"`
 			PolicyCategory string   `json:"policy_category"`
 			RuleType       string   `json:"rule_type"`
@@ -450,23 +465,45 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 		if !validate.Bind(w, r, &req) {
 			return
 		}
-		assignedTo := req.AssignedTo
 		operatorID := auth.GetUserID(r.Context())
+		// assigned_to (user UUID or role slug) | reviewer_id (alias) | the caller ("Assign to Me").
+		assignedTo := strings.TrimSpace(req.AssignedTo)
+		if assignedTo == "" {
+			assignedTo = strings.TrimSpace(req.ReviewerID)
+		}
+		if assignedTo == "" {
+			assignedTo = operatorID
+		}
+		if assignedTo == "" {
+			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "assigned_to (or reviewer_id) is required")
+			return
+		}
 		now := time.Now().UTC().Format(time.RFC3339)
 
 		update := map[string]any{
-			"status":     "PENDING",
-			"updated_at": now,
+			"status":      "ASSIGNED",
+			"assigned_to": assignedTo,
+			"assigned_at": now,
+			"updated_at":  now,
+		}
+		if operatorID != "" {
+			update["updated_by"] = operatorID
 		}
 
 		// F-004 FIX: Accept department_ids[] for multi-department routing.
 		// When department_ids is empty, auto-route using AI-driven classification.
 		deptIDs := req.DepartmentIDs
+		if d := strings.TrimSpace(req.DepartmentID); d != "" {
+			deptIDs = append(deptIDs, d)
+		}
 		// Auto-route when no departments specified: use AI IntentClassifier.
 
 		// department routing. Falls back to local TF-IDF keyword scoring when AI
 		// is unavailable. Both paths are deterministic and audited.
-		if len(deptIDs) == 0 {
+		// Only classify when there is something to classify — a bare reviewer
+		// assignment carries no case_type/description signal.
+		hasClassSignal := req.CaseType != "" || req.PolicyCategory != "" || req.RuleType != "" || req.Description != ""
+		if len(deptIDs) == 0 && hasClassSignal {
 			classResult := classifier.Classify(r.Context(), req.CaseType, req.PolicyCategory, req.RuleType, req.Description)
 			deptIDs = classResult.Departments
 			// FIX: ai_intent, ai_confidence, routing_source are NOT real DB columns.
@@ -570,61 +607,60 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 		}
 
 		// Validate whether assigned_to is a UUID (user) or a role slug.
-		// Writing a non-UUID into user_id (UUID column) causes a Postgres 22P02 error.
-		if assignedTo != "" {
-			// Valid UUID — assign directly to a user
+		// Writing a non-UUID into user_id causes downstream UUID joins to fail,
+		// so only real user UUIDs go to user_id; role slugs go to assigned_role.
+		if _, uuidErr := uuid.Parse(assignedTo); uuidErr == nil {
 			update["user_id"] = assignedTo
+			update["reviewer_id"] = assignedTo
 		} else {
-			// Role slug (e.g. "governance-manager") — store in JSONB context_data
-			// assignments don't overwrite each other (last-write-wins data loss).
-			var existingRows []map[string]any
-			if lockErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
-				if qErr := tx.QueryRowsCompoundForUpdate(database.TblCoreHitl, "context_data",
-					"decision_id", caseID, "tenant_id", tenantID, &existingRows); qErr != nil {
-					return qErr
-				}
-				return nil
-			}); lockErr != nil {
-				slog.Warn("AssignCase: ForUpdate read failed — continuing with empty ctx", "error", lockErr)
-			}
-			ctx := map[string]any{}
-			if len(existingRows) > 0 {
-				if cd, ok := existingRows[0]["context_data"].(map[string]any); ok {
-					for k, v := range cd {
-						ctx[k] = v
-					}
-				}
-			}
-			ctx["assigned_role"] = assignedTo
-			ctx["assigned_by"] = operatorID
-			ctx["assigned_at"] = now
-			if len(deptIDs) > 0 {
-				ctx["department_ids"] = deptIDs
-			}
-			update["context_data"] = ctx
+			update["assigned_role"] = assignedTo
 		}
-		// Merge AI classification metadata into context_data JSONB (not standalone columns).
-		if classMeta, hasMeta := update["_classification_meta"].(map[string]any); hasMeta {
-			delete(update, "_classification_meta") // remove temp key before DB write
-			ctxData, _ := update["context_data"].(map[string]any)
-			if ctxData == nil {
-				ctxData = map[string]any{}
+		if len(deptIDs) == 1 {
+			update["department_id"] = deptIDs[0]
+		}
+		classMeta, _ := update["_classification_meta"].(map[string]any)
+		delete(update, "_classification_meta") // temp key — never a DB column
+
+		// P1-B: Lock the case, reject missing/terminal cases honestly, merge
+		// assignment metadata into context_data, update and write the audit row
+		// in one transaction.
+		var caseRows []map[string]any
+		if txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
+			if qErr := tx.QueryRowsCompoundForUpdate(database.TblCoreHitl, "status,context_data",
+				"decision_id", caseID, "tenant_id", tenantID, &caseRows); qErr != nil {
+				return qErr
+			}
+			if len(caseRows) == 0 {
+				return errAssignNotFound
+			}
+			if st, _ := caseRows[0]["status"].(string); assignTerminalStatuses[strings.ToUpper(st)] {
+				return fmt.Errorf("%w: %s", errAssignTerminal, st)
+			}
+			ctxData := map[string]any{}
+			if cd, ok := caseRows[0]["context_data"].(map[string]any); ok {
+				for k, v := range cd {
+					ctxData[k] = v
+				}
+			}
+			ctxData["assigned_to"] = assignedTo
+			ctxData["assigned_by"] = operatorID
+			ctxData["assigned_at"] = now
+			if len(deptIDs) > 0 {
+				ctxData["department_ids"] = deptIDs
+			}
+			if req.Reason != "" {
+				ctxData["assignment_reason"] = req.Reason
 			}
 			for k, v := range classMeta {
 				ctxData[k] = v
 			}
-			update["context_data"] = ctxData
-		}
-		// FIX: pgx driver cannot encode nested map[string]any → JSONB directly.
-		// Serialize context_data to JSON string before DB write.
-		if cd, ok := update["context_data"].(map[string]any); ok {
-			cdBytes, jsonErr := json.Marshal(cd)
-			if jsonErr == nil {
-				update["context_data"] = string(cdBytes)
+			// pgx cannot encode nested map[string]any → JSONB directly.
+			cdBytes, jsonErr := json.Marshal(ctxData)
+			if jsonErr != nil {
+				return fmt.Errorf("marshal context_data: %w", jsonErr)
 			}
-		}
-		// P1-B: Atomically update case assignment and write lifecycle audit row.
-		if txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
+			update["context_data"] = string(cdBytes)
+
 			if err := tx.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
 				return err
 			}
@@ -637,7 +673,9 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 				"payload": map[string]any{
 					"case_id":        caseID,
 					"assigned_to":    assignedTo,
+					"assigned_by":    operatorID,
 					"department_ids": deptIDs,
+					"reason":         req.Reason,
 					"occurred_at":    now,
 				},
 			}
@@ -646,8 +684,15 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 			}
 			return nil
 		}); txErr != nil {
-			slog.Error("AssignCase failed", "case_id", caseID, "error", txErr)
-			respond.InternalError(w, http.StatusInternalServerError, "assign case", txErr)
+			switch {
+			case errors.Is(txErr, errAssignNotFound):
+				respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "case not found")
+			case errors.Is(txErr, errAssignTerminal):
+				respond.ErrorWithCode(w, http.StatusConflict, respond.ErrCodeConflict, txErr.Error()+" — assignment not permitted")
+			default:
+				slog.Error("AssignCase failed", "case_id", caseID, "error", txErr)
+				respond.InternalError(w, http.StatusInternalServerError, "assign case", txErr)
+			}
 			return
 		}
 		respond.OK(w, map[string]any{"status": "ASSIGNED", "case_id": caseID, "assigned_to": assignedTo, "department_ids": deptIDs})

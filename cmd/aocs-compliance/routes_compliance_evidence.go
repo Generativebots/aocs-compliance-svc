@@ -188,7 +188,7 @@ func registerComplianceEvidenceRoutes(
 	// POST /compliance/eu-ai-act/transparency/submit — file a signed declaration
 	// GET  /compliance/eu-ai-act/transparency/status — declaration filing status
 	api.HandleFunc("/compliance/eu-ai-act/transparency", auth.RequireAccess(pc, "compliance", "read", compliance.HandleGetEUAIActTransparency(db, coreClient))).Methods("GET")
-	api.HandleFunc("/compliance/eu-ai-act/transparency", auth.RequireAccess(pc, "compliance", "write", compliance.HandleSubmitEUAIActDeclaration(db))).Methods("POST")
+	api.HandleFunc("/compliance/eu-ai-act/transparency", auth.RequireAccess(pc, "compliance", "write", compliance.HandleSubmitEUAIActDeclaration(db, coreClient))).Methods("POST")
 	api.HandleFunc("/compliance/eu-ai-act/transparency/status", auth.RequireAccess(pc, "compliance", "read", compliance.HandleGetEUAIActDeclarationStatus(db))).Methods("GET")
 
 	// (Formal report generation routes are registered in routes_compliance.go)

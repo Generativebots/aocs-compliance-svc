@@ -228,8 +228,11 @@ func complianceUpdate(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "no updatable fields provided")
 			return
 		}
+		if !complianceExists(w, db, tenantID, id) {
+			return
+		}
 		if err := db.UpdateRowCompound(database.TblCoreEnforcementActions, "enforcement_action_id", id, "tenant_id", tenantID, update); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "update failed", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "update failed", err)
 			return
 		}
 		respond.JSON(w, http.StatusOK, map[string]string{"status": "updated"})
@@ -251,6 +254,9 @@ func complianceDelete(db database.DB) http.HandlerFunc {
 		if !ok {
 			return
 		}
+		if !complianceExists(w, db, tenantID, id) {
+			return
+		}
 		if err := db.SoftDeleteRowCompound(database.TblCoreEnforcementActions, "enforcement_action_id", id, "tenant_id", tenantID); err != nil {
 			slog.Error("complianceDelete", "error", err)
 				respond.InternalError(w, http.StatusInternalServerError, "db operation failed", err)
@@ -258,6 +264,23 @@ func complianceDelete(db database.DB) http.HandlerFunc {
 		}
 		respond.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 	}
+}
+
+// complianceExists verifies an enforcement record exists for the tenant before
+// a mutation. UpdateRowCompound reports no error on zero rows, so without this
+// a bad id returned a fake 200. Writes 404/500 itself.
+func complianceExists(w http.ResponseWriter, db database.DB, tenantID, id string) bool {
+	var rows []map[string]any
+	if err := db.QueryRowsCompound(database.TblCoreEnforcementActions, "enforcement_action_id",
+		"enforcement_action_id", id, "tenant_id", tenantID, &rows); err != nil {
+		respond.InternalError(w, http.StatusInternalServerError, "lookup enforcement record", err)
+		return false
+	}
+	if len(rows) == 0 {
+		respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "record not found")
+		return false
+	}
+	return true
 }
 
 func complianceSetStatus(db database.DB, newStatus string) http.HandlerFunc {
@@ -270,9 +293,24 @@ func complianceSetStatus(db database.DB, newStatus string) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing path parameter: id")
 			return
 		}
+		now := time.Now().UTC().Format(time.RFC3339)
 		update := map[string]any{
-			"status":      newStatus,
-			"resolved_at": time.Now().UTC().Format(time.RFC3339),
+			"status":            newStatus,
+			"previous_status":   nil, // filled below from the current row
+			"status_changed_at": now,
+		}
+		// resolved_at only for terminal outcomes — acknowledge/escalate/appeal
+		// are not resolutions.
+		switch newStatus {
+		case "RESOLVED", "RELEASED", "DISMISSED":
+			update["resolved_at"] = now
+			update["resolved"] = true
+		}
+		if actor := auth.GetUserID(r.Context()); actor != "" {
+			update["status_changed_by"] = actor
+			if newStatus == "RESOLVED" {
+				update["resolved_by"] = actor
+			}
 		}
 		// Optional: pull notes/reason from request body
 		respond.LimitBody(r)
@@ -280,7 +318,9 @@ func complianceSetStatus(db database.DB, newStatus string) http.HandlerFunc {
 			Notes  string `json:"notes"`
 			Reason string `json:"reason"`
 		}
-		validate.BindOptional(w, r, &optBody)
+		if !validate.BindOptional(w, r, &optBody) {
+			return
+		}
 		// AUDIT-FIX-CS3: notes and reason both mapped to the same "reason" column.
 		// When both were provided, notes was silently overwritten by reason.
 		// Compliance case audit trail was unreliable. Fix: combine when both present.
@@ -297,6 +337,21 @@ func complianceSetStatus(db database.DB, newStatus string) http.HandlerFunc {
 		tenantID, ok := auth.MustGetTenantID(w, r)
 		if !ok {
 			return
+		}
+		var cur []map[string]any
+		if err := db.QueryRowsCompound(database.TblCoreEnforcementActions, "enforcement_action_id,status",
+			"enforcement_action_id", id, "tenant_id", tenantID, &cur); err != nil {
+			respond.InternalError(w, http.StatusInternalServerError, "lookup enforcement record", err)
+			return
+		}
+		if len(cur) == 0 {
+			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "record not found")
+			return
+		}
+		if prev, _ := cur[0]["status"].(string); prev != "" {
+			update["previous_status"] = prev
+		} else {
+			delete(update, "previous_status")
 		}
 		if err := db.UpdateRowCompound(database.TblCoreEnforcementActions, "enforcement_action_id", id, "tenant_id", tenantID, update); err != nil {
 			slog.Error("complianceSetStatus", "status", newStatus, "error", err)
@@ -461,6 +516,12 @@ func HandleResolveViolation(db database.DB) http.HandlerFunc {
 	return complianceSetStatus(db, "RESOLVED")
 }
 
+// HandleAcknowledgeViolation sets status = "ACKNOWLEDGED" (known issue /
+// suppressed). POST /api/v1/violations/{id}/acknowledge
+func HandleAcknowledgeViolation(db database.DB) http.HandlerFunc {
+	return complianceSetStatus(db, "ACKNOWLEDGED")
+}
+
 // HandleIsolateViolation sets core_enforcement_actions.status = "QUARANTINED".
 // POST /api/v1/violation/{id}/quarantine
 // Patent §H: Quarantine barrier — isolates the violating agent without full kill-switch.
@@ -485,12 +546,29 @@ func HandleEscalateViolation(db database.DB) http.HandlerFunc {
 			return
 		}
 		update := map[string]any{
-			"severity":   "CRITICAL",
-			"status":     "ESCALATED",
+			"severity":          "CRITICAL",
+			"status":            "ESCALATED",
+			"status_changed_at": time.Now().UTC().Format(time.RFC3339),
+		}
+		respond.LimitBody(r)
+		var optBody struct {
+			Reason string `json:"reason"`
+		}
+		if !validate.BindOptional(w, r, &optBody) {
+			return
+		}
+		if optBody.Reason != "" {
+			update["notes"] = optBody.Reason
+		}
+		if actor := auth.GetUserID(r.Context()); actor != "" {
+			update["status_changed_by"] = actor
 		}
 
 		tenantID, ok := auth.MustGetTenantID(w, r)
 		if !ok {
+			return
+		}
+		if !complianceExists(w, db, tenantID, id) {
 			return
 		}
 		if err := db.UpdateRowCompound(database.TblCoreEnforcementActions, "enforcement_action_id", id, "tenant_id", tenantID, update); err != nil {
@@ -523,6 +601,12 @@ func HandleDeleteSanction(db database.DB) http.HandlerFunc {
 	return complianceDelete(db)
 }
 func HandleSubmitSanctionAppeal(db database.DB) http.HandlerFunc {
+	return complianceSetStatus(db, "APPEALED")
+}
+
+// HandleAppealViolation sets core_enforcement_actions.status = "APPEALED" for a violation.
+// POST /api/v1/violations/{id}/appeal
+func HandleAppealViolation(db database.DB) http.HandlerFunc {
 	return complianceSetStatus(db, "APPEALED")
 }
 

@@ -66,6 +66,10 @@ func HandleDLPScan(store *DLPStore) http.HandlerFunc {
 		if req.Payload == "" && req.Content != "" {
 			req.Payload = req.Content
 		}
+		if strings.TrimSpace(req.Payload) == "" {
+			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "payload (or content) is required")
+			return
+		}
 		if req.AgentID == "" {
 			req.AgentID = "system_agent"
 		}

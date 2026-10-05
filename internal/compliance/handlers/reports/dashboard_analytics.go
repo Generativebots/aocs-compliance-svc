@@ -288,7 +288,7 @@ func HandleGetViolationSummary(db database.DB) http.HandlerFunc {
 
 		// core_enforcement_actions: compliance_violation entries
 		var actions []struct {
-			ID         string  `json:"id"`
+			ID         string  `json:"enforcement_action_id"`
 			TenantID   string  `json:"tenant_id"`
 			AgentID    *string `json:"agent_id,omitempty"`
 			ActionType string  `json:"action_type"`
@@ -298,17 +298,17 @@ func HandleGetViolationSummary(db database.DB) http.HandlerFunc {
 			CreatedAt  string  `json:"created_at"`
 		}
 		if tenantID != "" {
-			if _dbErr := db.QueryRowsCompound(database.TblCoreCompliance, database.ColsComplianceCases, "action_type", "compliance_violation", "tenant_id", tenantID, &actions); _dbErr != nil {
+			if _dbErr := db.QueryRowsCompound(database.TblCoreEnforcementActions, "enforcement_action_id,tenant_id,agent_id,action_type,severity,status,reason,created_at", "action_type", "compliance_violation", "tenant_id", tenantID, &actions); _dbErr != nil {
 				slog.Error("db operation failed", "method", "QueryRowsCompound", "error", _dbErr)
 			}
 		} else {
-			if _dbErr := db.QueryRowsCompoundCtx(r.Context(), database.TblCoreCompliance, database.ColsComplianceCases, "action_type", "compliance_violation", "tenant_id", tenantID, &actions); _dbErr != nil {
+			if _dbErr := db.QueryRowsCompoundCtx(r.Context(), database.TblCoreEnforcementActions, "enforcement_action_id,tenant_id,agent_id,action_type,severity,status,reason,created_at", "action_type", "compliance_violation", "tenant_id", tenantID, &actions); _dbErr != nil {
 				slog.Error("db operation failed", "method", "QueryRows", "error", _dbErr)
 			}
 		}
 		if actions == nil {
 			actions = []struct {
-				ID         string  `json:"id"`
+				ID         string  `json:"enforcement_action_id"`
 				TenantID   string  `json:"tenant_id"`
 				AgentID    *string `json:"agent_id,omitempty"`
 				ActionType string  `json:"action_type"`

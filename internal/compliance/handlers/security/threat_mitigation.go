@@ -1,6 +1,9 @@
 package security
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 
@@ -39,9 +42,22 @@ func HandleCheckSybil(sybil *security.SybilDetector, db database.DB, coreClients
 		if respond.RequireDB(w, db) {
 			return
 		}
+		// Routes are POST /sybil/check, /security/sybil/check, /security/sybil-check
+		// (no path var) — agent_id comes from the JSON body; {agentId} kept for compatibility.
 		agentID := mux.Vars(r)["agentId"]
 		if agentID == "" {
-			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing path parameter: agentId")
+			var body struct {
+				AgentID string `json:"agent_id"`
+			}
+			respond.LimitBody(r)
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+				respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "invalid JSON body")
+				return
+			}
+			agentID = body.AgentID
+		}
+		if agentID == "" {
+			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeMissingField, "agent_id is required")
 			return
 		}
 		tenantID, ok := auth.MustGetTenantID(w, r)
@@ -114,6 +130,7 @@ func HandleCheckSybil(sybil *security.SybilDetector, db database.DB, coreClients
 			"agent_id":  agentID,
 			"tenant_id": tenantID,
 			"allowed":   allowed,
+			"is_sybil":  !allowed,
 			"reason":    reason,
 		})
 	}

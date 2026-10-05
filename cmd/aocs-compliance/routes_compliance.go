@@ -55,6 +55,8 @@ func registerIntelComplianceRoutes(
 	api.HandleFunc("/violations/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(compliance.HandleGetViolation(db)))).Methods("GET")
 	api.HandleFunc("/violations/{id}", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleUpdateViolation(db)))).Methods("PATCH")
 	api.HandleFunc("/violations/{id}/resolve", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleResolveViolation(db)))).Methods("POST")
+	api.HandleFunc("/violations/{id}/acknowledge", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleAcknowledgeViolation(db)))).Methods("POST")
+	api.HandleFunc("/violations/{id}/appeal", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleAppealViolation(db)))).Methods("POST")
 	api.HandleFunc("/violations/{id}/quarantine", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleIsolateViolation(db)))).Methods("POST")
 	api.HandleFunc("/violations/{id}/release", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleRestoreViolation(db)))).Methods("POST")
 	api.HandleFunc("/violations/{id}/escalate", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleEscalateViolation(db)))).Methods("POST")
@@ -111,14 +113,12 @@ func registerIntelComplianceRoutes(
 
 	// ── HITL Cases ────────────────────────────────────────────────────────────
 	api.HandleFunc("/hitl/cases/{id}/arbitrate", auth.RequireAccess(pc, "hitl", "write", middleware.RequireValidPathVars("id")(compliance.HandleResolveCase(db, nil, coreClient)))).Methods("POST")
-	api.HandleFunc("/hitl/cases/{id}/assign", auth.RequireAccess(pc, "hitl", "write", middleware.RequireValidPathVars("id")(compliance.HandleReassignCase(db, coreClient)))).Methods("POST")
 	api.HandleFunc("/hitl/cases/{id}/comments", auth.RequireAccess(pc, "hitl", "read", middleware.RequireValidPathVars("id")(compliance.HandleListCaseComments(db)))).Methods("GET")
 	api.HandleFunc("/hitl/cases/{id}/recusal-log", auth.RequireAccess(pc, "hitl", "read", middleware.RequireValidPathVars("id")(compliance.HandleGetRecusalLog(db)))).Methods("GET")
 	api.HandleFunc("/hitl/cases/{id}/votes", auth.RequireAccess(pc, "hitl", "read", middleware.RequireValidPathVars("id")(compliance.HandleListHITLVotes(db)))).Methods("GET")
 	api.HandleFunc("/hitl/jurors/{member_id}/recuse", auth.RequireAccess(pc, "hitl", "write", middleware.RequireValidPathVars("member_id")(compliance.HandleRejectJuror(db)))).Methods("POST")
 	api.HandleFunc("/ops/cases/{id}", auth.RequireAccess(pc, "ops", "read", middleware.RequireValidPathVars("id")(compliance.HandleGetCase(db, coreClient)))).Methods("GET")
 	api.HandleFunc("/ops/cases/{id}/arbitrate", auth.RequireAccess(pc, "ops", "write", middleware.RequireValidPathVars("id")(compliance.HandleResolveCase(db, nil, coreClient)))).Methods("POST")
-	api.HandleFunc("/ops/cases/{id}/assign", auth.RequireAccess(pc, "ops", "write", middleware.RequireValidPathVars("id")(compliance.HandleReassignCase(db, coreClient)))).Methods("POST")
 	api.HandleFunc("/ops/cases/{id}/comments", auth.RequireAccess(pc, "ops", "read", middleware.RequireValidPathVars("id")(compliance.HandleListCaseComments(db)))).Methods("GET")
 	// /compliance/cases — canonical path; called by state machine (transitions.ts) for case lifecycle.
 	api.HandleFunc("/compliance/cases", auth.RequireAccess(pc, "compliance", "read", compliance.HandleListCases(db))).Methods("GET")
@@ -220,6 +220,12 @@ func registerIntelComplianceRoutes(
 	api.HandleFunc("/compliance/cases/{id}/assign",
 		auth.RequireAccess(pc, "compliance", "write",
 			middleware.RequireValidPathVars("id")(compliance.HandleAssignCase(db, coreClassifier)))).Methods("POST")
+	// HITL/ops assign = reviewer assignment (status→ASSIGNED). Department reassignment
+	// (to_dept_id + reason) lives on the explicit /reassign routes below.
+	api.HandleFunc("/hitl/cases/{id}/assign", auth.RequireAccess(pc, "hitl", "write", middleware.RequireValidPathVars("id")(compliance.HandleAssignCase(db, coreClassifier)))).Methods("POST")
+	api.HandleFunc("/ops/cases/{id}/assign", auth.RequireAccess(pc, "ops", "write", middleware.RequireValidPathVars("id")(compliance.HandleAssignCase(db, coreClassifier)))).Methods("POST")
+	api.HandleFunc("/hitl/cases/{id}/reassign", auth.RequireAccess(pc, "hitl", "write", middleware.RequireValidPathVars("id")(compliance.HandleReassignCase(db, coreClient)))).Methods("POST")
+	api.HandleFunc("/ops/cases/{id}/reassign", auth.RequireAccess(pc, "ops", "write", middleware.RequireValidPathVars("id")(compliance.HandleReassignCase(db, coreClient)))).Methods("POST")
 	api.HandleFunc("/compliance/cases/{id}/merge",
 		auth.RequireAccess(pc, "compliance", "write",
 			middleware.RequireValidPathVars("id")(compliance.HandleMergeCase(db)))).Methods("POST")

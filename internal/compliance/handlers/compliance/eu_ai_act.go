@@ -28,6 +28,8 @@ package compliance
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -126,6 +128,16 @@ type submitDeclarationRequest struct {
 	DeclarationID   string `json:"declaration_id"`
 	ConfirmAccuracy bool   `json:"confirm_accuracy"`
 	DeclaredBy      string `json:"declared_by"`
+	// Declarant-attested overrides applied on top of the live card (optional).
+	RiskClass     string `json:"risk_class"`
+	Purpose       string `json:"purpose"`
+	IntendedUsers string `json:"intended_users"`
+	ForbiddenUses string `json:"forbidden_uses"`
+}
+
+var validEUAIActRiskClasses = map[string]bool{
+	"UNACCEPTABLE_RISK": true, "HIGH_RISK": true, "LIMITED_RISK": true,
+	"MINIMAL_RISK": true, "GENERAL_PURPOSE": true,
 }
 
 // ── Public card builder (called by handlers/regulatory for formal report artefact) ──
@@ -283,7 +295,7 @@ func HandleGetEUAIActTransparency(db database.DB, coreClient *serviceclient.Clie
 // The declaration is stored as a compliance_case with case_type='EU_AI_ACT_DECLARATION'.
 //
 // POST /compliance/eu-ai-act/transparency/submit
-func HandleSubmitEUAIActDeclaration(db database.DB) http.HandlerFunc {
+func HandleSubmitEUAIActDeclaration(db database.DB, coreClient *serviceclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if respond.RequireDB(w, db) {
 			return
@@ -307,11 +319,42 @@ func HandleSubmitEUAIActDeclaration(db database.DB) http.HandlerFunc {
 		if req.DeclaredBy == "" {
 			req.DeclaredBy = actorID
 		}
+		if req.RiskClass != "" && !validEUAIActRiskClasses[req.RiskClass] {
+			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest,
+				"risk_class must be one of UNACCEPTABLE_RISK, HIGH_RISK, LIMITED_RISK, MINIMAL_RISK, GENERAL_PURPOSE")
+			return
+		}
+
+		// Snapshot the live Art.13 card and apply declarant-attested overrides.
+		card, err := BuildEUAIActTransparencyCard(r.Context(), db, coreClient, tenantID)
+		if err != nil {
+			respond.InternalError(w, http.StatusInternalServerError, "build transparency card", err)
+			return
+		}
+		if req.RiskClass != "" {
+			card.RiskClass = req.RiskClass
+		}
+		if req.Purpose != "" {
+			card.Purpose = req.Purpose
+		}
+		if req.IntendedUsers != "" {
+			card.IntendedUsers = req.IntendedUsers
+		}
+		if req.ForbiddenUses != "" {
+			card.ForbiddenUses = req.ForbiddenUses
+		}
+		cardJSON, err := json.Marshal(card)
+		if err != nil {
+			respond.InternalError(w, http.StatusInternalServerError, "marshal transparency card", err)
+			return
+		}
+		sum := sha256.Sum256(cardJSON)
+		reportHash := hex.EncodeToString(sum[:])
 
 		declarationID := uuid.New().String()
 		now := time.Now().UTC()
 
-		cardPayload, _ := json.Marshal(map[string]any{
+		cardPayload, err := json.Marshal(map[string]any{
 			"declaration_id":   declarationID,
 			"tenant_id":        tenantID,
 			"filed_at":         now.Format(time.RFC3339),
@@ -319,7 +362,13 @@ func HandleSubmitEUAIActDeclaration(db database.DB) http.HandlerFunc {
 			"status":           "FILED",
 			"regulation":       "EU AI Act (Regulation (EU) 2024/1689) Article 13",
 			"confirm_accuracy": req.ConfirmAccuracy,
+			"card":             json.RawMessage(cardJSON),
+			"report_hash":      reportHash,
 		})
+		if err != nil {
+			respond.InternalError(w, http.StatusInternalServerError, "marshal declaration", err)
+			return
+		}
 
 		if err := db.InsertRow(database.TblCoreCompliance, map[string]any{
 			"case_id":    declarationID,
@@ -347,6 +396,8 @@ func HandleSubmitEUAIActDeclaration(db database.DB) http.HandlerFunc {
 			"filed_at":       now.Format(time.RFC3339),
 			"filed_by":       req.DeclaredBy,
 			"regulation":     "EU AI Act (Regulation (EU) 2024/1689) Article 13",
+			"risk_class":     card.RiskClass,
+			"report_hash":    reportHash,
 			"message":        "Transparency declaration filed. Retain this record for regulatory inspection.",
 		})
 	}
@@ -375,7 +426,11 @@ func HandleGetEUAIActDeclarationStatus(db database.DB) http.HandlerFunc {
 		if err := db.QueryRowsCompound(database.TblCoreCompliance,
 			"case_id,status,data,created_at",
 			"tenant_id", tenantID, "case_type", "EU_AI_ACT_DECLARATION",
-			&rows); err != nil || len(rows) == 0 {
+			&rows); err != nil {
+			respond.InternalError(w, http.StatusInternalServerError, "query EU AI Act declarations", err)
+			return
+		}
+		if len(rows) == 0 {
 			respond.JSON(w, http.StatusOK, map[string]any{
 				"status":  "NOT_FILED",
 				"message": "No EU AI Act Article 13 declaration has been filed for this tenant.",

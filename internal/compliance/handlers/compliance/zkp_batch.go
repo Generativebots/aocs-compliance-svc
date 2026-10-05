@@ -330,6 +330,7 @@ func HandleCreateCaseExportJob(db database.DB) http.HandlerFunc {
 		var body struct {
 			Format     string `json:"format"`
 			ReportType string `json:"report_type"`
+			Period     string `json:"period,omitempty"` // e.g. "30d", "Q3-2026" — persisted in core_jobs.metadata
 		}
 		respond.LimitBody(r)
 		if !validate.Bind(w, r, &body) {
@@ -347,15 +348,22 @@ func HandleCreateCaseExportJob(db database.DB) http.HandlerFunc {
 			return
 		}
 		jobID := generatePlatformID()
-		if err := db.InsertRow(database.TblCoreJobs, map[string]any{
+		job := map[string]any{
 			"job_id": jobID, "tenant_id": tenantID, "format": body.Format,
 			"report_type": body.ReportType, "status": "PENDING",
-		}); err != nil {
+		}
+		if body.Period != "" {
+			job["metadata"] = map[string]any{"period": body.Period}
+		}
+		if actor := auth.GetUserID(r.Context()); actor != "" {
+			job["created_by"] = actor
+		}
+		if err := db.InsertRow(database.TblCoreJobs, job); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "create export job", err)
 			return
 		}
 		respond.JSON(w, http.StatusAccepted, map[string]any{
-			"job_id": jobID, "status": "PENDING", "format": body.Format, "report_type": body.ReportType,
+			"job_id": jobID, "status": "PENDING", "format": body.Format, "report_type": body.ReportType, "period": body.Period,
 		})
 	}
 }
