@@ -133,7 +133,7 @@ func HandleUniversalAgentChatProxy(db database.DB, dlpStore *security.DLPStore) 
 					"tenant_id":    tenantID,
 					"policy_name":  "Ingress Enterprise DLP Exfiltration Guard",
 					"severity":     "HIGH",
-					"status":       "BLOCKED",
+					"status":       "OPEN",
 					"details":      fmt.Sprintf("Agent %s attempted prompt violating DLP: %s", agentID, ingressScan.Reasoning),
 					"created_at":   time.Now().UTC().Format(time.RFC3339),
 				}); vErr != nil {

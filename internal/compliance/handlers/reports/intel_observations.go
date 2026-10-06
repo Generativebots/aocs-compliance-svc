@@ -71,7 +71,9 @@ func HandleListIntelligenceObservations(db database.DB) http.HandlerFunc {
 		}
 
 		var rows []obsRow
-		cols := "observation_id,agent_id,event_type,severity,source,title,description,status,acknowledged_by,resolved_by,created_at,updated_at"
+		// core_observations columns: insight_id, category, summary, ... (no source /
+		// acknowledged_by / resolved_by). Alias onto the response contract.
+		cols := "insight_id::text AS observation_id,COALESCE(agent_id::text,'') AS agent_id,COALESCE(category,'') AS event_type,COALESCE(severity,'') AS severity,'intel' AS source,COALESCE(title,'') AS title,COALESCE(summary,'') AS description,COALESCE(status,'') AS status,'' AS acknowledged_by,'' AS resolved_by,created_at::text AS created_at,updated_at::text AS updated_at"
 
 		if err := db.QueryRowsCtx(r.Context(), database.TblCoreObservations, cols, "tenant_id", tenantID, &rows); err != nil {
 			slog.Error("HandleListIntelligenceObservations: query failed",

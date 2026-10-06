@@ -82,7 +82,7 @@ func HandleCheckSybil(sybil *security.SybilDetector, db database.DB, coreClients
 		}
 		severity := "INFO"
 		if !allowed {
-			severity = "WARN"
+			severity = "WARNING" // core_events severity CHECK: INFO|WARNING|ERROR|CRITICAL|HIGH|MEDIUM|LOW
 		}
 
 		if coreClient != nil {

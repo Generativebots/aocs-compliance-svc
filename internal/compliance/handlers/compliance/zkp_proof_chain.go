@@ -58,7 +58,9 @@ func HandleGenerateProofChain(db database.DB) http.HandlerFunc {
 		}
 		if _dbErr := db.QueryRowsCompound(database.TblSharZkpVerify, database.ColsSentiZkpVerificationsProofHash,
 			"agent_id", body.AgentID, "tenant_id", tenantID, &proofs); _dbErr != nil {
-			slog.Error("db.QueryRowsCompound failed (best-effort)", "error", _dbErr)
+			// A chain root over a partial/unknown proof set would be a false attestation.
+			respond.InternalError(w, http.StatusInternalServerError, "load zkp proofs", _dbErr)
+			return
 		}
 
 		const maxProofs = 10000

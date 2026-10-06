@@ -343,6 +343,10 @@ func HandleListGRARegulatoryFrameworks(db database.DB, coreClient *serviceclient
 		// This is consistent with HandleListGRAComplianceObligations (line 323).
 		results := make([]map[string]any, 0)
 		for _, row := range allRows {
+			// lv_gra_frameworks lives in syst_tenant_settings: only this tenant's rows.
+			if tid, _ := row["tenant_id"].(string); tid != "" && tid != tenantID {
+				continue
+			}
 			jur, _ := row["jurisdiction"].(string)
 			if country == "" || jur == "" || jur == country {
 				results = append(results, row)

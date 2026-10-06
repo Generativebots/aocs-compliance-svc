@@ -291,14 +291,18 @@ func HandleGetAgentTrustSummary(db database.DB) http.HandlerFunc {
 // HandleGetPolicyVerdictDistribution queries vw_policy_verdict_distribution.
 // GET /api/v1/analytics/policy-verdicts
 // Returns policy-level verdict distribution (allow/deny/escalate) with avg confidence.
-// No tenant filter — policy names are global; agents are tenant-scoped at query time.
+// Scoped to the caller's tenant (verdict counts are tenant data).
 func HandleGetPolicyVerdictDistribution(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if respond.RequireDB(w, db) {
 			return
 		}
+		tenantID, ok := auth.MustGetTenantID(w, r)
+		if !ok {
+			return
+		}
 		var rows []map[string]any
-		if err := db.QueryViewRows("vw_policy_verdict_distribution", "*", "", "", &rows); err != nil {
+		if err := db.QueryViewRows("vw_policy_verdict_distribution", "*", "tenant_id", tenantID, &rows); err != nil {
 			slog.Warn("HandleGetPolicyVerdictDistribution: view error", "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "policy verdict distribution", err)
 			return

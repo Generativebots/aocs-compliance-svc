@@ -77,7 +77,29 @@ func sysListHandler(tbl, cols string, db database.DB) http.HandlerFunc {
 // Lists active distributed cron locks for the tenant. Used to monitor which
 // background jobs are currently locked (preventing double-execution).
 func HandleListCronLocks(db database.DB) http.HandlerFunc {
-	return sysListHandler(database.TblCoreCronLocks, "*", db)
+	// core_cron_locks is cross-tenant infrastructure (no tenant_id column): job
+	// names and lock holders of every tenant's workers. Superadmin only.
+	return func(w http.ResponseWriter, r *http.Request) {
+		if respond.RequireDB(w, db) {
+			return
+		}
+		if !auth.IsSuperAdmin(r.Context()) {
+			respond.ErrorWithCode(w, http.StatusForbidden, respond.ErrCodeForbidden, "cron locks are platform infrastructure (superadmin only)")
+			return
+		}
+		pp := parseLimit(r, 50, 200)
+		var rows []map[string]any
+		if err := db.QueryRowsLimited(database.TblCoreCronLocks,
+			"lock_key,job,lock_scope,locked_by,locked_at,expires_at,released,created_at,updated_at",
+			"released", "false", pp, &rows); err != nil {
+			respond.InternalError(w, http.StatusInternalServerError, "cron locks query failed", err)
+			return
+		}
+		if rows == nil {
+			rows = []map[string]any{}
+		}
+		respond.OK(w, map[string]any{"data": rows, "table": database.TblCoreCronLocks, "count": len(rows)})
+	}
 }
 
 // HandleListNonces — GET /api/v1/system/nonces

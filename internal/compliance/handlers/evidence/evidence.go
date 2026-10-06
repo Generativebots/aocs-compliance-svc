@@ -46,6 +46,14 @@ func verifyEvidenceHash(rec database.QCoreEvidenceRecord) (integrityOK bool, sto
 	if rec.Hash == canonicalComputed {
 		return true, rec.Hash, canonicalComputed
 	}
+	// Stored-row form: lv_core_evidence_records folds non-physical insert fields
+	// (id, chain_hash, previous_block_hash) into payload, and the read model
+	// carries evidence_record_id instead of id. Rebuild the write-time input.
+	if restored, ok := restoreWriteTimeEvidence(rec); ok {
+		if c := computeCanonicalEvidenceHash(restored); c == rec.Hash {
+			return true, rec.Hash, c
+		}
+	}
 	// Fallback for legacy records hashed on payload only
 	payloadBytes := []byte(rec.Payload)
 	sum := sha256.Sum256(payloadBytes)
@@ -54,6 +62,30 @@ func verifyEvidenceHash(rec database.QCoreEvidenceRecord) (integrityOK bool, sto
 		return true, rec.Hash, payloadComputed
 	}
 	return false, rec.Hash, canonicalComputed
+}
+
+// restoreWriteTimeEvidence undoes the lv_dml payload folding so the hash input
+// matches what CreateEvidence hashed (json.Marshal of a map → sorted, compact).
+func restoreWriteTimeEvidence(rec database.QCoreEvidenceRecord) (database.QCoreEvidenceRecord, bool) {
+	var m map[string]any
+	if len(rec.Payload) == 0 || json.Unmarshal(rec.Payload, &m) != nil {
+		return rec, false
+	}
+	out := rec
+	if id, ok := m["id"].(string); ok && id != "" {
+		out.ID = id
+	} else if out.ID == "" {
+		out.ID = rec.EvidenceRecordID
+	}
+	for _, k := range []string{"id", "chain_hash", "previous_block_hash"} {
+		delete(m, k)
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return rec, false
+	}
+	out.Payload = b
+	return out, true
 }
 
 func HandleListEvidence(db database.DB) http.HandlerFunc {
