@@ -248,7 +248,10 @@ func HandleDeliverComplianceReport(db database.DB) http.HandlerFunc {
 		var req struct {
 			Recipients []string `json:"recipients"`
 		}
-		_ = validate.BindOptional(w, r, &req) // best-effort: empty body keeps schedule recipients
+		// Optional body: empty is fine; malformed/unrecognised → 400 (stop, no double write). // best-effort: empty body keeps schedule recipients
+		if !validate.BindOptional(w, r, &req) {
+			return
+		}
 		if len(req.Recipients) > 0 {
 			schedConfig.NotifyEmails = req.Recipients
 		}

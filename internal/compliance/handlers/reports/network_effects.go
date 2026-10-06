@@ -452,7 +452,7 @@ func HandleGetIntelForecast(db database.DB) http.HandlerFunc {
 			slog.Error("QueryRowsWithin90Days failed", "error", _dbErr)
 		}
 		var verdicts []map[string]any
-		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreVerdicts, "verdict_id,outcome,created_at", "tenant_id", tenantID, &verdicts); _dbErr != nil {
+		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreGateDecisions, "decision_id AS verdict_id,verdict AS outcome,created_at", "tenant_id", tenantID, &verdicts); _dbErr != nil {
 			slog.Error("QueryRows failed", "error", _dbErr)
 		}
 		total := 0.0

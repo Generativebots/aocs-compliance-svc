@@ -77,8 +77,8 @@ func registerComplianceEvidenceRoutes(
 	//   │  PUT  /admin/compliance-evidence/{id}  → admin:write (control update)   │
 	//   └─────────────────────────────────────────────────────────────────────────┘
 	//
-	// The three HandleFunc calls below on "/evidence/{id}" are INTENTIONAL —
-	// gorilla/mux dispatches on HTTP method, so GET/PUT/DELETE are independent.
+	// The HandleFunc calls below on "/evidence/{id}" are INTENTIONAL —
+	// gorilla/mux dispatches on HTTP method, so GET/DELETE are independent.
 	// This is NOT a duplicate registration.
 	api.HandleFunc("/evidence", auth.RequireAccess(pc, "analytics", "write", evaluation.HandleCreateEvidence(db))).Methods("POST")
 	api.HandleFunc("/compliance/evidence", auth.RequireAccess(pc, "compliance", "write", evaluation.HandleCreateEvidence(db))).Methods("POST")
@@ -87,11 +87,9 @@ func registerComplianceEvidenceRoutes(
 	api.HandleFunc("/evidence/chain", auth.RequireAccess(pc, "analytics", "read", evaluation.HandleGetEvidenceChainByID(db))).Methods("GET")
 	api.HandleFunc("/evidence/{id}", auth.RequireAccess(pc, "analytics", "read", middleware.RequireValidPathVars("id")(evaluation.HandleGetEvidence(db)))).Methods("GET")
 	api.HandleFunc("/compliance/evidence/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(evaluation.HandleGetEvidence(db)))).Methods("GET")
-	// HITLMutationGuard checks aocs_evidence_records.hitl_case_id; blocks mutation if case is open.
-	api.HandleFunc("/evidence/{id}", auth.RequireAccess(pc, "analytics", "write",
-		middleware.HITLMutationGuard(db, "core_evidence", "evidence_id")(analytics.HandleUpdateEvidence(db)))).Methods("PUT")
+	// Evidence is immutable — there is no update route. DELETE archives the record.
 	api.HandleFunc("/evidence/{id}", auth.RequireAccess(pc, "analytics", "delete",
-		middleware.HITLMutationGuard(db, "core_evidence", "evidence_id")(analytics.HandleDeleteEvidence(db)))).Methods("DELETE")
+		middleware.RequireValidPathVars("id")(analytics.HandleDeleteEvidence(db)))).Methods("DELETE")
 	api.HandleFunc("/evidence/{id}/attest", auth.RequireAccess(pc, "analytics", "write", middleware.RequireValidPathVars("id")(evaluation.HandleAttestEvidence(db)))).Methods("POST")
 	api.HandleFunc("/evidence/{id}/chain", auth.RequireAccess(pc, "analytics", "read", middleware.RequireValidPathVars("id")(analytics.HandleVerifyChain(db)))).Methods("GET")
 	api.HandleFunc("/evidence-attestations", auth.RequireAccess(pc, "analytics", "read", evaluation.HandleListEvidenceAttestations(db))).Methods("GET")
@@ -107,13 +105,23 @@ func registerComplianceEvidenceRoutes(
 	// ── Audit Log ─────────────────────────────────────────────────────────────
 	api.HandleFunc("/governance/audit-log", auth.RequireAccess(pc, "compliance", "read", gra.HandleListAllAuditLog(db))).Methods("GET")
 	api.HandleFunc("/audit-log", auth.RequireAccess(pc, "compliance", "read", gra.HandleListAllAuditLog(db))).Methods("GET")
-	api.HandleFunc("/admin/audit-log", auth.RequireAccess(pc, "compliance", "read", gra.HandleListAllAuditLog(db))).Methods("GET")
+	// GET /admin/audit-log (admin audit trail, lv_admin_audit_log) is served by aocs-intel with POST and GET {id}.
 
 	// ── Compliance reports ────────────────────────────────────────────────────
 	api.HandleFunc("/compliance-reports", auth.RequireAccess(pc, "analytics", "read", analytics.HandleListComplianceReports(db))).Methods("GET")
 	api.HandleFunc("/compliance-reports/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(analytics.HandleGetComplianceReport(db)))).Methods("GET")
 	api.HandleFunc("/compliance-reports/{id}", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(analytics.HandleUpdateComplianceReport(db)))).Methods("PATCH")
 	api.HandleFunc("/compliance-reports/{id}", auth.RequireAccess(pc, "compliance", "delete", middleware.RequireValidPathVars("id")(analytics.HandleDeleteComplianceReport(db)))).Methods("DELETE")
+	// /compliance/reports is the canonical collection the frontend uses
+	// (lib/api/paths.ts complianceReports). Owned here, by the paid compliance
+	// module; the intel duplicates were removed.
+	api.HandleFunc("/compliance/reports", auth.RequireAccess(pc, "compliance", "read", analytics.HandleListComplianceReports(db))).Methods("GET")
+	api.HandleFunc("/compliance/reports", auth.RequireAccess(pc, "compliance", "write", analytics.HandleCreateComplianceReport(db))).Methods("POST")
+	api.HandleFunc("/compliance/reports/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(analytics.HandleGetComplianceReport(db)))).Methods("GET")
+	api.HandleFunc("/compliance/reports/{id}", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(analytics.HandleUpdateComplianceReport(db)))).Methods("PATCH")
+	api.HandleFunc("/compliance/reports/{id}", auth.RequireAccess(pc, "compliance", "delete", middleware.RequireValidPathVars("id")(analytics.HandleDeleteComplianceReport(db)))).Methods("DELETE")
+	api.HandleFunc("/compliance/reports/{id}/deliver", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(analytics.HandleDeliverComplianceReport(db)))).Methods("POST")
+	api.HandleFunc("/compliance/delivery-status", auth.RequireAccess(pc, "compliance", "read", analytics.HandleComplianceDeliveryStatus(pgxPool))).Methods("GET")
 	api.HandleFunc("/compliance/reports/export", auth.RequireAccess(pc, "compliance", "write", compliance.HandleCreateCaseExportJob(db))).Methods("POST")
 	api.HandleFunc("/compliance/reports/export/{job_id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("job_id")(compliance.HandleGetCaseExportJob(db)))).Methods("GET")
 	api.HandleFunc("/compliance/sync/activate", auth.RequireAccess(pc, "compliance", "write", compliancesync.HandleActivateComplianceSync())).Methods("POST")
@@ -229,14 +237,10 @@ func registerComplianceEvidenceRoutes(
 
 	// ── Evidence Chain (SOX/GDPR cryptographic audit trail) ──────────────────
 	// GET  /compliance/evidence/{id}/chain  — retrieve full hash-chained evidence blocks
-	// PATCH /compliance/evidence/{id}       — update evidence record (pre-attestation only)
-	// DELETE /compliance/evidence/{id}      — soft-delete (preserves chain integrity)
+	// DELETE /compliance/evidence/{id}      — archive (evidence is immutable; chain stays verifiable)
 	api.HandleFunc("/compliance/evidence/{id}/chain",
 		auth.RequireAccess(pc, "compliance", "read",
 			middleware.RequireValidPathVars("id")(analytics.HandleGetEvidenceChain(db)))).Methods("GET")
-	api.HandleFunc("/compliance/evidence/{id}",
-		auth.RequireAccess(pc, "compliance", "write",
-			middleware.RequireValidPathVars("id")(analytics.HandleUpdateEvidence(db)))).Methods("PATCH")
 	api.HandleFunc("/compliance/evidence/{id}",
 		auth.RequireAccess(pc, "compliance", "delete",
 			middleware.RequireValidPathVars("id")(analytics.HandleDeleteEvidence(db)))).Methods("DELETE")
@@ -263,7 +267,7 @@ func registerComplianceEvidenceRoutes(
 	// ── Governance Proposals + Voting (autonomous governance — GRA CRUD) ──────
 	api.HandleFunc("/gra/proposals",
 		auth.RequireAccess(pc, "governance", "read",
-			gra.HandleListGovernanceVotes(db))).Methods("GET")
+			gra.HandleListGovernanceProposals(db))).Methods("GET")
 	api.HandleFunc("/gra/proposals",
 		auth.RequireAccess(pc, "governance", "write",
 			gra.HandleCreateGovernanceProposal(db))).Methods("POST")

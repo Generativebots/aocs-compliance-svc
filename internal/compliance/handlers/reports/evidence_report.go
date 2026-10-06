@@ -5,8 +5,8 @@ package reports
 // hit non-existent routes. Uses SupabaseClient's public QueryRows/InsertRow API.
 
 import (
+	"github.com/ocx/shared/logger"
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -34,7 +34,7 @@ func HandleSearchEvidence(db database.DB) http.HandlerFunc {
 		// Fetch all tenant evlt (pre-filter at DB level by tenant)
 		var records []database.QCoreEvidenceRecord
 		if err := db.QueryRowsCtx(r.Context(), database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, &records); err != nil {
-			slog.Error("SearchEvidence DB query failed", "error", err, "tenant_id", tenantID)
+			logger.For("compliance/handlers/reports/evidence_report").Error("SearchEvidence DB query failed", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to search evidence records", err)
 			return
 		}
@@ -77,7 +77,7 @@ func HandleListComplianceReports(db database.DB) http.HandlerFunc {
 
 		var result []map[string]any
 		if err := db.QueryRowsCtx(r.Context(), database.TblSharComplianceReports, database.ColsNexusComplianceReport, "tenant_id", tenantID, &result); err != nil {
-			slog.Error("ListComplianceReports query failed", "tenant_id", tenantID, "error", err)
+			logger.For("compliance/handlers/reports/evidence_report").Error("ListComplianceReports query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "list compliance reports", err)
 			return
 		}
@@ -120,9 +120,15 @@ func HandleCreateComplianceReport(db database.DB) http.HandlerFunc {
 			"SOC2": true, "GDPR": true, "ISO27001": true, "EU_AI_ACT": true,
 			"HIPAA": true, "CCPA": true, "CUSTOM": true,
 		}
-		req.ReportType = strings.ToUpper(strings.TrimSpace(req.ReportType))
-		if !validReportTypes[req.ReportType] {
+		req.ReportType = strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(req.ReportType), "-", "_"))
+		if req.ReportType == "" {
 			req.ReportType = "CUSTOM"
+		}
+		if !validReportTypes[req.ReportType] {
+			// Honest 400 instead of silently filing an unknown framework as CUSTOM.
+			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest,
+				"report_type must be one of SOC2, GDPR, ISO27001, EU_AI_ACT, HIPAA, CCPA, CUSTOM")
+			return
 		}
 		if req.StartDate == "" {
 			req.StartDate = time.Now().UTC().Format("2006-01-02")
@@ -140,13 +146,19 @@ func HandleCreateComplianceReport(db database.DB) http.HandlerFunc {
 		if periodEnd == "" {
 			periodEnd = time.Now().UTC().AddDate(0, 1, 0).Format(time.RFC3339)
 		}
+		reportID := generatePlatformID()
+		createdBy := auth.GetUserID(r.Context())
+		if createdBy == "" {
+			createdBy = tenantID
+		}
 		row := map[string]any{
+			"compliance_report_id": reportID,
 			"tenant_id":    tenantID,
 			"report_type":  req.ReportType,
 			"period_start": periodStart,
 			"period_end":   periodEnd,
 			"status":       "PENDING",
-			"created_by":   tenantID, // satisfies NOT NULL; real user_id available via auth middleware
+			"created_by":   createdBy, // caller user_id (tenant_id fallback satisfies NOT NULL)
 			// 'title' and 'filters' columns do not exist in nexus_compliance_reports;
 			// store them in the 'metadata' JSONB column instead.
 			"metadata": map[string]any{
@@ -156,11 +168,13 @@ func HandleCreateComplianceReport(db database.DB) http.HandlerFunc {
 		}
 
 		if err := db.InsertRow(database.TblSharComplianceReports, row); err != nil {
-			slog.Error("CreateComplianceReport failed", "error", err, "tenant_id", tenantID)
+			logger.For("compliance/handlers/reports/evidence_report").Error("CreateComplianceReport failed", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to create report", err)
 			return
 		}
-		respond.OK(w, map[string]string{"status": "created"})
+		respond.JSON(w, http.StatusCreated, map[string]string{
+			"status": "created", "id": reportID, "report_id": reportID, "report_type": req.ReportType,
+		})
 	}
 }
 
@@ -228,7 +242,7 @@ func HandleUpdateComplianceReport(db database.DB) http.HandlerFunc {
 			return
 		}
 		if err := db.UpdateRowCompound(database.TblSharComplianceReports, "compliance_report_id", reportID, "tenant_id", tenantID, update); err != nil {
-			slog.Error("UpdateComplianceReport failed", "error", err)
+			logger.For("compliance/handlers/reports/evidence_report").Error("UpdateComplianceReport failed", "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to update report", err)
 			return
 		}
@@ -250,7 +264,7 @@ func HandleGetTokenStats(db database.DB) http.HandlerFunc {
 
 		var all []map[string]any
 		if err := db.QueryRowsCtx(r.Context(), database.TblCoreJit, database.ColsJITEntitlement, "tenant_id", tenantID, &all); err != nil {
-			slog.Error("TokenStats query failed", "tenant_id", tenantID, "error", err)
+			logger.For("compliance/handlers/reports/evidence_report").Error("TokenStats query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "get token stats", err)
 			return
 		}
@@ -372,7 +386,7 @@ func HandleGetEvidenceChain(db database.DB) http.HandlerFunc {
 
 		var records []database.QCoreEvidenceRecord
 		if err := db.QueryRowsCursor(database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, database.ParseCursorPage(r), &records); err != nil {
-			slog.Error("HandleGetEvidenceChain query failed", "tenant_id", tenantID, "error", err)
+			logger.For("compliance/handlers/reports/evidence_report").Error("HandleGetEvidenceChain query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "get evidence chain", err)
 			return
 		}
@@ -422,7 +436,7 @@ func HandleVerifyChain(db database.DB) http.HandlerFunc {
 
 		var records []database.QCoreEvidenceRecord
 		if err := db.QueryRowsCursor(database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, database.ParseCursorPage(r), &records); err != nil {
-			slog.Error("HandleVerifyChain query failed", "tenant_id", tenantID, "error", err)
+			logger.For("compliance/handlers/reports/evidence_report").Error("HandleVerifyChain query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "verify evidence chain", err)
 			return
 		}
@@ -466,7 +480,7 @@ func HandleComplianceReport(db database.DB) http.HandlerFunc {
 
 		var records []database.QCoreEvidenceRecord
 		if err := db.QueryRowsCtx(r.Context(), database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, &records); err != nil {
-			slog.Error("HandleComplianceReport query failed", "tenant_id", tenantID, "error", err)
+			logger.For("compliance/handlers/reports/evidence_report").Error("HandleComplianceReport query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "compliance report", err)
 			return
 		}
@@ -504,7 +518,7 @@ func HandleListActiveTokens(db database.DB) http.HandlerFunc {
 
 		var result []map[string]any
 		if err := db.QueryRowsCtx(r.Context(), database.TblCoreJit, database.ColsJITEntitlement, "tenant_id", tenantID, &result); err != nil {
-			slog.Error("ListActiveTokens query failed", "tenant_id", tenantID, "error", err)
+			logger.For("compliance/handlers/reports/evidence_report").Error("ListActiveTokens query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "list active tokens", err)
 			return
 		}

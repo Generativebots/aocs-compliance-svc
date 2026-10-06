@@ -59,10 +59,14 @@ func HandleCreateComplianceRegion(db database.DB) http.HandlerFunc {
 			Regions:      regionsJSON,
 			IsActive:     isActive,
 		}
-		if err := db.InsertRow(database.TblGRAFrameworks, fw.InsertPayload()); err != nil {
+		fwRow := fw.InsertPayload()
+		if err := db.InsertRow(database.TblGRAFrameworks, fwRow); err != nil {
 			slog.Error("CreateComplianceRegion: insert failed", "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "create compliance region", err)
 			return
+		}
+		if v, ok := fwRow["id"].(string); ok && fw.ID == "" {
+			fw.ID = v
 		}
 		respond.JSON(w, http.StatusCreated, fw)
 	}

@@ -18,7 +18,9 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"time"
 
+	"github.com/ocx/shared/idgen"
 	"github.com/ocx/shared/infra/concurrent"
 	"github.com/ocx/shared/respond"
 
@@ -239,17 +241,31 @@ func HandleCreateGovernanceProposal(db database.DB) http.HandlerFunc {
 		if !validate.Bind(w, r, &req) {
 			return
 		}
+		// core_proposals is shared by several proposal kinds; governance proposals
+		// are identified by governance_proposal_id, a STORED generated column
+		// that mirrors the PK proposal_id (so it must not be inserted).
+		id := idgen.GenID()
+		now := time.Now().UTC().Format(time.RFC3339)
 		row := map[string]any{
-			"tenant_id":     tenantID,
-			"title":         req.Title,
-			"proposal_type": req.ProposalType,
-			"description":   req.Description,
-			"config":        req.Config,
+			"proposal_id":            id,
+			"tenant_id":              tenantID,
+			"title":                  req.Title,
+			"proposal_type":          req.ProposalType,
+			"description":            req.Description,
+			"config":                 req.Config,
+			"status":                 "DRAFT",
+			"subtype":                "governance",
+			"proposed_at":            now,
+		}
+		if uid := auth.GetUserID(r.Context()); uid != "" {
+			row["proposed_by"] = uid
+			row["proposer_id"] = uid
 		}
 		if err := db.InsertRow(database.TblCoreProposals, row); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "failed to create governance proposal", err)
 			return
 		}
+		row["id"] = id
 		respond.Created(w, row)
 	}
 }
@@ -335,13 +351,22 @@ func HandleDeleteGovernanceProposal(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing path parameter: id")
 			return
 		}
-		// Scope delete to tenant
-		if err := db.SoftDeleteRowCompound(database.TblCoreProposals, "governance_proposal_id", entryID, "tenant_id", tenantID); err != nil {
-			slog.Error("DeleteGovernanceProposal failed", "error", err)
-				respond.InternalError(w, http.StatusInternalServerError, "db operation failed", err)
+		// Governance proposals are part of the audit trail: deleting withdraws
+		// the proposal and deactivates it rather than removing the row.
+		if err := db.UpdateRowCompound(database.TblCoreProposals, "governance_proposal_id", entryID, "tenant_id", tenantID, map[string]any{
+			"status":         "WITHDRAWN",
+			"is_active":      false,
+			"deactivated_at": time.Now().UTC().Format(time.RFC3339),
+		}); err != nil {
+			if database.IsNotFound(err) {
+				respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "governance proposal not found")
 				return
+			}
+			slog.Error("DeleteGovernanceProposal failed", "error", err)
+			respond.InternalError(w, http.StatusInternalServerError, "db operation failed", err)
+			return
 		}
-		respond.OK(w, map[string]string{"status": "deleted"})
+		respond.OK(w, map[string]string{"id": entryID, "status": "WITHDRAWN"})
 	}
 }
 
@@ -384,6 +409,40 @@ func HandleCastGovernanceVote(db database.DB) http.HandlerFunc {
 
 func HandleListGovernanceVotes(db database.DB) http.HandlerFunc {
 	return crudListHandler(db, database.TblCoreGovRounds, "gov_round_id")
+}
+
+// HandleListGovernanceProposals lists the tenant's active governance proposals.
+// GET /api/v1/gra/proposals
+func HandleListGovernanceProposals(db database.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if respond.RequireDB(w, db) {
+			return
+		}
+		tenantID, ok := auth.MustGetTenantID(w, r)
+		if !ok {
+			return
+		}
+		var rows []map[string]any
+		if err := db.QueryRowsCtx(r.Context(), database.TblCoreProposals,
+			"proposal_id,governance_proposal_id,title,description,proposal_type,status,config,metadata,proposed_by,proposed_at,vote_deadline,yes_votes,no_votes,abstain_votes,required_votes,is_active,created_at,updated_at",
+			"tenant_id", tenantID, &rows); err != nil {
+			respond.InternalError(w, http.StatusInternalServerError, "failed to list governance proposals", err)
+			return
+		}
+		out := make([]map[string]any, 0, len(rows))
+		for _, row := range rows {
+			gid, _ := row["governance_proposal_id"].(string)
+			if gid == "" {
+				continue
+			}
+			if active, ok := row["is_active"].(bool); ok && !active {
+				continue
+			}
+			row["id"] = gid
+			out = append(out, row)
+		}
+		respond.OK(w, out)
+	}
 }
 
 

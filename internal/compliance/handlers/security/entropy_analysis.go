@@ -59,7 +59,10 @@ func HandleScanEntropy(entropy contracts.EntropyMonitor) http.HandlerFunc {
 				Payload string `json:"payload"`
 			}
 			respond.LimitBody(r)
-			_ = validate.Bind(w, r, &req)
+			// Optional body: empty is fine; malformed/unrecognised → 400 (stop, no double write).
+			if !validate.BindOptional(w, r, &req) {
+				return
+			}
 			payloadBytes = []byte(req.Payload)
 		}
 

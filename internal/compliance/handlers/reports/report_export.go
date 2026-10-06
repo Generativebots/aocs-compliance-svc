@@ -135,7 +135,7 @@ func HandleExecuteComplianceReport(db database.DB) http.HandlerFunc {
 			"executed_at": "now()",
 			"updated_at":  "now()",
 		}
-		if err := db.UpdateRowCompound(database.TblSharComplianceReports, "report_id", reportID, "tenant_id", tenantID, updates); err != nil {
+		if err := db.UpdateRowCompound(database.TblSharComplianceReports, "compliance_report_id", reportID, "tenant_id", tenantID, updates); err != nil {
 			slog.Error("HandleExecuteComplianceReport: db update failed",
 				"report_id", reportID, "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "execute compliance report", err)
@@ -199,7 +199,7 @@ func HandleScheduleComplianceReport(db database.DB) http.HandlerFunc {
 			"scheduled_by":     callerID,
 			"updated_at":       "now()",
 		}
-		if err := db.UpdateRowCompound(database.TblSharComplianceReports, "report_id", reportID, "tenant_id", tenantID, updates); err != nil {
+		if err := db.UpdateRowCompound(database.TblSharComplianceReports, "compliance_report_id", reportID, "tenant_id", tenantID, updates); err != nil {
 			slog.Error("HandleScheduleComplianceReport: db update failed",
 				"report_id", reportID, "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "schedule compliance report", err)

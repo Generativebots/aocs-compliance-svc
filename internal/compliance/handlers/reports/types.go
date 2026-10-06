@@ -48,13 +48,6 @@ type MetricsRow struct {
 	Tags       string  `json:"tags,omitempty"`
 }
 
-// UpdateEvidenceRequest is the request body for HandleUpdateEvidence. (3 fields)
-type UpdateEvidenceRequest struct {
-	Type	string	`json:"type" validate:"required"`
-	ActionClass string         `json:"action_class"`
-	PayloadData map[string]any `json:"payload_data"`
-}
-
 // UpsertOgraphFlowRequest is the request body for HandleUpsertOgraphFlow. (4 fields)
 type UpsertOgraphFlowRequest struct {
 	SourceNode string  `json:"source_node"`

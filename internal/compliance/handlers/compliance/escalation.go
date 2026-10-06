@@ -36,7 +36,10 @@ func HandleEscalateCase(db database.DB) http.HandlerFunc {
 		var req struct {
 			Reason string `json:"reason"`
 		}
-		validate.BindOptional(w, r, &req) // body is optional — continue without reason if missing
+		// Optional body: empty is fine; malformed/unrecognised → 400 (stop, no double write). // body is optional — continue without reason if missing
+		if !validate.BindOptional(w, r, &req) {
+			return
+		}
 		reason := req.Reason
 		escalatedBy := auth.GetUserID(r.Context())
 		now := time.Now().UTC().Format(time.RFC3339)

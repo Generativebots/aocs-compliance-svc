@@ -186,7 +186,7 @@ func HandleCompleteRetrainEvent(db database.DB, coreClients ...*serviceclient.Cl
 			// tenant could update another tenant's retrain event by guessing the UUID.
 			// Fixed: use UpdateRowCompound which adds AND tenant_id=$2 to the WHERE clause.
 			if err := db.UpdateRowCompound(database.TblCoreEvents,
-				"id", eventID,
+				"event_id", eventID,
 				"tenant_id", tenantID,
 				updates); err != nil {
 				slog.Error("HandleCompleteRetrainEvent: failed to update retrain event",

@@ -84,7 +84,7 @@ func HandleGetGRAObligation(db *database.SupabaseClient) http.HandlerFunc {
 // HandleGetLedgerRootEntry — GET /compliance/ledger-roots/:id.
 // Ledger roots are immutable; no update or delete is exposed.
 func HandleGetLedgerRootEntry(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblZKPChainRoots, "entry_id")
+	return byid.GetByID(db, database.TblZKPChainRoots, "zkp_chain_root_id")
 }
 
 // HandleGetViolationSummary — GET /compliance/violations/:id.

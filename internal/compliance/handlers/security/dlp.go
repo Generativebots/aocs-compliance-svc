@@ -527,6 +527,7 @@ func HandleCreateDLPIntegration(store *DLPStore) http.HandlerFunc {
 		// such as "symantec" violated it. Store the canonical code and keep the
 		// vendor slug in config.
 		row := map[string]any{
+			"id":          intg.ID, // the id returned to the caller must be the stored PK
 			"tenant_id":   tenantID,
 			"name":        intg.Name,
 			"provider":    dlpProviderCode(intg.Provider),

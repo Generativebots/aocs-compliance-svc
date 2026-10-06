@@ -254,7 +254,10 @@ func HandleCertifyISO42001Report(db database.DB) http.HandlerFunc {
 			SignerTitle string `json:"signer_title"`
 			Notes       string `json:"notes"`
 		}
-		_ = validate.Bind(w, r, &req)
+		// Optional body: empty is fine; malformed/unrecognised → 400 (stop, no double write).
+		if !validate.BindOptional(w, r, &req) {
+			return
+		}
 		if req.SignerName == "" {
 			req.SignerName = "AOCS Automated Compliance Sentinel"
 		}

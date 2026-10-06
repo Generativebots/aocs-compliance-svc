@@ -17,6 +17,8 @@ import (
 	"net/http"
 	"time"
 
+	"strings"
+
 	"github.com/gorilla/mux"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
@@ -24,11 +26,11 @@ import (
 	"github.com/ocx/shared/validate"
 )
 
-// P1-1 FIX: core_dlp_integrations DDL uses 'id' as PK (not dlp_integration_id).
-// Aliased to dlp_policy_id for API backward compatibility.
-const colsDLPFinding = "id AS dlp_policy_id,tenant_id,policy_name,policy_type,provider,status AS status,is_active,created_at,updated_at"
-
 // HandleListDLPFindings — GET /dlp/findings
+//
+// Findings are core_audit rows with action_type = 'dlp.finding' (written by
+// HandleCreateDLPFinding). This previously listed DLP *policies*, so a created
+// finding never appeared in the list.
 func HandleListDLPFindings(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if respond.RequireDB(w, db) {
@@ -40,49 +42,57 @@ func HandleListDLPFindings(db database.DB) http.HandlerFunc {
 		}
 
 		var rows []map[string]any
-		if err := db.QueryRowsCtx(r.Context(), database.TblDLPPolicies, colsDLPFinding, "tenant_id", tenantID, &rows); err != nil {
-			// Graceful degradation — return empty array so the UI doesn't crash
-			slog.Error("dlp/findings: list failed", "err", err)
-			// Category-D FIX: frontend expects {"data": [...], "total": N} — was {"findings": [...]}
-			respond.OK(w, map[string]any{"data": []map[string]any{}, "total": 0})
+		if err := db.QueryRowsCompound(database.TblCoreAudit, colsDLPFindingRecord,
+			"tenant_id", tenantID, "action_type", dlpFindingActionType, &rows); err != nil {
+			slog.Error("dlp/findings: list failed", "err", err, "tenant_id", tenantID)
+			respond.InternalError(w, http.StatusInternalServerError, "list DLP findings", err)
 			return
 		}
-		if rows == nil {
-			rows = []map[string]any{}
-		}
 
-		// Optionally filter by status/severity from metadata (in-process for simple filtering)
 		statusFilter := r.URL.Query().Get("status")
 		severityFilter := r.URL.Query().Get("severity")
-		if statusFilter != "" || severityFilter != "" {
-			filtered := rows[:0]
-			for _, row := range rows {
-				meta, _ := row["metadata"].(map[string]any)
-				if meta == nil {
-					if b, ok := row["metadata"].([]byte); ok {
-						if _jsonErr := json.Unmarshal(b, &meta); _jsonErr != nil {
-							slog.Warn("metadata unmarshal failed", "source_len", len(b), "error", _jsonErr)
-						}
-					}
+		out := make([]map[string]any, 0, len(rows))
+		for _, row := range rows {
+			meta := findingMeta(row["metadata"])
+			if statusFilter != "" {
+				if st, _ := meta["status"].(string); !strings.EqualFold(st, statusFilter) {
+					continue
 				}
-				if statusFilter != "" {
-					if s, _ := meta["status"].(string); s != statusFilter {
-						continue
-					}
-				}
-				if severityFilter != "" {
-					if s, _ := row["severity"].(string); s != severityFilter {
-						continue
-					}
-				}
-				filtered = append(filtered, row)
 			}
-			rows = filtered
+			if severityFilter != "" {
+				if sv, _ := row["severity"].(string); !strings.EqualFold(sv, severityFilter) {
+					continue
+				}
+			}
+			row["id"] = row["audit_log_id"]
+			row["finding_id"] = row["audit_log_id"]
+			for _, k := range []string{"status", "rule_name", "source", "data_type", "agent_id"} {
+				if v, ok := meta[k]; ok {
+					row[k] = v
+				}
+			}
+			out = append(out, row)
 		}
-
-		// Category-D FIX: frontend expects {"data": [...], "total": N} — was {"findings": [...]}
-		respond.OK(w, map[string]any{"data": rows, "total": len(rows)})
+		// Frontend expects {"data": [...], "total": N}.
+		respond.OK(w, map[string]any{"data": out, "total": len(out)})
 	}
+}
+
+// findingMeta normalises the metadata column (jsonb map, raw bytes or string).
+func findingMeta(v any) map[string]any {
+	switch m := v.(type) {
+	case map[string]any:
+		return m
+	case []byte:
+		out := map[string]any{}
+		_ = json.Unmarshal(m, &out)
+		return out
+	case string:
+		out := map[string]any{}
+		_ = json.Unmarshal([]byte(m), &out)
+		return out
+	}
+	return map[string]any{}
 }
 
 // HandleCreateDLPFinding — POST /dlp/findings
@@ -149,6 +159,7 @@ func HandleCreateDLPFinding(db database.DB) http.HandlerFunc {
 			return
 		}
 		respond.Created(w, map[string]string{
+			"id":         findingID,
 			"finding_id": findingID,
 			"status":     "OPEN",
 			"source":     req.Source,

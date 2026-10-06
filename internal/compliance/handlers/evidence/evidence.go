@@ -214,18 +214,20 @@ func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 			payloadBytes = []byte("{}")
 		}
 
+		newEvidenceID := generatePlatformID()
 		record := database.QCoreEvidenceRecord{
-			ID:            generatePlatformID(),
-			TenantID:      tenantID,
-			Type:          req.Type,
-			ActionClass:   req.ActionClass,
-			ToolID:        req.ToolID,
-			TransactionID: req.TransID,
-			Payload:       payloadBytes,
-			AgentID:       req.AgentID,
-			IntentID:      req.IntentID,
-			ActivityID:    req.ActivityID,
-			ExecutionID:   req.ExecutionID,
+			ID:               newEvidenceID,
+			EvidenceRecordID: newEvidenceID,
+			TenantID:         tenantID,
+			Type:             req.Type,
+			ActionClass:      req.ActionClass,
+			ToolID:           req.ToolID,
+			TransactionID:    req.TransID,
+			Payload:          payloadBytes,
+			AgentID:          req.AgentID,
+			IntentID:         req.IntentID,
+			ActivityID:       req.ActivityID,
+			ExecutionID:      req.ExecutionID,
 		}
 
 		// Cryptographic hash chain — link to previous record

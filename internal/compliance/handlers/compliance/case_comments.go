@@ -57,12 +57,14 @@ func HandleCreateCaseComment(db database.DB) http.HandlerFunc {
 			Body:       body.Body,
 			IsInternal: body.IsInternal,
 		}
-		if err := db.InsertRow(database.TblCaseComments, comment.InsertPayload()); err != nil {
+		commentRow := comment.InsertPayload()
+		if err := db.InsertRow(database.TblCaseComments, commentRow); err != nil {
 			slog.Error("AddCaseComment failed", "case_id", caseID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "add case comment", err)
 			return
 		}
-		respond.JSON(w, http.StatusCreated, map[string]string{"status": "comment added", "case_id": caseID})
+		commentID, _ := commentRow["id"].(string)
+		respond.JSON(w, http.StatusCreated, map[string]string{"status": "comment added", "case_id": caseID, "id": commentID, "comment_id": commentID})
 	}
 }
 

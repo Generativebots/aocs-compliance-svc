@@ -126,10 +126,10 @@ func HandleGetRegulatoryComplianceReport(db database.PlatformRepository) http.Ha
 		var verdictRows []struct {
 			Verdict string `json:"verdict"`
 		}
-		verdictQueryErr := db.QueryRowsWithWindow(database.TblCoreVerdicts,
+		verdictQueryErr := db.QueryRowsWithWindow(database.TblCoreGateDecisions,
 			"verdict", tenantID, sinceStr, untilStr, &verdictRows)
 		if verdictQueryErr != nil {
-			verdictQueryErr = db.QueryRowsCtx(r.Context(), database.TblCoreVerdicts,
+			verdictQueryErr = db.QueryRowsCtx(r.Context(), database.TblCoreGateDecisions,
 				"verdict", "tenant_id", tenantID, &verdictRows)
 		}
 		if verdictQueryErr != nil {

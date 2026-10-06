@@ -12,37 +12,37 @@ import (
 
 // HandleGetNexsAnomaly — GET /analytics/anomalies/:id.
 func HandleGetNexsAnomaly(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblSharAlerts, "anomaly_id")
+	return byid.GetByID(db, database.TblSharAlerts, "alert_id")
 }
 
 // HandleGetNexsBenchmark — GET /analytics/benchmarks/:id.
 func HandleGetNexsBenchmark(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblSharComplianceReports, "benchmark_id")
+	return byid.GetByID(db, database.TblSharComplianceReports, "compliance_report_id")
 }
 
 // HandleGetNexsForecast — GET /analytics/forecasts/:id.
 func HandleGetNexsForecast(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblSharComplianceReports, "forecast_id")
+	return byid.GetByID(db, database.TblSharComplianceReports, "compliance_report_id")
 }
 
 // HandleGetNexsSegment — GET /analytics/segments/:id.
 func HandleGetNexsSegment(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblSharComplianceReports, "segment_id")
+	return byid.GetByID(db, database.TblSharComplianceReports, "compliance_report_id")
 }
 
 // HandleUpdateNexsSegment — PUT /analytics/segments/:id.
 func HandleUpdateNexsSegment(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.UpdateByID(db, database.TblSharComplianceReports, "segment_id")
+	return byid.UpdateByID(db, database.TblSharComplianceReports, "compliance_report_id")
 }
 
 // HandleDeleteNexsSegment — DELETE /analytics/segments/:id (soft-delete).
 func HandleDeleteNexsSegment(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.DeleteByID(db, database.TblSharComplianceReports, "segment_id")
+	return byid.DeleteByID(db, database.TblSharComplianceReports, "compliance_report_id")
 }
 
 // HandleGetNexsUsageRecord — GET /analytics/usage/:id.
 func HandleGetNexsUsageRecord(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblQuotaUsage, "record_id")
+	return byid.GetByID(db, database.TblQuotaUsage, "tenant_resource_usage_id")
 }
 
 // HandleGetIntelCategory — GET /analytics/intel-categories/:id.
@@ -57,37 +57,37 @@ func HandleUpdateIntelCategory(db *database.SupabaseClient) http.HandlerFunc {
 
 // HandleGetIntelForecastItem — GET /analytics/intel-forecasts/:id.
 func HandleGetIntelForecastItem(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblSharComplianceReports, "forecast_id")
+	return byid.GetByID(db, database.TblSharComplianceReports, "compliance_report_id")
 }
 
 // HandleGetMarketSignal — GET /analytics/market-signals/:id.
 func HandleGetMarketSignal(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblExtcMarketplaceListings, "signal_id")
+	return byid.GetByID(db, database.TblExtcMarketplaceListings, "marketplace_listing_id")
 }
 
 // HandleGetThreat — GET /analytics/threats/:id.
 func HandleGetThreat(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblSharAlerts, "threat_id")
+	return byid.GetByID(db, database.TblSharAlerts, "alert_id")
 }
 
 // HandleGetAgentUsageRecord — GET /analytics/agent-usage/:id.
 func HandleGetAgentUsageRecord(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblQuotaUsage, "record_id")
+	return byid.GetByID(db, database.TblQuotaUsage, "tenant_resource_usage_id")
 }
 
 // HandleGetIntentUsageRecord — GET /analytics/intent-usage/:id.
 func HandleGetIntentUsageRecord(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblQuotaUsage, "record_id")
+	return byid.GetByID(db, database.TblQuotaUsage, "tenant_resource_usage_id")
 }
 
 // HandleGetUsageProjection — GET /analytics/usage-projections/:id.
 func HandleGetUsageProjection(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblSharComplianceReports, "forecast_id")
+	return byid.GetByID(db, database.TblSharComplianceReports, "compliance_report_id")
 }
 
 // HandleGetRevenueStream — GET /analytics/revenue-streams/:id.
 func HandleGetRevenueStream(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblSharLedger, "stream_id")
+	return byid.GetByID(db, database.TblSharLedger, "entry_id")
 }
 
 // HandleGetStakingPosition — GET /analytics/staking-positions/:id.
@@ -137,7 +137,7 @@ func HandleListStakingLedger(db *database.SupabaseClient) http.HandlerFunc {
 
 // HandleGetTransactionSummary — GET /analytics/transactions/:id.
 func HandleGetTransactionSummary(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblCoreLedger, "transaction_id")
+	return byid.GetByID(db, database.TblCoreLedger, "entry_id")
 }
 
 // HandleGetAttackSurfaceItem — GET /analytics/attack-surface/:id.
@@ -152,25 +152,25 @@ func HandleGetIDSEvent(db *database.SupabaseClient) http.HandlerFunc {
 
 // HandleGetTenantUsageRecord — GET /analytics/tenant-usage/:id.
 func HandleGetTenantUsageRecord(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblQuotaUsage, "record_id")
+	return byid.GetByID(db, database.TblQuotaUsage, "tenant_resource_usage_id")
 }
 
 // HandleUpdateTenantUsageRecord — PUT /analytics/tenant-usage/:id.
 func HandleUpdateTenantUsageRecord(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.UpdateByID(db, database.TblQuotaUsage, "record_id")
+	return byid.UpdateByID(db, database.TblQuotaUsage, "tenant_resource_usage_id")
 }
 
 // HandleGetTrustTaxClaim — GET /analytics/trust-tax-claims/:id.
 func HandleGetTrustTaxClaim(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblTokenWalletLedger, "ledger_id")
+	return byid.GetByID(db, database.TblTokenWalletLedger, "entry_id")
 }
 
 // HandleUpdateTrustTaxClaim — PUT /analytics/trust-tax-claims/:id.
 func HandleUpdateTrustTaxClaim(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.UpdateByID(db, database.TblTokenWalletLedger, "ledger_id")
+	return byid.UpdateByID(db, database.TblTokenWalletLedger, "entry_id")
 }
 
 // HandleGetComplianceReport — GET /analytics/compliance-reports/:id.
 func HandleGetComplianceReport(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblSharComplianceReports, "report_id")
+	return byid.GetByID(db, database.TblSharComplianceReports, "compliance_report_id")
 }
