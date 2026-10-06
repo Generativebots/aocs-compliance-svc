@@ -10,7 +10,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // ComplianceQuerier is the minimal pgx surface used by ComplianceRepository.
@@ -49,17 +48,6 @@ type ViolationEvent struct {
 // ComplianceRepository encapsulates SQL for compliance-related tables.
 type ComplianceRepository struct {
 	db ComplianceQuerier
-}
-
-// NewComplianceRepository creates a repository backed by the given PGX pool.
-func NewComplianceRepository(pool *pgxpool.Pool) *ComplianceRepository {
-	return &ComplianceRepository{db: pool}
-}
-
-// NewComplianceRepositoryFromQuerier creates a repository from any ComplianceQuerier.
-// Intended for unit tests that substitute a fake querier.
-func NewComplianceRepositoryFromQuerier(q ComplianceQuerier) *ComplianceRepository {
-	return &ComplianceRepository{db: q}
 }
 
 // ListReports returns compliance reports for a tenant.

@@ -4,7 +4,6 @@ package reports
 // export_job: table core_jobs (check if exists; fall back to nexus_export_jobs)
 
 import (
-
 	"log/slog"
 	"net/http"
 	"time"
@@ -54,40 +53,6 @@ func HandleDeleteComplianceReport(db database.DB) http.HandlerFunc {
 			"at", time.Now().UTC().Format(time.RFC3339),
 		)
 		respond.JSON(w, http.StatusOK, map[string]string{"status": "ARCHIVED", "report_id": id})
-	}
-}
-
-// DELETE /api/v1/exports/{id}
-// Cancels/soft-deletes an export job — sets status=CANCELLED.
-func HandleDeleteExportJob(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-		id := mux.Vars(r)["id"]
-		if id == "" {
-			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing job id")
-			return
-		}
-		if dbErr := db.UpdateRowCompound(database.TblCoreJobs, "job_id", id, "tenant_id", tenantID,
-			map[string]any{"status": "CANCELLED"}); dbErr != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "delete export job", dbErr)
-			return
-		}
-		// H-NEW-4 FIX: Audit log — export job cancellation must be traceable.
-		slog.Info("audit: export job cancelled",
-			"action", "DELETE_EXPORT_JOB",
-			"job_id", id,
-			"tenant_id", tenantID,
-			"actor", auth.GetUserID(r.Context()),
-			"at", time.Now().UTC().Format(time.RFC3339),
-		)
-		respond.JSON(w, http.StatusOK, map[string]string{"status": "CANCELLED", "job_id": id})
 	}
 }
 

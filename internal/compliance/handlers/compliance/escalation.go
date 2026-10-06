@@ -5,7 +5,6 @@ package compliance
 
 import (
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -16,110 +15,6 @@ import (
 	"github.com/ocx/shared/respond"
 	"github.com/ocx/shared/validate"
 )
-
-// HandleEscalateCase — POST /api/v1/hitl/cases/{id}/escalate
-func HandleEscalateCase(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-		caseID := mux.Vars(r)["id"]
-		if caseID == "" {
-			caseID = mux.Vars(r)["case_id"]
-		}
-		if caseID == "" {
-			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing case id")
-			return
-		}
-		respond.LimitBody(r)
-		// P0-C: upgrade raw map decode to typed struct (only reason is read from body).
-		var req struct {
-			Reason string `json:"reason"`
-		}
-		// Optional body: empty is fine; malformed/unrecognised → 400 (stop, no double write). // body is optional — continue without reason if missing
-		if !validate.BindOptional(w, r, &req) {
-			return
-		}
-		reason := req.Reason
-		escalatedBy := auth.GetUserID(r.Context())
-		now := time.Now().UTC().Format(time.RFC3339)
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-		// concurrent escalations can both read stale context_data and the later
-		// write silently drops the first escalation's context entries.
-		txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
-			var existing []map[string]any
-			if err := tx.QueryRowsCompoundForUpdate(database.TblCoreHitl, "decision_id,context_data,status",
-				"decision_id", caseID, "tenant_id", tenantID, &existing); err != nil {
-				return fmt.Errorf("lock escalation row: %w", err)
-			}
-			if len(existing) == 0 {
-				return fmt.Errorf("not_found")
-			}
-			// Guard: don't escalate an already-terminal case
-			if curStatus, _ := existing[0]["status"].(string); curStatus == "ESCALATED" {
-				return fmt.Errorf("already_escalated")
-			}
-			ctx := map[string]any{}
-			if cd, ok := existing[0]["context_data"].(map[string]any); ok {
-				for k, v := range cd {
-					ctx[k] = v
-				}
-			}
-			ctx["escalated_at"] = now
-			ctx["escalated_by"] = escalatedBy
-			ctx["escalation_reason"] = reason
-			update := map[string]any{
-				"status":       "ESCALATED",
-				"context_data": ctx,
-				"updated_at":   now,
-			}
-			if err := tx.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
-				return fmt.Errorf("update escalation: %w", err)
-			}
-			// P1-B: Write escalation audit event row inside the same transaction
-			auditRow := map[string]any{
-				"event_id":    generatePlatformID(),
-				"entity_id":   caseID,
-				"entity_type": "hitl_case",
-				"tenant_id":   tenantID,
-				"event_type":  "CASE_ESCALATED",
-				"payload": map[string]any{
-					"case_id":      caseID,
-					"escalated_by": escalatedBy,
-					"reason":       reason,
-					"occurred_at":  now,
-				},
-			}
-			if err := tx.InsertRow(database.TblCoreEvents, auditRow); err != nil {
-				slog.Warn("EscalateCase: failed to write audit row in tx (non-fatal)", "error", err)
-			}
-			return nil
-		})
-		if txErr != nil {
-			switch txErr.Error() {
-			case "not_found":
-				respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "case not found")
-			case "already_escalated":
-				respond.JSON(w, http.StatusConflict, map[string]any{"case_id": caseID, "note": "case already escalated"})
-			default:
-				slog.Error("EscalateCase failed", "case_id", caseID, "error", txErr)
-				respond.InternalError(w, http.StatusInternalServerError, "escalate case", txErr)
-			}
-			return
-		}
-		slog.Info("HITL case escalated", "case_id", caseID, "by", escalatedBy)
-		respond.OK(w, map[string]any{
-			"status":       "ESCALATED",
-			"case_id":      caseID,
-			"escalated_by": escalatedBy,
-			"escalated_at": now,
-		})
-	}
-}
 
 // HandleRejectJuror — POST /api/v1/hitl/cases/{id}/recuse
 // Records a juror recusal on a HITL/jury case.
@@ -142,7 +37,7 @@ func HandleRejectJuror(db database.DB) http.HandlerFunc {
 			Reason  string `json:"reason"`
 			JurorID string `json:"juror_id"`
 		}
-	// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
+		// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &body) {
 			return
 		}

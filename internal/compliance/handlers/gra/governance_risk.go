@@ -15,74 +15,18 @@
 package gra
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/ocx/shared/respond"
-	"github.com/ocx/shared/ttlcache"
 
 	"github.com/gorilla/mux"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/infra/serviceclient"
-	"github.com/ocx/shared/validate"
 )
-
-// verdictCache caches the serialised verdict list per tenant for 30s.
-// Verdicts are immutable audit records — stale-by-30s is acceptable.
-// Impact: reduces the 12s repeated fetches to <5ms on cache hit.
-var verdictCache = ttlcache.New[string, []byte](30 * time.Second)
-
-
-
-// HandleGetAgentSchedule — GET /api/v1/ops/schedules/{id}
-func HandleGetAgentSchedule(db database.DB) http.HandlerFunc {
-	return crudGetHandler(db, database.TblNexusAgentCapabilities, "schedule_id")
-}
-
-// HandleGetTenantAgent — GET /api/v1/agents/{id}
-func HandleGetTenantAgent(db database.DB) http.HandlerFunc {
-	return crudGetHandler(db, database.TblCoreAgents, "agent_id")
-}
-
-// HandleGetA2AUseCase — GET /api/v1/nufa/a2a/{id}
-func HandleGetA2AUseCase(db database.DB) http.HandlerFunc {
-	return crudGetHandler(db, database.TblCoreA2aUseCases, "use_case_id")
-}
-
-// HandleGetLLMMarketplace — GET /api/v1/llmmarketplace
-// Returns all marketplace listings for the tenant (list endpoint, not single-item).
-func HandleGetLLMMarketplace(db database.DB) http.HandlerFunc {
-	return crudListHandler(db, database.TblExtcMarketplaceListings, "marketplace_listing_id")
-}
-
-// HandleListFederationPeers — GET /federation/peers
-// Returns federation peer records (record_type='PEER') for the authenticated tenant.
-// Using the generic crudListHandler returned ALL record types causing duplicate peer_ids.
-// Now explicitly filters to PEER records only and uses record_id (PK) as the canonical key.
-func HandleListFederationPeers(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-		// B7 FIX: peers live in core_a2a_peers (connection_type FEDERATION).
-		rows, err := database.ListFedPeers(r.Context(), db, tenantID, database.FedPeerKindPeer)
-		if err != nil {
-			slog.Error("HandleListFederationPeers: query failed", "tenant", tenantID, "err", err)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to list federation peers", err)
-			return
-		}
-		if rows == nil {
-			rows = []map[string]any{}
-		}
-		respond.JSON(w, http.StatusOK, rows)
-	}
-}
 
 // HandleAdminGetFederationPeer — GET /federation/peers/{id}
 func HandleAdminGetFederationPeer(db database.DB) http.HandlerFunc {
@@ -104,87 +48,6 @@ func HandleAdminGetFederationPeer(db database.DB) http.HandlerFunc {
 // These use crudListAllHandler (TenantScoped: false) — bypass tenant_id filter.
 // Route registration enforces sysadmin RBAC at the RequireAccess middleware level.
 
-// HandleListAllAgents — GET /superadmin/agents — all agents across all tenants.
-func HandleListAllAgents(db database.DB) http.HandlerFunc {
-	return crudListAllHandler(db, database.TblCoreAgents)
-}
-
-// HandleListAllTenants — GET /superadmin/tenants — all tenants on the platform.
-func HandleListAllTenants(db database.DB) http.HandlerFunc {
-	return crudListAllHandler(db, database.TblSystTenants)
-}
-
-// HandleListAllVerdicts — GET /gov/verdicts
-// Verdict history with TTL-based in-process caching.
-//
-// Performance: was 12s, 840KB (SELECT * on 15k rows).
-// Now: <5ms on cache hit (30s TTL), 12s only on first cold load per tenant.
-// Column projection reduces payload: 840KB → ~120KB (7×).
-// Combined with gzip middleware: 840KB raw → ~11KB on wire.
-func HandleListAllVerdicts(db database.DB) http.HandlerFunc {
-	// Projected columns — only what the UI actually uses.
-	// Avoids fetching payload_hash, raw_response, context_blob etc.
-	const cols = `verdict_id,tenant_id,agent_id,action,verdict,risk_score,` +
-		`confidence,tool_name,policy_id,created_at,action_type`
-
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-
-		// Cache key = tenantID + query string (to vary on filters/pagination)
-		cacheKey := tenantID + r.URL.RawQuery
-
-		// Cache hit: return pre-serialised JSON directly — no DB call
-		if cached, found := verdictCache.Get(cacheKey); found {
-			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("X-Cache", "HIT")
-			w.Write(cached) //nolint:errcheck
-			return
-		}
-
-		// Cache miss: query with column projection + LIMIT
-		var rows []map[string]any
-		if err := db.QueryRowsCtx(r.Context(), database.TblCoreVerdicts, cols, "tenant_id", tenantID, &rows); err != nil {
-			slog.Error("HandleListAllVerdicts: query failed", "tenant_id", tenantID, "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to list verdicts", err)
-			return
-		}
-		if rows == nil {
-			rows = []map[string]any{}
-		}
-
-		// Serialise once, cache the bytes, write to response
-		b, err := json.Marshal(rows)
-		if err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "serialise verdicts", err)
-			return
-		}
-		verdictCache.Set(cacheKey, b)
-
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("X-Cache", "MISS")
-		w.Write(b) //nolint:errcheck
-	}
-}
-
-// HandleListAllEntitlements — GET /superadmin/entitlements — all JIT entitlements across tenants.
-func HandleListAllEntitlements(db database.DB) http.HandlerFunc {
-	return crudListAllHandler(db, database.TblCoreJit)
-}
-
-// HandleListEntitlements — GET /admin/platform/entitlements (tenant-scoped)
-// Called by economics/permissions/page.tsx. Returns only the current tenant's
-// JIT entitlements — uses crudListHandler (TenantScoped:true, FilterCol:"tenant_id").
-// Contrast with HandleListAllEntitlements (SuperAdmin, cross-tenant, no filter).
-func HandleListEntitlements(db database.DB) http.HandlerFunc {
-	return crudListHandler(db, database.TblCoreJit, "")
-}
-
 // HandleListAllAuditLog — GET /admin/platform/audit-log — all platform events across tenants.
 //
 // Supports optional query params:
@@ -196,10 +59,11 @@ func HandleListEntitlements(db database.DB) http.HandlerFunc {
 // database.TblCoreEvents (the canonical audit event store).
 //
 // TENANT ISOLATION (defense in depth):
-//   SuperAdmin: ?tenant_id= filters to a specific tenant; omit for all-tenant scan.
-//   Tenant user: JWT tenant_id ALWAYS overrides any ?tenant_id= query param.
-//               A tenant can never read another tenant's audit events.
-//   This check is enforced HERE regardless of what the route guard says.
+//
+//	SuperAdmin: ?tenant_id= filters to a specific tenant; omit for all-tenant scan.
+//	Tenant user: JWT tenant_id ALWAYS overrides any ?tenant_id= query param.
+//	            A tenant can never read another tenant's audit events.
+//	This check is enforced HERE regardless of what the route guard says.
 func HandleListAllAuditLog(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if respond.RequireDB(w, db) {
@@ -467,182 +331,3 @@ func HandleListGRAComplianceObligations(db database.DB, coreClient *serviceclien
 // Table: aocs_jury_pools (id, tenant_id, name, pool_type, config, model_data, is_active)
 // model_data JSONB contains: provider, model_name, role, weight, api_key_field, enabled
 // Flattened into top-level fields for frontend JuryPoolModel interface compatibility.
-
-func HandleListJuryPoolModels(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-
-		var rows []map[string]any
-		if err := db.QueryRowsCursor(database.TblJuryPools, database.ColsJuryPools, "tenant_id", tenantID, database.ParseCursorPage(r), &rows); err != nil {
-			slog.Error("HandleListJuryPoolModels: query failed", "error", err)
-			respond.OK(w, []interface{}{})
-			return
-		}
-
-		// Flatten model_data JSONB fields into the top-level record
-		models := make([]map[string]any, 0, len(rows))
-		for _, row := range rows {
-			m := map[string]any{
-				"id":         row["id"],
-				"tenant_id":  row["tenant_id"],
-				"name":       row["name"],
-				"pool_type":  row["pool_type"],
-				"is_active":  row["is_active"],
-				"rotated_at": row["rotated_at"],
-				"created_at": row["created_at"],
-				"updated_at": row["updated_at"],
-			}
-			// Merge model_data fields to top-level for JuryPoolModel interface
-			if md, ok := row["model_data"].(map[string]any); ok {
-				for k, v := range md {
-					m[k] = v
-				}
-			}
-			models = append(models, m)
-		}
-
-		respond.OK(w, models)
-	}
-}
-
-// HandleGetJuryPoolModel returns a single jury pool model by ID.
-// GET /api/v1/pool-model/{id}
-// Replaces the misrouted HandleListJuryPoolModels on this /{id} path.
-func HandleGetJuryPoolModel(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-		id := mux.Vars(r)["id"]
-		if id == "" {
-			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing path parameter: id")
-			return
-		}
-
-		// SECURITY: extract tenant from JWT before any DB call.
-		// Compound filter (jury_pool_id + tenant_id) prevents cross-tenant IDOR:
-		// a caller who knows another tenant's jury_pool_id gets 404, not the record.
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-
-		var rows []map[string]any
-		if err := db.QueryRowsCompound(
-			database.TblJuryPools,
-			"jury_pool_id, tenant_id, name, pool_type, config, is_active, model_data, created_at, updated_at",
-			"jury_pool_id", id, "tenant_id", tenantID,
-			&rows,
-		); err != nil || len(rows) == 0 {
-			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "jury pool model not found")
-			return
-		}
-		row := rows[0]
-		m := map[string]any{
-			// "model_type" and "accuracy_score" do not exist in aocs_jury_pools.
-			"jury_pool_id": row["jury_pool_id"],
-			"tenant_id":    row["tenant_id"],
-			"name":         row["name"],
-			"pool_type":    row["pool_type"],
-			"config":       row["config"],
-			"is_active":    row["is_active"],
-			"created_at":   row["created_at"],
-			"updated_at":   row["updated_at"],
-		}
-		if md, ok := row["model_data"].(map[string]any); ok {
-			for k, v := range md {
-				m[k] = v
-			}
-		}
-		respond.OK(w, m)
-	}
-}
-
-// HandleFlagAuditLogEntry flags an individual audit log entry for review.
-//
-// PATCH /admin/audit-log/{id}/flag
-// Body: { "reason": "suspicious activity", "flag": true }
-//
-// Stores the flag as a metadata update in the details JSONB column of
-// core_audit. This is a non-destructive soft-flag — the record
-// is never deleted or altered, only annotated.
-//
-// SuperAdmin only — flagging audit records is a platform governance action.
-func HandleFlagAuditLogEntry(db database.DB, pgxPool *database.PGXPool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		// SECURITY: SuperAdmin only — enforce here regardless of route guard.
-		// Flagging alters platform audit integrity; only superadmins may do this.
-		// auth.MustGetTenantID is called first to guarantee a valid JWT is present
-		// before any privileged check (prevents unauthenticated access).
-		if _, ok := auth.MustGetTenantID(w, r); !ok {
-			return
-		}
-		if !auth.IsSuperAdmin(r.Context()) {
-			respond.ErrorWithCode(w, http.StatusForbidden, respond.ErrCodeForbidden,
-				"superadmin role required to flag audit log entries")
-			return
-		}
-
-		vars := mux.Vars(r)
-		auditLogID := vars["id"]
-		if auditLogID == "" {
-			respond.InternalError(w, http.StatusBadRequest, "audit log flag", fmt.Errorf("missing audit log id"))
-			return
-		}
-
-		// Decode request body
-		var body struct {
-			Reason string `json:"reason"`
-			Flag   bool   `json:"flag"`
-		}
-		body.Flag = true // default to flagging
-		if !validate.BindOptional(w, r, &body) {
-			return
-		}
-
-		// Merge flag metadata into the payload JSONB — non-destructive update.
-		// core_audit PK is audit_id; it has no dedicated details column.
-		updateSQL := `
-			UPDATE core_audit
-			   SET payload    = COALESCE(payload, '{}'::jsonb) || jsonb_build_object(
-			                       'flagged',     $1::boolean,
-			                       'flagged_at',  NOW()::text,
-			                       'flag_reason', $2::text
-			                    ),
-			       updated_at = NOW()
-			 WHERE audit_id = $3`
-
-		if pgxPool == nil || pgxPool.Pool() == nil {
-			respond.ErrorWithCode(w, http.StatusServiceUnavailable, respond.ErrCodeUnavailable,
-				"database unavailable — audit flag not persisted")
-			return
-		}
-		tag, err := pgxPool.Pool().Exec(r.Context(), updateSQL, body.Flag, body.Reason, auditLogID)
-		if err != nil {
-			slog.Error("HandleFlagAuditLogEntry: update failed", "audit_log_id", auditLogID, "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "flag audit log", err)
-			return
-		}
-		if tag.RowsAffected() == 0 {
-			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "audit log entry not found")
-			return
-		}
-
-		respond.OK(w, map[string]any{
-			"audit_log_id": auditLogID,
-			"flagged":      body.Flag,
-			"reason":       body.Reason,
-		})
-	}
-}

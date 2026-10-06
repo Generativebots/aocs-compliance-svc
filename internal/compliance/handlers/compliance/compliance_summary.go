@@ -87,8 +87,8 @@ func getPolicySummary(ctx context.Context, p *database.PGXPool, tenantID string)
 		CROSS JOIN (SELECT GREATEST(COUNT(*), 1) AS n FROM core_agents
 		             WHERE tenant_id = $1 AND status = 'ACTIVE') ta
 		LEFT JOIN LATERAL (
-		    SELECT COALESCE(v.action, v.decision, v.verdict) AS action
-		      FROM core_case_verdicts v
+		    SELECT v.verdict AS action
+		      FROM lv_core_gate_decisions v
 		     WHERE v.tenant_id = p.tenant_id AND v.policy_id = p.policy_id
 		     ORDER BY v.created_at DESC LIMIT 1) lv ON true
 		WHERE p.tenant_id = $1 AND p.deleted_at IS NULL
@@ -284,7 +284,7 @@ func HandleGetPolicyImpact(pgx *database.PGXPool) http.HandlerFunc {
 }
 
 // policyImpactSQL scores each policy from its gate verdict history in
-// core_case_verdicts. impact_score is on a 0-1 scale (fraction of evaluated
+// the gate decision log (lv_core_gate_decisions). impact_score is on a 0-1 scale (fraction of evaluated
 // actions the policy blocked); policies with no verdicts fall back to
 // priority/10. $2 = '' returns all policies, otherwise only that policy.
 const policyImpactSQL = `
@@ -292,12 +292,12 @@ const policyImpactSQL = `
 		SELECT p.policy_id, p.name, COALESCE(p.status, '') AS status, p.priority,
 		       COALESCE(array_length(p.bound_agents, 1), 0) AS bound_agents,
 		       COALESCE(p.updated_at, p.created_at, NOW()) AS policy_ts,
-		       COUNT(v.verdict_id) AS total,
-		       COUNT(*) FILTER (WHERE COALESCE(v.action, v.decision) IN ('BLOCK', 'DENY')) AS blocked,
+		       COUNT(v.decision_id) AS total,
+		       COUNT(*) FILTER (WHERE v.verdict IN ('BLOCK', 'DENY')) AS blocked,
 		       COUNT(DISTINCT v.agent_id) AS verdict_agents,
 		       MAX(v.created_at) AS last_verdict_at
 		FROM core_policies p
-		LEFT JOIN core_case_verdicts v ON v.policy_id = p.policy_id AND v.tenant_id = p.tenant_id
+		LEFT JOIN lv_core_gate_decisions v ON v.policy_id = p.policy_id AND v.tenant_id = p.tenant_id
 		WHERE p.tenant_id = $1 AND p.deleted_at IS NULL AND ($2 = '' OR p.policy_id = $2)
 		GROUP BY p.policy_id
 	), scored AS (

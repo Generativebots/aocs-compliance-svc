@@ -17,7 +17,6 @@ package compliance
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -33,18 +32,6 @@ var _ contracts.IntentAuditor = (*JuryClientAdapter)(nil)
 // JuryClientAdapter wraps *JuryClient and implements contracts.IntentAuditor.
 type JuryClientAdapter struct {
 	client *JuryClient
-}
-
-// NewJuryClientAdapter wraps client so it satisfies contracts.IntentAuditor.
-//
-// Returns an error if client is nil — a nil JuryClient would cause a nil-pointer
-// panic on the first AuditIntent call, and such a misconfiguration is better
-// caught at startup than silently at request time.
-func NewJuryClientAdapter(client *JuryClient) (*JuryClientAdapter, error) {
-	if client == nil {
-		return nil, errors.New("compliance: NewJuryClientAdapter: JuryClient must not be nil")
-	}
-	return &JuryClientAdapter{client: client}, nil
 }
 
 // AuditIntent implements contracts.IntentAuditor.
@@ -103,16 +90,6 @@ var _ contracts.HallucinationDetector = (*EntClientAdapter)(nil)
 // EntClientAdapter wraps *EntClient and implements contracts.HallucinationDetector.
 type EntClientAdapter struct {
 	client *EntClient
-}
-
-// NewEntClientAdapter wraps client so it satisfies contracts.HallucinationDetector.
-//
-// Returns an error if client is nil — same nil-guard rationale as NewJuryClientAdapter.
-func NewEntClientAdapter(client *EntClient) (*EntClientAdapter, error) {
-	if client == nil {
-		return nil, errors.New("compliance: NewEntClientAdapter: EntClient must not be nil")
-	}
-	return &EntClientAdapter{client: client}, nil
 }
 
 // DetectHallucination implements contracts.HallucinationDetector.

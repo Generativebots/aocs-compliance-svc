@@ -5,11 +5,12 @@ package reports
 // hit non-existent routes. Uses SupabaseClient's public QueryRows/InsertRow API.
 
 import (
-	"github.com/ocx/shared/logger"
 	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/ocx/shared/logger"
 
 	"github.com/gorilla/mux"
 	"github.com/ocx/shared/infra/auth"
@@ -18,50 +19,6 @@ import (
 	"github.com/ocx/shared/respond"
 	"github.com/ocx/shared/validate"
 )
-
-func HandleSearchEvidence(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-		query := strings.ToLower(r.URL.Query().Get("query"))
-
-		// Fetch all tenant evlt (pre-filter at DB level by tenant)
-		var records []database.QCoreEvidenceRecord
-		if err := db.QueryRowsCtx(r.Context(), database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, &records); err != nil {
-			logger.For("compliance/handlers/reports/evidence_report").Error("SearchEvidence DB query failed", "error", err, "tenant_id", tenantID)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to search evidence records", err)
-			return
-		}
-
-		// Client-side text search across key fields
-		var results []database.QCoreEvidenceRecord
-		for _, rec := range records {
-			if query == "" {
-				results = append(results, rec)
-				continue
-			}
-			// Search across type, action_class, agent_id, tool_id, transaction_id
-			if strings.Contains(strings.ToLower(rec.Type), query) ||
-				strings.Contains(strings.ToLower(rec.ActionClass), query) ||
-				strings.Contains(strings.ToLower(rec.AgentID), query) ||
-				strings.Contains(strings.ToLower(rec.ToolID), query) ||
-				strings.Contains(strings.ToLower(rec.TransactionID), query) {
-				results = append(results, rec)
-			}
-		}
-
-		if results == nil {
-			results = []database.QCoreEvidenceRecord{}
-		}
-		respond.OK(w, results)
-	}
-}
 
 // HandleListComplianceReports — GET /api/v1/compliance/reports
 func HandleListComplianceReports(db database.DB) http.HandlerFunc {
@@ -102,10 +59,10 @@ func HandleCreateComplianceReport(db database.DB) http.HandlerFunc {
 		}
 		respond.LimitBody(r)
 		var req struct {
-			ReportType string `json:"report_type"`
-			StartDate  string `json:"start_date"`
-			EndDate    string `json:"end_date"`
-			Title      string `json:"title"`
+			ReportType string         `json:"report_type"`
+			StartDate  string         `json:"start_date"`
+			EndDate    string         `json:"end_date"`
+			Title      string         `json:"title"`
 			Filters    map[string]any `json:"filters"`
 		}
 		if !validate.Bind(w, r, &req) {
@@ -153,12 +110,12 @@ func HandleCreateComplianceReport(db database.DB) http.HandlerFunc {
 		}
 		row := map[string]any{
 			"compliance_report_id": reportID,
-			"tenant_id":    tenantID,
-			"report_type":  req.ReportType,
-			"period_start": periodStart,
-			"period_end":   periodEnd,
-			"status":       "PENDING",
-			"created_by":   createdBy, // caller user_id (tenant_id fallback satisfies NOT NULL)
+			"tenant_id":            tenantID,
+			"report_type":          req.ReportType,
+			"period_start":         periodStart,
+			"period_end":           periodEnd,
+			"status":               "PENDING",
+			"created_by":           createdBy, // caller user_id (tenant_id fallback satisfies NOT NULL)
 			// 'title' and 'filters' columns do not exist in nexus_compliance_reports;
 			// store them in the 'metadata' JSONB column instead.
 			"metadata": map[string]any{
@@ -250,107 +207,7 @@ func HandleUpdateComplianceReport(db database.DB) http.HandlerFunc {
 	}
 }
 
-// HandleGetTokenStats — GET /api/v1/tokens/stats
-func HandleGetTokenStats(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-
-		var all []map[string]any
-		if err := db.QueryRowsCtx(r.Context(), database.TblCoreJit, database.ColsJITEntitlement, "tenant_id", tenantID, &all); err != nil {
-			logger.For("compliance/handlers/reports/evidence_report").Error("TokenStats query failed", "tenant_id", tenantID, "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "get token stats", err)
-			return
-		}
-
-		stats := map[string]int{
-			"total":   len(all),
-			"active":  0,
-			"expired": 0,
-			"revoked": 0,
-		}
-		for _, t := range all {
-			if s, ok := t["status"].(string); ok {
-				switch s {
-				case "ACTIVE":
-					stats["active"]++
-				case "EXPIRED":
-					stats["expired"]++
-				case "REVOKED":
-					stats["revoked"]++
-				}
-			}
-		}
-		respond.OK(w, stats)
-	}
-}
-
 // ANALYTICS HANDLERS
-
-// HandleGetAnalyticsOverview — GET /api/v1/analytics/overview
-func HandleGetAnalyticsOverview(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-
-		// Aggregate counts from key tables
-		var agt []map[string]any
-		db.QueryRowsCtx(r.Context(), database.TblCoreAgents, "agent_id", "tenant_id", tenantID, &agt)
-
-		var esc []map[string]any
-		db.QueryRowsCtx(r.Context(), database.TblCoreEscrowTxns, "status", "tenant_id", tenantID, &esc)
-
-		var evlt []map[string]any
-		db.QueryRowsCtx(r.Context(), database.TblCoreEvidenceRecords, "evidence_record_id", "tenant_id", tenantID, &evlt)
-
-		var policies []map[string]any
-		db.QueryRowsCtx(r.Context(), database.TblCorePolicies, "policy_id", "tenant_id", tenantID, &policies)
-
-		held := 0
-		released := 0
-		for _, e := range esc {
-			if s, ok := e["status"].(string); ok {
-				switch s {
-				case "HELD":
-					held++
-				case "RELEASED":
-					released++
-				}
-			}
-		}
-
-		// UDT-FIX: UniversalDataTable.unwrap() uses Object.values(r).find(Array.isArray).
-		// A flat scalar map has no array value → UDT renders empty.
-		// Wrap the summary in items:[{...}] so UDT can display it as a row,
-		// and card consumers can access items[0] for their stat values.
-		summary := map[string]any{
-			"tenant_id":       tenantID,
-			"total_agents":    len(agt),
-			"total_escrow":    len(esc),
-			"escrow_held":     held,
-			"escrow_released": released,
-			"total_evidence":  len(evlt),
-			"total_policies":  len(policies),
-			"timestamp":       time.Now().UTC().Format(time.RFC3339),
-		}
-		respond.OK(w, map[string]any{
-			"items": []map[string]any{summary},
-			"total": 1,
-		})
-	}
-}
 
 // HandleListAnalyticsKPIs — GET /api/v1/analytics/kpis
 // Returns live KPI metrics for the analytics dashboard.
@@ -462,77 +319,5 @@ func HandleVerifyChain(db database.DB) http.HandlerFunc {
 			"offset":    params.Offset,
 			"integrity": map[bool]string{tampered == 0: "CLEAN", tampered != 0: "TAMPERED"}[true],
 		})
-	}
-}
-
-// HandleComplianceReport — GET /evidence/compliance-report
-// Returns a consolidated compliance report from the evidence chain.
-func HandleComplianceReport(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-
-		var records []database.QCoreEvidenceRecord
-		if err := db.QueryRowsCtx(r.Context(), database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, &records); err != nil {
-			logger.For("compliance/handlers/reports/evidence_report").Error("HandleComplianceReport query failed", "tenant_id", tenantID, "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "compliance report", err)
-			return
-		}
-
-		byType := map[string]int{}
-		tampered := 0
-		for _, rec := range records {
-			byType[rec.Type]++
-			if rec.Tampered {
-				tampered++
-			}
-		}
-		respond.OK(w, map[string]any{
-			"tenant_id":    tenantID,
-			"total_blocks": len(records),
-			"tampered":     tampered,
-			"by_type":      byType,
-			"integrity":    map[bool]string{tampered == 0: "CLEAN", tampered != 0: "TAMPERED"}[true],
-			"generated_at": time.Now().UTC().Format(time.RFC3339),
-		})
-	}
-}
-
-// HandleListActiveTokens — GET /api/v1/tokens/active
-func HandleListActiveTokens(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-
-		var result []map[string]any
-		if err := db.QueryRowsCtx(r.Context(), database.TblCoreJit, database.ColsJITEntitlement, "tenant_id", tenantID, &result); err != nil {
-			logger.For("compliance/handlers/reports/evidence_report").Error("ListActiveTokens query failed", "tenant_id", tenantID, "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "list active tokens", err)
-			return
-		}
-
-		// Filter active only
-		var active []map[string]any
-		for _, t := range result {
-			if s, ok := t["status"].(string); ok && s == "ACTIVE" {
-				active = append(active, t)
-			}
-		}
-		if active == nil {
-			active = []map[string]any{}
-		}
-		respond.OK(w, active)
 	}
 }

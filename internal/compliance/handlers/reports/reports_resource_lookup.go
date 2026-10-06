@@ -10,101 +10,6 @@ import (
 	"github.com/ocx/shared/respond"
 )
 
-// HandleGetNexsAnomaly — GET /analytics/anomalies/:id.
-func HandleGetNexsAnomaly(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblSharAlerts, "alert_id")
-}
-
-// HandleGetNexsBenchmark — GET /analytics/benchmarks/:id.
-func HandleGetNexsBenchmark(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblSharComplianceReports, "compliance_report_id")
-}
-
-// HandleGetNexsForecast — GET /analytics/forecasts/:id.
-func HandleGetNexsForecast(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblSharComplianceReports, "compliance_report_id")
-}
-
-// HandleGetNexsSegment — GET /analytics/segments/:id.
-func HandleGetNexsSegment(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblSharComplianceReports, "compliance_report_id")
-}
-
-// HandleUpdateNexsSegment — PUT /analytics/segments/:id.
-func HandleUpdateNexsSegment(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.UpdateByID(db, database.TblSharComplianceReports, "compliance_report_id")
-}
-
-// HandleDeleteNexsSegment — DELETE /analytics/segments/:id (soft-delete).
-func HandleDeleteNexsSegment(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.DeleteByID(db, database.TblSharComplianceReports, "compliance_report_id")
-}
-
-// HandleGetNexsUsageRecord — GET /analytics/usage/:id.
-func HandleGetNexsUsageRecord(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblQuotaUsage, "tenant_resource_usage_id")
-}
-
-// HandleGetIntelCategory — GET /analytics/intel-categories/:id.
-func HandleGetIntelCategory(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblOntology, "category_id")
-}
-
-// HandleUpdateIntelCategory — PUT /analytics/intel-categories/:id.
-func HandleUpdateIntelCategory(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.UpdateByID(db, database.TblOntology, "category_id")
-}
-
-// HandleGetIntelForecastItem — GET /analytics/intel-forecasts/:id.
-func HandleGetIntelForecastItem(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblSharComplianceReports, "compliance_report_id")
-}
-
-// HandleGetMarketSignal — GET /analytics/market-signals/:id.
-func HandleGetMarketSignal(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblExtcMarketplaceListings, "marketplace_listing_id")
-}
-
-// HandleGetThreat — GET /analytics/threats/:id.
-func HandleGetThreat(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblSharAlerts, "alert_id")
-}
-
-// HandleGetAgentUsageRecord — GET /analytics/agent-usage/:id.
-func HandleGetAgentUsageRecord(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblQuotaUsage, "tenant_resource_usage_id")
-}
-
-// HandleGetIntentUsageRecord — GET /analytics/intent-usage/:id.
-func HandleGetIntentUsageRecord(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblQuotaUsage, "tenant_resource_usage_id")
-}
-
-// HandleGetUsageProjection — GET /analytics/usage-projections/:id.
-func HandleGetUsageProjection(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblSharComplianceReports, "compliance_report_id")
-}
-
-// HandleGetRevenueStream — GET /analytics/revenue-streams/:id.
-func HandleGetRevenueStream(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblSharLedger, "entry_id")
-}
-
-// HandleGetStakingPosition — GET /analytics/staking-positions/:id.
-func HandleGetStakingPosition(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblNexusStakingLedger, "entry_id")
-}
-
-// HandleGetStakingReward — GET /analytics/staking-rewards/:id.
-func HandleGetStakingReward(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblNexusStakingLedger, "entry_id")
-}
-
-// HandleGetStakingLedgerEntry — GET /analytics/staking-ledger/:id.
-func HandleGetStakingLedgerEntry(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblNexusStakingLedger, "entry_id")
-}
-
 // HandleListStakingLedger — GET /staking/ledger
 //
 // (list) but only the /{id} endpoint existed — causing 404/405 in production.
@@ -133,21 +38,6 @@ func HandleListStakingLedger(db *database.SupabaseClient) http.HandlerFunc {
 		}
 		respond.OK(w, rows)
 	}
-}
-
-// HandleGetTransactionSummary — GET /analytics/transactions/:id.
-func HandleGetTransactionSummary(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblCoreLedger, "entry_id")
-}
-
-// HandleGetAttackSurfaceItem — GET /analytics/attack-surface/:id.
-func HandleGetAttackSurfaceItem(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.TblAttackSurfaceItems, "item_id")
-}
-
-// HandleGetIDSEvent — GET /analytics/ids-events/:id.
-func HandleGetIDSEvent(db *database.SupabaseClient) http.HandlerFunc {
-	return byid.GetByID(db, database.ViewIDSEvents, "event_id")
 }
 
 // HandleGetTenantUsageRecord — GET /analytics/tenant-usage/:id.

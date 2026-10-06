@@ -11,19 +11,6 @@ package reports
 //   Returns real system metrics for the command-center dashboard.
 //   PERF FIX: Same aggregation approach — COUNT in SQL, not Go slice iteration.
 
-import (
-	"encoding/json"
-	"fmt"
-	"io"
-	"log/slog"
-	"net/http"
-	"time"
-
-	"github.com/ocx/shared/infra/auth"
-	"github.com/ocx/shared/infra/database"
-	"github.com/ocx/shared/respond"
-)
-
 // HandleGetMonitorAuditSummary — GET /monitor/audit-summary
 
 type auditSummaryRow struct {
@@ -35,55 +22,6 @@ type auditSummaryRow struct {
 	GeneratedAt   string `json:"generated_at"`
 }
 
-func HandleGetMonitorAuditSummary(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-
-		sum := auditSummaryRow{
-			TenantID:    tenantID,
-			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-		}
-
-		cutoff24h := time.Now().UTC().Add(-24 * time.Hour).Format(time.RFC3339)
-		cutoff30d := time.Now().UTC().AddDate(0, 0, -30).Format(time.RFC3339)
-
-		// PERF: DB-side COUNT aggregations — avoids fetching thousands of rows into Go memory.
-		type countRow struct {
-			Total         int `json:"total"`
-			Events24h     int `json:"events_24h"`
-			Violations24h int `json:"violations_24h"`
-			Warnings24h   int `json:"warnings_24h"`
-		}
-
-		const aggSQL = `
-SELECT
-  COUNT(*)                                                           AS total,
-  COUNT(*) FILTER (WHERE created_at >= $2)                          AS events_24h,
-  COUNT(*) FILTER (WHERE created_at >= $2 AND severity IN ('ERROR','CRITICAL')) AS violations_24h,
-  COUNT(*) FILTER (WHERE created_at >= $2 AND severity = 'WARNING') AS warnings_24h
-FROM core_audit
-WHERE tenant_id = $1 AND created_at >= $3`
-
-		var rows []countRow
-		if err := db.QueryRawCtx(r.Context(), aggSQL, &rows, tenantID, cutoff24h, cutoff30d); err != nil {
-			slog.Debug("monitor/audit-summary: aggregation query failed", "tenant_id", tenantID, "err", err)
-		} else if len(rows) > 0 {
-			sum.TotalEvents = rows[0].Total
-			sum.Events24h = rows[0].Events24h
-			sum.Violations24h = rows[0].Violations24h
-			sum.Warnings24h = rows[0].Warnings24h
-		}
-
-		respond.OK(w, sum)
-	}
-}
-
 // HandleGetSystemOverview — GET /monitor/overview
 
 type systemOverview struct {
@@ -92,71 +30,4 @@ type systemOverview struct {
 	GateCalls24h  int    `json:"gate_calls_24h"`
 	Violations24h int    `json:"violations_24h"`
 	GeneratedAt   string `json:"generated_at"`
-}
-
-// HandleGetSystemOverview — GET /monitor/overview
-// Agent counts fetched via Core internal API.
-func HandleGetSystemOverview(db database.DB, internalAPIURL string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-
-		ov := systemOverview{GeneratedAt: time.Now().UTC().Format(time.RFC3339)}
-		cutoff24h := time.Now().UTC().Add(-24 * time.Hour).Format(time.RFC3339)
-
-		// Agent counts via Core internal API
-		if internalAPIURL != "" {
-			apiURL := fmt.Sprintf("%s/internal/v1/agents/counts?tenant_id=%s", internalAPIURL, tenantID)
-			apiReq, reqErr := http.NewRequestWithContext(r.Context(), http.MethodGet, apiURL, nil) // #nosec G704 -- base URL comes from deployment configuration, not request input
-			if reqErr == nil {
-				if svcJWT := r.Header.Get("X-Service-JWT"); svcJWT != "" {
-					apiReq.Header.Set("Authorization", "Bearer "+svcJWT)
-				}
-				apiReq.Header.Set("X-Tenant-ID", tenantID)
-				cl := &http.Client{Timeout: 5 * time.Second}
-				apiResp, apiErr := cl.Do(apiReq) // #nosec G704 -- base URL comes from deployment configuration, not request input
-				if apiErr == nil {
-					defer apiResp.Body.Close()
-					if apiResp.StatusCode == http.StatusOK {
-						body, _ := io.ReadAll(io.LimitReader(apiResp.Body, 64*1024))
-						var payload struct {
-							Total  int `json:"total"`
-							Active int `json:"active"`
-						}
-						if jsonErr := json.Unmarshal(body, &payload); jsonErr == nil {
-							ov.AgentCount = payload.Total
-							ov.ActiveAgents = payload.Active
-						}
-					}
-				} else {
-					slog.Warn("monitoring: Core agent counts API unavailable", "error", apiErr)
-				}
-			}
-		}
-
-		// PERF: Gate calls + violations in a single aggregation query (was fetching all 30-day audit logs)
-		type gateStats struct {
-			GateCalls24h  int `json:"gate_calls_24h"`
-			Violations24h int `json:"violations_24h"`
-		}
-		const gateSQL = `
-SELECT
-  COUNT(*)                                                                  AS gate_calls_24h,
-  COUNT(*) FILTER (WHERE severity IN ('ERROR','CRITICAL'))                  AS violations_24h
-FROM core_audit
-WHERE tenant_id = $1 AND created_at >= $2`
-
-		var gs []gateStats
-		if err := db.QueryRawCtx(r.Context(), gateSQL, &gs, tenantID, cutoff24h); err == nil && len(gs) > 0 {
-			ov.GateCalls24h = gs[0].GateCalls24h
-			ov.Violations24h = gs[0].Violations24h
-		}
-
-		respond.OK(w, ov)
-	}
 }

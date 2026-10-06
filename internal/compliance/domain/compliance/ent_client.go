@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/ocx/shared/infra/security"
 	"github.com/ocx/shared/types"
 	"google.golang.org/grpc"
 )
@@ -27,8 +26,8 @@ import (
 type EntHallucinationRequest struct {
 	LLMOutput string `json:"llm_output"`
 	Context   string `json:"context"`
-	AgentID	string	`json:"agent_id" validate:"required"`
-	TenantID	string	`json:"tenant_id" validate:"required"`
+	AgentID   string `json:"agent_id" validate:"required"`
+	TenantID  string `json:"tenant_id" validate:"required"`
 }
 
 // EntHallucinationResponse maps to the proto EntHallucinationResponse message.
@@ -47,8 +46,8 @@ type EntHallucinationResponse struct {
 type EntIntentRequest struct {
 	StatedIntent string `json:"stated_intent"`
 	ActualAction string `json:"actual_action"`
-	AgentID	string	`json:"agent_id" validate:"required"`
-	TenantID	string	`json:"tenant_id" validate:"required"`
+	AgentID      string `json:"agent_id" validate:"required"`
+	TenantID     string `json:"tenant_id" validate:"required"`
 }
 
 // EntIntentResponse maps to the proto EntIntentResponse message.
@@ -66,27 +65,6 @@ type EntClient struct {
 	conn   *grpc.ClientConn
 	addr   string
 	logger *slog.Logger
-}
-
-// NewEntClient dials the ENT gRPC service at addr.
-// Returns an error if addr is empty — callers must configure ENT_GRPC_ADDR.
-// Uses security.Dial for OTEL instrumentation + keepalive + retry policy
-// (matches cvic, escrow, and traffic client pattern — WIRE-GAP-09).
-func NewEntClient(addr string) (*EntClient, error) {
-	if addr == "" {
-		return nil, fmt.Errorf("ENT gRPC address not configured — set ENT_GRPC_ADDR env var")
-	}
-
-	conn, err := security.Dial(addr)
-	if err != nil {
-		return nil, fmt.Errorf("ENT gRPC client creation failed (%s): %w", addr, err)
-	}
-
-	return &EntClient{
-		conn:   conn,
-		addr:   addr,
-		logger: slog.Default().With("component", "ent-client"),
-	}, nil
 }
 
 // Close shuts down the gRPC connection.

@@ -24,21 +24,21 @@ import (
 	"time"
 
 	"cloud.google.com/go/pubsub"
+	"github.com/ocx/shared/consts"
 	"github.com/ocx/shared/infra/circuitbreaker"
 	"github.com/ocx/shared/infra/config"
-	"github.com/ocx/shared/consts"
 )
 
 // EscalationMessage is the canonical shape published on "aocs.cases.escalated".
 // aocs-platform publishes this when the Tri-Factor Gate returns HOLD+HITL.
 type EscalationMessage struct {
-	DecisionID string `json:"decision_id"`
-	GateID     string `json:"gate_id"`
-	TenantID   string `json:"tenant_id"`
-	AgentID    string `json:"agent_id"`
-	Reason     string `json:"reason"`
+	DecisionID  string `json:"decision_id"`
+	GateID      string `json:"gate_id"`
+	TenantID    string `json:"tenant_id"`
+	AgentID     string `json:"agent_id"`
+	Reason      string `json:"reason"`
 	ContextData string `json:"context_data"` // JSON-encoded gate decision context
-	Timestamp  string `json:"timestamp"`    // RFC3339
+	Timestamp   string `json:"timestamp"`    // RFC3339
 }
 
 // EscalateFunc is the function signature used to escalate a case.
@@ -55,61 +55,8 @@ type JuryConsumer struct {
 	cb       *circuitbreaker.CircuitBreaker
 	project  string
 	subName  string
-	juryAddr string        // stored so Start() can dial once
-	client   *JuryClient   // long-lived gRPC connection; nil until Start()
-}
-
-// NewJuryConsumer creates a production consumer that dials the Python Jury at juryAddr.
-// juryAddr: gRPC address of the unified aocs-py-svc Jury gRPC port (e.g. "aocs-py-svc.ocx-system.svc.cluster.local:50090")
-// project:  GCP project ID (falls back to GOOGLE_CLOUD_PROJECT env var)
-// subName:  Pub/Sub subscription name (defaults to "aocs-jury-escalated-sub")
-func NewJuryConsumer(juryAddr, project, subName string) *JuryConsumer {
-	if project == "" {
-		project = config.Get().Services.GCPProject
-	}
-	if subName == "" {
-		subName = "aocs-jury-escalated-sub"
-	}
-	if juryAddr == "" {
-		juryAddr = os.Getenv("JURY_GRPC_ADDR") // canonical env var (AOCS_JURY_ADDR deprecated)
-	}
-	if juryAddr == "" {
-		// P0-fix: no localhost fallback — in Cloud Run, localhost:50090 is unreachable.
-		// If JURY_GRPC_ADDR is unset, the NewJuryClient call will error and the
-		// circuit breaker will open, fail-open for cases. Log at startup for observability.
-		slog.Error("JURY_GRPC_ADDR not configured — jury forwarding will fail-open")
-	}
-
-	cb := circuitbreaker.New(circuitbreaker.Config{
-		Name:             "jry-pubsub-consumer",
-		FailureThreshold: 3, // Faster trip — Jury HOLD is time-sensitive
-		ResetTimeout:     consts.PubSubResetTimeout,
-	})
-
-	// Store juryAddr; actual dial is deferred to Start() so that
-	// a single connection is reused across all messages processed by this consumer.
-	return &JuryConsumer{
-		cb:       cb,
-		project:  project,
-		subName:  subName,
-		juryAddr: juryAddr,
-	}
-}
-
-// NewJuryConsumerWithFunc creates a consumer with a custom escalate function (for testing).
-func NewJuryConsumerWithFunc(fn EscalateFunc, project, subName string) *JuryConsumer {
-	if project == "" {
-		project = config.Get().Services.GCPProject
-	}
-	if subName == "" {
-		subName = "aocs-jury-escalated-sub"
-	}
-	return &JuryConsumer{
-		escalate: fn,
-		cb:       circuitbreaker.New(circuitbreaker.Config{Name: "jry-consumer-test", FailureThreshold: 3}),
-		project:  project,
-		subName:  subName,
-	}
+	juryAddr string      // stored so Start() can dial once
+	client   *JuryClient // long-lived gRPC connection; nil until Start()
 }
 
 // Start launches the Pub/Sub listener as a background goroutine.
@@ -217,7 +164,7 @@ func (c *JuryConsumer) handleMessage(ctx context.Context, msg *pubsub.Message) {
 }
 
 func (c *JuryConsumer) ensureTopicAndSub(ctx context.Context, client *pubsub.Client) {
-	topicName  := config.Get().Topics.CasesEscalated
+	topicName := config.Get().Topics.CasesEscalated
 	dlqTopicID := config.Get().Topics.CasesEscalatedDLQ
 
 	// Provision primary topic

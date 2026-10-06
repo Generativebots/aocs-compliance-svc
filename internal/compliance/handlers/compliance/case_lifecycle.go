@@ -35,26 +35,26 @@ import (
 	"log/slog"
 	"time"
 
+	contracts "github.com/ocx/shared/contracts"
 	"github.com/ocx/shared/infra/concurrent"
 	"github.com/ocx/shared/infra/copilot"
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/infra/eventbus"
 	"github.com/ocx/shared/infra/serviceclient"
-	contracts "github.com/ocx/shared/contracts"
 )
 
 // CaseStatus represents the HITL case state machine values.
 type CaseStatus string
 
 const (
-	StatusPending    CaseStatus = "PENDING"
-	StatusAssigned   CaseStatus = "ASSIGNED"
-	StatusInReview   CaseStatus = "IN_REVIEW"
-	StatusApproved   CaseStatus = "APPROVED"
-	StatusRejected   CaseStatus = "REJECTED"
-	StatusEscalated  CaseStatus = "ESCALATED"
-	StatusTimeout    CaseStatus = "TIMEOUT"
-	StatusAppealed   CaseStatus = "APPEALED"
+	StatusPending   CaseStatus = "PENDING"
+	StatusAssigned  CaseStatus = "ASSIGNED"
+	StatusInReview  CaseStatus = "IN_REVIEW"
+	StatusApproved  CaseStatus = "APPROVED"
+	StatusRejected  CaseStatus = "REJECTED"
+	StatusEscalated CaseStatus = "ESCALATED"
+	StatusTimeout   CaseStatus = "TIMEOUT"
+	StatusAppealed  CaseStatus = "APPEALED"
 )
 
 // CasePriority maps to SLA deadline hours (CIP-2).
@@ -80,14 +80,14 @@ func slaHoursForPriority(p CasePriority) int {
 
 // CreateCaseInput is the canonical input for creating any HITL case.
 type CreateCaseInput struct {
-	CaseType       string            `json:"case_type"`     // SELF_HEAL|AGENT_ESC|JURY_DEADLOCK|COMPLIANCE|MANUAL|SOP_DRIFT_VIOLATION|SENTINEL_ALERT
-	AgentID        string            `json:"agent_id"`
-	TenantID       string            `json:"tenant_id"`
-	Reason         string            `json:"reason"`
-	Priority       CasePriority      `json:"priority"`
-	DepartmentID   string            `json:"department_id,omitempty"`
-	CaseSource     string            `json:"case_source"`   // gate|sentinel|manual|gra|sop_drift
-	ContextData    map[string]any    `json:"context_data,omitempty"`
+	CaseType     string         `json:"case_type"` // SELF_HEAL|AGENT_ESC|JURY_DEADLOCK|COMPLIANCE|MANUAL|SOP_DRIFT_VIOLATION|SENTINEL_ALERT
+	AgentID      string         `json:"agent_id"`
+	TenantID     string         `json:"tenant_id"`
+	Reason       string         `json:"reason"`
+	Priority     CasePriority   `json:"priority"`
+	DepartmentID string         `json:"department_id,omitempty"`
+	CaseSource   string         `json:"case_source"` // gate|sentinel|manual|gra|sop_drift
+	ContextData  map[string]any `json:"context_data,omitempty"`
 	// CIP-4: Sentinel escalation — set when case is created from a senti_alert
 	AlertID            string `json:"alert_id,omitempty"`
 	EscalatedFromAlert bool   `json:"escalated_from_alert,omitempty"`
@@ -97,12 +97,12 @@ type CreateCaseInput struct {
 
 // CaseCreated is returned by CreateCase.
 type CaseCreated struct {
-	CaseID      string     `json:"case_id"`
-	TenantID    string     `json:"tenant_id"`
-	Status      CaseStatus `json:"status"`
+	CaseID      string       `json:"case_id"`
+	TenantID    string       `json:"tenant_id"`
+	Status      CaseStatus   `json:"status"`
 	Priority    CasePriority `json:"priority"`
-	SLADeadline time.Time  `json:"sla_deadline_at"`
-	CreatedAt   time.Time  `json:"created_at"`
+	SLADeadline time.Time    `json:"sla_deadline_at"`
+	CreatedAt   time.Time    `json:"created_at"`
 }
 
 // CreateCase creates a HITL case with full SLA tracking, audit trail, and Pub/Sub notification.
@@ -185,15 +185,15 @@ func CreateCase(
 	dedupKey := hex.EncodeToString(dedupHash[:8]) // 16 hex chars = 8 bytes
 
 	row := map[string]any{
-		"decision_id":      caseID,
-		"request_id":       caseID, // NOT NULL — each case creation IS its own request
-		"decision_type":    input.CaseType, // NOT NULL — maps to case_type for HITL review classification
-		"tenant_id":        input.TenantID,
-		"agent_id":         input.AgentID,
-		"status":           string(StatusPending),
-		"priority":         string(priority),
-		"reason":           input.Reason,
-		"case_source":      caseSource,
+		"decision_id":   caseID,
+		"request_id":    caseID,         // NOT NULL — each case creation IS its own request
+		"decision_type": input.CaseType, // NOT NULL — maps to case_type for HITL review classification
+		"tenant_id":     input.TenantID,
+		"agent_id":      input.AgentID,
+		"status":        string(StatusPending),
+		"priority":      string(priority),
+		"reason":        input.Reason,
+		"case_source":   caseSource,
 		//   sla_breach_at   → SLA monitor polls this to detect breaches (canonical)
 		//   sla_deadline_at → V512 analytics views + legacy code reads this (backward compat)
 		"sla_breach_at":    slaDeadline.Format(time.RFC3339),
@@ -203,7 +203,7 @@ func CreateCase(
 		"context_data":     string(ctxBytes),
 		"dedup_key":        dedupKey,
 
-		"created_by":       "system@ocx.ai",
+		"created_by": "system@ocx.ai",
 		// updated_at is set by the trg_set_updated_at DB trigger on every UPDATE — do NOT set here.
 	}
 	if input.DepartmentID != "" {
@@ -238,16 +238,18 @@ func CreateCase(
 	}
 
 	// Copilot: push context so operators see new case in governance dashboard
-	concurrent.Go("compliance/copilot_push", func() { copilot.PushCopilotContext(db, input.TenantID, copilot.EventHITLCreated,
-		fmt.Sprintf("New %s case (%s) created for agent %s — SLA: %s",
-			input.CaseType, priority, input.AgentID, slaDeadline.Format("2006-01-02 15:04")),
-		map[string]any{
-			"case_id":     caseID,
-			"agent_id":    input.AgentID,
-			"priority":    string(priority),
-			"sla_hours":   hours,
-			"case_source": caseSource,
-		}) })
+	concurrent.Go("compliance/copilot_push", func() {
+		copilot.PushCopilotContext(db, input.TenantID, copilot.EventHITLCreated,
+			fmt.Sprintf("New %s case (%s) created for agent %s — SLA: %s",
+				input.CaseType, priority, input.AgentID, slaDeadline.Format("2006-01-02 15:04")),
+			map[string]any{
+				"case_id":     caseID,
+				"agent_id":    input.AgentID,
+				"priority":    string(priority),
+				"sla_hours":   hours,
+				"case_source": caseSource,
+			})
+	})
 
 	// Pub/Sub: notify jury consumers, SDK polling clients, frontend
 	if psBroker != nil {
@@ -261,12 +263,11 @@ func CreateCase(
 			"priority":       string(priority),
 			"sla_deadline":   slaDeadline.Format(time.RFC3339),
 			"case_source":    caseSource,
-
 		})
 		orderKey := input.TenantID + ":" + input.AgentID
 		broker := psBroker
 		// CONC-1: anonymous goroutine — ensure this is lifecycle-managed via svcboot.BgCtx
-	concurrent.Go("aocs-compliance/compliance/case_lifecycle", func() {
+		concurrent.Go("aocs-compliance/compliance/case_lifecycle", func() {
 			defer func() {
 				if r := recover(); r != nil {
 					slog.Error("CreateCase: Pub/Sub goroutine panic recovered",
@@ -293,139 +294,6 @@ func CreateCase(
 	}, nil
 }
 
-// TransitionCase moves a case from one status to another, writing a lifecycle event.
-// This is the ONLY place where case status changes should happen.
-//
-// Rules:
-//   - If transitioning to ESCALATED, increments escalation_count
-//   - If SLA is breached (now > sla_deadline_at), sets sla_breached=true, sla_breached_at=now
-//   - Writes lifecycle event to aocs_case_lifecycle_events
-//   - Pushes Copilot context for status changes the operator should see
-func TransitionCase(
-	ctx context.Context,
-	db database.DB,
-	caseID, tenantID, actorID string,
-	newStatus CaseStatus,
-	reason string,
-	rc ...*serviceclient.Client,
-) error {
-	var r1 *serviceclient.Client
-	if len(rc) > 0 {
-		r1 = rc[0]
-	}
-	if db == nil {
-		return fmt.Errorf("caselifecycle.TransitionCase: db is nil")
-	}
-
-	// Read current case — fetch both canonical columns for SLA check.
-	// sla_breach_at: polled by the SLA monitor (canonical).
-	// sla_deadline_at: written by legacy paths and analytics views.
-	var rows []map[string]any
-	if r1 != nil {
-		data, _rErr := r1.GetHITLCase(ctx, tenantID, caseID,
-			"status,sla_breach_at,sla_deadline_at,sla_breached,escalation_count")
-		if _rErr != nil {
-			return fmt.Errorf("caselifecycle.TransitionCase: ocx-core-svc read failed: %w", _rErr)
-		}
-		if data != nil {
-			rows = []map[string]any{data}
-		}
-	} else if err := db.QueryRowsCompoundCtx(ctx, database.TblCoreHitl,
-		"status,sla_breach_at,sla_deadline_at,sla_breached,escalation_count",
-		"decision_id", caseID, "tenant_id", tenantID, &rows); err != nil {
-		return fmt.Errorf("caselifecycle.TransitionCase: read current case: %w", err)
-	}
-	if len(rows) == 0 {
-		return fmt.Errorf("caselifecycle.TransitionCase: case %s not found for tenant %s", caseID, tenantID)
-	}
-
-	oldStatus, _ := rows[0]["status"].(string)
-	now := time.Now().UTC()
-	update := map[string]any{
-		"status":     string(newStatus),
-		"updated_by": actorID,
-	}
-
-	// CIP-2: Check SLA breach.
-	// sla_deadline_at for cases created before this fix was deployed.
-	// not as string. The previous .(string) assertions silently yielded "",
-	// making ALL cases appear SLA-breached immediately.
-	extractTimeStr := func(col string) string {
-		v := rows[0][col]
-		if v == nil {
-			return ""
-		}
-		switch t := v.(type) {
-		case string:
-			return t
-		case time.Time:
-			return t.Format(time.RFC3339)
-		}
-		return ""
-	}
-	slaStr := extractTimeStr("sla_breach_at")
-	if slaStr == "" {
-		slaStr = extractTimeStr("sla_deadline_at")
-	}
-	slaBreached := false
-	if slaStr != "" {
-		if slaTime, err := time.Parse(time.RFC3339, slaStr); err == nil {
-			if now.After(slaTime) {
-				slaBreached = true
-				update["sla_breached"]    = true
-				update["sla_breached_at"] = now.Format(time.RFC3339)
-			}
-		}
-	}
-
-	// Increment escalation_count when escalating
-	if newStatus == StatusEscalated {
-		currentCount := 0
-		if v, ok := rows[0]["escalation_count"].(float64); ok {
-			currentCount = int(v)
-		}
-		update["escalation_count"] = currentCount + 1
-	}
-
-	if r1 != nil {
-		if err := r1.PatchHITLCase(ctx, tenantID, caseID, update); err != nil {
-			return fmt.Errorf("caselifecycle.TransitionCase: ocx-core-svc update failed: %w", err)
-		}
-		writeLifecycleEvent(ctx, db, caseID, tenantID, oldStatus, string(newStatus), reason, actorID, r1)
-	} else {
-		// P1-B: Atomically update the case status AND write the lifecycle event inside WithTransaction.
-		if txErr := db.WithTransaction(ctx, func(tx database.DB) error {
-			if err := tx.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
-				return fmt.Errorf("update failed: %w", err)
-			}
-			writeLifecycleEvent(ctx, tx, caseID, tenantID, oldStatus, string(newStatus), reason, actorID)
-			return nil
-		}); txErr != nil {
-			return fmt.Errorf("caselifecycle.TransitionCase: transaction failed: %w", txErr)
-		}
-	}
-
-	slog.Info("HITL case transitioned",
-		"case_id", caseID, "tenant_id", tenantID,
-		"from", oldStatus, "to", string(newStatus),
-		"actor", actorID, "sla_breached", slaBreached,
-	)
-
-	// Copilot context for operator-visible transitions
-	if newStatus == StatusEscalated || newStatus == StatusTimeout || slaBreached {
-		eventType := copilot.EventHITLCreated
-		msg := fmt.Sprintf("Case %s → %s (actor: %s)", caseID, newStatus, actorID)
-		if slaBreached {
-			msg = fmt.Sprintf("Case %s SLA BREACHED → %s", caseID, newStatus)
-			eventType = copilot.EventSLABreach
-		}
-		concurrent.Go("compliance/copilot_push", func() { copilot.PushCopilotContext(db, tenantID, eventType, msg,
-			map[string]any{"case_id": caseID, "new_status": string(newStatus), "sla_breached": slaBreached}) })
-	}
-
-	return nil
-}
-
 // writeLifecycleEvent inserts one row into aocs_case_lifecycle_events.
 // Best-effort: logs error but does NOT return it so case transition is not blocked.
 func writeLifecycleEvent(
@@ -447,7 +315,7 @@ func writeLifecycleEvent(
 	// so they are fully preserved and queryable via payload->>'case_id', payload->>'from_status' etc.
 	row := map[string]any{
 		"event_id":    generatePlatformID(),
-		"entity_id":   caseID,   // FK — case_id is stored here for WHERE entity_id=$caseID queries
+		"entity_id":   caseID, // FK — case_id is stored here for WHERE entity_id=$caseID queries
 		"entity_type": "hitl_case",
 		"tenant_id":   tenantID,
 		"event_type":  "CASE_LIFECYCLE",

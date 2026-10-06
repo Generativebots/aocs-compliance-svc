@@ -26,21 +26,6 @@ type LedgerConsumer struct {
 	subName string
 }
 
-// NewLedgerConsumer creates a consumer that writes to pgx.
-func NewLedgerConsumer(pgx *database.PGXPool, project, subName string) *LedgerConsumer {
-	if project == "" {
-		project = config.Get().Services.GCPProject
-	}
-	if subName == "" {
-		subName = "aocs-ledger-consumer-sub"
-	}
-	return &LedgerConsumer{
-		pgx:     pgx,
-		project: project,
-		subName: subName,
-	}
-}
-
 // Start launches the consumer natively in the background.
 func (c *LedgerConsumer) Start(ctx context.Context) {
 	go c.run(ctx)
@@ -151,13 +136,6 @@ func (c *LedgerConsumer) insertEvidence(ctx context.Context, e database.QCoreEvi
 	return err
 }
 
-func nullIfEmpty(val string) interface{} {
-	if val == "" {
-		return nil
-	}
-	return val
-}
-
 func (c *LedgerConsumer) ensureTopicAndSub(ctx context.Context, client *pubsub.Client) {
 	topicName := config.Get().Topics.LedgerWrite
 	topic := client.Topic(topicName)
@@ -175,6 +153,13 @@ func (c *LedgerConsumer) ensureTopicAndSub(ctx context.Context, client *pubsub.C
 			slog.Warn("Could not create emulator subscription", "error", err)
 		}
 	}
+}
+
+func nullIfEmpty(val string) interface{} {
+	if val == "" {
+		return nil
+	}
+	return val
 }
 
 func deadLetterLogLedger(payload database.QCoreEvidenceRecord, cause error) {

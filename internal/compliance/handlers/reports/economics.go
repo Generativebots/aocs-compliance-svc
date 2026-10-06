@@ -11,132 +11,15 @@ import (
 	"net/http"
 
 	"github.com/ocx/shared/respond"
-	"github.com/ocx/shared/validate"
 
-	"github.com/ocx/shared/handlers/factory"
-	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
 )
 
-func HandleDeleteDashboard(db database.DB) http.HandlerFunc {
-	// B7: delegated to shared typed store (see ocx-shared-go/handlers/factory).
-	return factory.DashboardDelete(db)
-}
-
 // ESC — Missing routes called by frontend
-
-// HandleGetEscrowHistory — GET /api/v1/esc/history
-// Returns escrow history scoped to the last 90 days by default.
-// Pass ?start_date=RFC3339 to extend the window (triggers "refine search" UX on frontend).
-// FK filters: ?agent_id= narrows by agent FK.
-// No ?limit — the 90-day window is the boundary.
-func HandleGetEscrowHistory(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-
-		// FK filter: narrow by agent PK (not pagination)
-		agentID := r.URL.Query().Get("agent_id")
-		// Business range filters — not pagination
-		startDate := r.URL.Query().Get("start_date")
-		endDate := r.URL.Query().Get("end_date")
-
-		rows, err := db.QueryEscrowHistory(tenantID, agentID, startDate, endDate)
-		if err != nil {
-			slog.Error("EscrowHistory query failed, falling back", "error", err)
-			var fallback []map[string]any
-			if _dbErr := db.QueryRowsWithin90Days(database.TblCoreEscrowTxns, database.ColsEscrowTransactions, tenantID, &fallback); _dbErr != nil {
-				slog.Error("db operation failed", "method", "QueryRowsWithin90Days", "error", _dbErr)
-				respond.InternalError(w, http.StatusInternalServerError, "escrow_query_failed", _dbErr)
-				return
-			}
-			if fallback == nil {
-				fallback = []map[string]any{}
-			}
-			respond.OK(w, fallback)
-			return
-		}
-		if rows == nil {
-			rows = []map[string]any{}
-		}
-		respond.OK(w, map[string]any{
-			"data":  rows,
-			"total": len(rows),
-			"data_window": map[string]any{
-				"days":       database.DefaultListWindowDays,
-				"start_date": startDate,
-				"end_date":   endDate,
-			},
-		})
-	}
-}
 
 // HandleEscrowStats DELETED — architectural anti-pattern.
 // Was: fetches core_escrow_txns → counts pending/released/blocked in Go.
 // Frontend derives these from GET /esc/history which it already fetches.
-
-// HandleValidateEscrow — POST /api/v1/esc/validate
-func HandleValidateEscrow(db database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
-			return
-		}
-		var req struct {
-			EscrowID string `json:"escrow_id"`
-		}
-		respond.LimitBody(r)
-		if !validate.Bind(w, r, &req) {
-			return
-		}
-		if req.EscrowID == "" {
-			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "escrow_id is required")
-			return
-		}
-
-		tenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return
-		}
-		// Check if esc entry exists and is releasable
-		var rows []map[string]any
-		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreEscrowTxns, "status,agent_id,tool_name,tenant_id", "transaction_id", req.EscrowID, &rows); _dbErr != nil {
-			slog.Error("db operation failed", "method", "QueryRows", "error", _dbErr)
-			respond.InternalError(w, http.StatusInternalServerError, "escrow_validate_query_failed", _dbErr)
-			return
-		}
-		if len(rows) == 0 {
-			respond.OK(w, map[string]any{
-				"valid":   false,
-				"message": "Esc entry not found",
-			})
-			return
-		}
-		// Verify tenant ownership
-		if rt, ok := rows[0]["tenant_id"].(string); ok && rt != tenantID && tenantID != "" {
-			respond.OK(w, map[string]any{
-				"valid":   false,
-				"message": "Esc entry not found",
-			})
-			return
-		}
-		status, _ := rows[0]["status"].(string)
-		releasable := status == "PENDING" || status == "HELD"
-		respond.OK(w, map[string]any{
-			"valid":     releasable,
-			"escrow_id": req.EscrowID,
-			"status":    status,
-			"agent_id":  rows[0]["agent_id"],
-			"tool_name": rows[0]["tool_name"],
-			"message":   map[bool]string{true: "Esc entry is valid for release", false: "Esc entry is not in a releasable state"}[releasable],
-		})
-	}
-}
 
 // ─── Admin Economics Overview ─────────────────────────────────────────────────
 // GET /admin/economics/overview

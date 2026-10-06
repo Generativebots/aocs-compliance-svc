@@ -252,21 +252,6 @@ func VerifySchnorrProof(proof *SchnorrProof) SchnorrVerifyResult {
 	}
 }
 
-// GenerateAgentKeyPair generates a new P-256 key pair for an agent.
-// The private key (hex) must be stored securely by the agent.
-// The public key (PublicKeyX, PublicKeyY) is registered in the platform.
-func GenerateAgentKeyPair() (privateKeyHex, publicKeyXHex, publicKeyYHex string, err error) {
-	privBytes := make([]byte, 32)
-	if _, err = rand.Read(privBytes); err != nil {
-		return "", "", "", fmt.Errorf("key generation failed: %w", err)
-	}
-	pubX, pubY := curve.ScalarBaseMult(privBytes)
-	return hex.EncodeToString(privBytes),
-		hex.EncodeToString(pubX.Bytes()),
-		hex.EncodeToString(pubY.Bytes()),
-		nil
-}
-
 // HandleGenerateZKPProof — POST /api/v1/zkp/generate
 //
 // Schnorr Sigma Protocol (P-256, Fiat-Shamir, non-interactive).
@@ -311,7 +296,7 @@ func HandleGenerateZKPProof(db database.DB) http.HandlerFunc {
 
 		respond.LimitBody(r)
 		var req GenerateZKPProofRequest
-	// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
+		// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &req) {
 			return
 		}

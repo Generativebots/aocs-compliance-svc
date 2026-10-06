@@ -25,31 +25,6 @@ type JuryClient struct {
 	logger *slog.Logger
 }
 
-// NewJuryClient dials the Jury gRPC service at addr.
-// If addr is empty, it returns an error — callers must configure JURY_GRPC_ADDR.
-// Uses security.Dial for OTEL instrumentation + keepalive + retry policy
-// (WIRE-GAP-09: prevents idle-timeout DENY storms after cold-start).
-func NewJuryClient(addr string) (*JuryClient, error) {
-	if addr == "" {
-		// P0-fix: no localhost fallback — in Cloud Run, localhost:50090 is unreachable.
-		// Set JURY_GRPC_ADDR (or cfg.Services.JuryGRPCAddr) to the service's internal URL.
-		return nil, fmt.Errorf("jury gRPC address not configured — set JURY_GRPC_ADDR env var")
-	}
-
-	// P3-fix: grpc.DialContext + grpc.WithBlock are deprecated since gRPC-Go 1.64.
-	// security.Dial uses grpc.NewClient (non-blocking) with keepalive + OTEL + retry.
-	conn, err := security.Dial(addr)
-	if err != nil {
-		return nil, fmt.Errorf("jury gRPC client creation failed (%s): %w", addr, err)
-	}
-
-	return &JuryClient{
-		conn:   conn,
-		addr:   addr,
-		logger: slog.Default().With("component", "jury-client"),
-	}, nil
-}
-
 // Close shuts down the gRPC connection.
 func (jc *JuryClient) Close() error {
 	if jc.conn != nil {
@@ -126,40 +101,27 @@ func (jc *JuryClient) AuditIntent(
 	return &resp, nil
 }
 
-// TryAuditIntent attempts to create a client, audit, and close in one shot.
-// tenantID is passed to AuditIntent for FA-47 gRPC metadata propagation.
-// intentID and departmentID are passed for G2 FIX intent-scoped ML policy rules.
-// Returns graceful fallback on connection failure.
-func TryAuditIntent(
-	ctx context.Context,
-	addr, tenantID, txID, agentID, toolName string,
-	intentID, departmentID string,
-	params map[string]any,
-) *AuditResponse {
-	client, err := NewJuryClient(addr)
-	if err != nil {
-		slog.Error("Jury unavailable — fail-closed with DENY",
-			"addr", addr, "error", err)
-		// Fail-closed
-		return &AuditResponse{
-			TransactionID: txID,
-			Verdict:       "DENY",
-			Confidence:    0,
-			Reason:        "jury_unavailable: fail-closed",
-			IsFallback:    true,
-		}
+// NewJuryClient dials the Jury gRPC service at addr.
+// If addr is empty, it returns an error — callers must configure JURY_GRPC_ADDR.
+// Uses security.Dial for OTEL instrumentation + keepalive + retry policy
+// (WIRE-GAP-09: prevents idle-timeout DENY storms after cold-start).
+func NewJuryClient(addr string) (*JuryClient, error) {
+	if addr == "" {
+		// P0-fix: no localhost fallback — in Cloud Run, localhost:50090 is unreachable.
+		// Set JURY_GRPC_ADDR (or cfg.Services.JuryGRPCAddr) to the service's internal URL.
+		return nil, fmt.Errorf("jury gRPC address not configured — set JURY_GRPC_ADDR env var")
 	}
-	defer client.Close()
 
-	resp, err := client.AuditIntent(ctx, tenantID, txID, agentID, toolName, intentID, departmentID, params)
+	// P3-fix: grpc.DialContext + grpc.WithBlock are deprecated since gRPC-Go 1.64.
+	// security.Dial uses grpc.NewClient (non-blocking) with keepalive + OTEL + retry.
+	conn, err := security.Dial(addr)
 	if err != nil {
-		return &AuditResponse{
-			TransactionID: txID,
-			Verdict:       "DENY",
-			Confidence:    0,
-			Reason:        fmt.Sprintf("audit_error (fail-closed): %v", err),
-			IsFallback:    true,
-		}
+		return nil, fmt.Errorf("jury gRPC client creation failed (%s): %w", addr, err)
 	}
-	return resp
+
+	return &JuryClient{
+		conn:   conn,
+		addr:   addr,
+		logger: slog.Default().With("component", "jury-client"),
+	}, nil
 }

@@ -16,8 +16,6 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
-
-	"github.com/ocx/shared/infra/providers"
 )
 
 // ThreatIntelResult is the normalised threat intel evaluation result.
@@ -31,9 +29,9 @@ type ThreatIntelResult struct {
 
 // ThreatIndicator is a single threat signal from the feed.
 type ThreatIndicator struct {
-	Type        string `json:"type"`        // "ip" | "domain" | "hash" | "cve" | "actor"
-	Value       string `json:"value"`       // the IOC value
-	Confidence  string `json:"confidence"`  // "low" | "medium" | "high"
+	Type        string `json:"type"`       // "ip" | "domain" | "hash" | "cve" | "actor"
+	Value       string `json:"value"`      // the IOC value
+	Confidence  string `json:"confidence"` // "low" | "medium" | "high"
 	Description string `json:"description,omitempty"`
 }
 
@@ -43,23 +41,6 @@ type ThreatIntelProvider interface {
 }
 
 // ── Provider factory ─────────────────────────────────────────────────────────
-
-// NewThreatIntelProvider returns the correct ThreatIntelProvider for the resolved config.
-// Returns nil when no provider is configured — threat intel is optional.
-func NewThreatIntelProvider(cfg *providers.ProviderConfig) ThreatIntelProvider {
-	if cfg == nil || cfg.IsBuiltin {
-		return nil // builtin has no threat feed — optional capability
-	}
-	switch providers.ProviderName(cfg.ConnectorType) {
-	case providers.ProviderCrowdStrikeIntel:
-		return &CrowdStrikeThreatIntelProvider{
-			APIURL: getCredOrDefault(cfg, "api_url", "https://api.crowdstrike.com"),
-		}
-	default:
-		slog.Warn("unknown threat intel provider — threat intel disabled", "connector_type", cfg.ConnectorType)
-		return nil
-	}
-}
 
 // ── CrowdStrike Falcon Threat Intelligence ────────────────────────────────────
 
@@ -103,11 +84,13 @@ func (p *CrowdStrikeThreatIntelProvider) CheckIndicators(ctx context.Context, te
 
 	var csResp struct {
 		Resources []struct {
-			Type       string   `json:"type"`
-			Indicator  string   `json:"indicator"`
-			Confidence int      `json:"confidence"` // 0–100
-			Severity   string   `json:"severity"`
-			Labels     []struct { Name string `json:"name"` } `json:"labels"`
+			Type       string `json:"type"`
+			Indicator  string `json:"indicator"`
+			Confidence int    `json:"confidence"` // 0–100
+			Severity   string `json:"severity"`
+			Labels     []struct {
+				Name string `json:"name"`
+			} `json:"labels"`
 		} `json:"resources"`
 	}
 	// Log prominently so ops can detect CrowdStrike API drift.
@@ -126,8 +109,12 @@ func (p *CrowdStrikeThreatIntelProvider) CheckIndicators(ctx context.Context, te
 		if r.Confidence > 40 {
 			result.Threat = true
 			conf := "low"
-			if r.Confidence > 70 { conf = "medium" }
-			if r.Confidence > 90 { conf = "high" }
+			if r.Confidence > 70 {
+				conf = "medium"
+			}
+			if r.Confidence > 90 {
+				conf = "high"
+			}
 			result.Indicators = append(result.Indicators, ThreatIndicator{
 				Type:       r.Type,
 				Value:      r.Indicator,

@@ -20,8 +20,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-
-	"github.com/ocx/shared/infra/providers"
 )
 
 // ContentSafetyResult is the normalised content safety evaluation result.
@@ -49,34 +47,6 @@ type ContentSafetyProvider interface {
 }
 
 // ── Provider factory ─────────────────────────────────────────────────────────
-
-// NewContentSafetyProvider returns the correct ContentSafetyProvider for the resolved config.
-// cognitiveServiceURL is the builtin AOCS cognitive service — used when no provider is configured.
-func NewContentSafetyProvider(cfg *providers.ProviderConfig, cognitiveServiceURL string) ContentSafetyProvider {
-	if cfg == nil || cfg.IsBuiltin {
-		return &BuiltinContentSafetyProvider{CognitiveServiceURL: cognitiveServiceURL}
-	}
-	switch providers.ProviderName(cfg.ConnectorType) {
-	case providers.ProviderAzureContentSafety:
-		return &AzureContentSafetyProvider{
-			Endpoint:    getCredOrDefault(cfg, "endpoint", "https://aocs-content.cognitiveservices.azure.com"),
-			APIVersion:  "2024-09-01",
-			accessToken: getCredOrDefault(cfg, "api_key", ""),
-		}
-	case providers.ProviderLakera:
-		return &LakeraGuardProvider{
-			APIURL:  getCredOrDefault(cfg, "api_url", "https://api.lakera.ai/v2"),
-			APIKey:  getCredOrDefault(cfg, "api_key", ""),
-		}
-	case providers.ProviderAWSGuardrails:
-		return &AWSGuardDutyProvider{
-			Region: getCredOrDefault(cfg, "region", "us-east-1"),
-		}
-	default:
-		slog.Warn("unknown content safety provider — using builtin", "connector_type", cfg.ConnectorType)
-		return &BuiltinContentSafetyProvider{CognitiveServiceURL: cognitiveServiceURL}
-	}
-}
 
 // ── Builtin (existing cognitive service) ─────────────────────────────────────
 
@@ -116,11 +86,11 @@ func (p *BuiltinContentSafetyProvider) Evaluate(ctx context.Context, tenantID, p
 	defer resp.Body.Close()
 
 	var raw struct {
-		Verdict          string  `json:"verdict"`
-		TrustLevel       float64 `json:"trust_level"`
-		ViolationsCount  int     `json:"violations_count"`
-		AnomalyDetected  bool    `json:"anomaly_detected"`
-		AnomalyScore     float64 `json:"anomaly_score"`
+		Verdict         string  `json:"verdict"`
+		TrustLevel      float64 `json:"trust_level"`
+		ViolationsCount int     `json:"violations_count"`
+		AnomalyDetected bool    `json:"anomaly_detected"`
+		AnomalyScore    float64 `json:"anomaly_score"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		slog.Error("content safety: decode failed", "err", err)
@@ -150,7 +120,7 @@ type AzureContentSafetyProvider struct {
 func (p *AzureContentSafetyProvider) Evaluate(ctx context.Context, tenantID, payload string) *ContentSafetyResult {
 	url := fmt.Sprintf("%s/contentsafety/text:analyze?api-version=%s", p.Endpoint, p.APIVersion)
 	reqBody, _ := json.Marshal(map[string]any{
-		"text": payload,
+		"text":       payload,
 		"categories": []string{"Hate", "SelfHarm", "Sexual", "Violence"},
 		"outputType": "FourSeverityLevels",
 	})
@@ -196,8 +166,12 @@ func (p *AzureContentSafetyProvider) Evaluate(ctx context.Context, tenantID, pay
 			result.Safe = false
 			result.Verdict = "BLOCK"
 			sev := "low"
-			if cat.Severity >= 4 { sev = "medium" }
-			if cat.Severity >= 6 { sev = "high" }
+			if cat.Severity >= 4 {
+				sev = "medium"
+			}
+			if cat.Severity >= 6 {
+				sev = "high"
+			}
 			result.Violations = append(result.Violations, ContentViolation{
 				Category:   strings.ToLower(cat.Category),
 				Severity:   sev,

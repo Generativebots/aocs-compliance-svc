@@ -589,14 +589,6 @@ func localHallucinationScore(llmOutput, contextText, agentID string) *EntHalluci
 	}
 }
 
-// min returns the smaller of a and b (stdlib min requires Go 1.21).
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // localScorerNormalize applies NFKC Unicode normalization before pattern matching.
 // Prevents Unicode homoglyph bypass in the compliance fallback scorer.
 func localScorerNormalize(s string) string {
@@ -706,18 +698,6 @@ func hexDecodePayload(text string) string {
 	return ""
 }
 
-func hexVal(c byte) int {
-	switch {
-	case c >= '0' && c <= '9':
-		return int(c - '0')
-	case c >= 'a' && c <= 'f':
-		return int(c-'a') + 10
-	case c >= 'A' && c <= 'F':
-		return int(c-'A') + 10
-	}
-	return -1
-}
-
 // semanticSimilarityScore computes the maximum TF-IDF cosine similarity between
 // the input text and any entry in the corpus. Returns a score in [0, 1].
 //
@@ -767,6 +747,18 @@ func semanticSimilarityScore(input string, corpus []string) float64 {
 		}
 	}
 	return maxSim
+}
+
+func hexVal(c byte) int {
+	switch {
+	case c >= '0' && c <= '9':
+		return int(c - '0')
+	case c >= 'a' && c <= 'f':
+		return int(c-'a') + 10
+	case c >= 'A' && c <= 'F':
+		return int(c-'A') + 10
+	}
+	return -1
 }
 
 // buildNgramVector builds a sparse TF vector from unigrams and bigrams.

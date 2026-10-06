@@ -453,13 +453,6 @@ func (v *ZKPVerifier) persistVerification(result *ZKPVerificationResult) {
 
 // getNonce generates a random hex nonce for challenge issuance.
 
-// sha256Hex returns the SHA-256 hash of data as a hex string.
-// Used for non-security content hashing (commitment building on prover side).
-func sha256Hex(data []byte) string {
-	h := sha256.Sum256(data)
-	return hex.EncodeToString(h[:])
-}
-
 func getFloat(m map[string]any, key string) (float64, bool) {
 	v, ok := m[key]
 	if !ok {
