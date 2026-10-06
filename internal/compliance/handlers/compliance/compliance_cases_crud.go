@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -132,6 +133,18 @@ func HandleCreateComplianceCase(db database.DB) http.HandlerFunc {
 			respond.Error(w, http.StatusBadRequest, "title is required")
 			return
 		}
+		// severity is NOT NULL with CHECK (LOW|MEDIUM|HIGH|CRITICAL): default
+		// to MEDIUM when omitted, reject anything else with 400.
+		severity := "MEDIUM"
+		if input.Severity != nil && strings.TrimSpace(*input.Severity) != "" {
+			severity = strings.ToUpper(strings.TrimSpace(*input.Severity))
+		}
+		switch severity {
+		case "LOW", "MEDIUM", "HIGH", "CRITICAL":
+		default:
+			respond.Error(w, http.StatusBadRequest, "severity must be one of LOW, MEDIUM, HIGH, CRITICAL")
+			return
+		}
 		now := time.Now().UTC().Format(time.RFC3339)
 		caseID := uuid.NewString()
 		row := map[string]any{
@@ -140,7 +153,7 @@ func HandleCreateComplianceCase(db database.DB) http.HandlerFunc {
 			"title":        input.Title,
 			"description":  input.Description,
 			"status":       "OPEN",
-			"severity":     input.Severity,
+			"severity":     severity,
 			"framework":    input.Framework,
 			"control_ref":  input.ControlRef,
 			"agent_id":     input.AgentID,

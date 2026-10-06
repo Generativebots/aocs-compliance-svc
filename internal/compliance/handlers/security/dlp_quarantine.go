@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/ocx/shared/infra/auth"
@@ -89,13 +90,20 @@ func HandleDLPQuarantine(store *DLPStore) http.HandlerFunc {
 
 		ea := database.EnforcementAction{
 			TenantID:    tenantID,
-			ActionType:  "dlp_quarantine",
+			ActionType:  "quarantine", // action_type CHECK value; subtype carries the DLP origin
 			Scope:       database.EnforcementScopeAgent,
 			SubjectID:   req.EntityID,
 			SubjectType: req.EntityType,
 			Reason:      req.Reason,
 			Severity:    req.Severity,
+			Subtype:     "dlp_quarantine",
 			Metadata:    json.RawMessage(meta),
+		}
+		if strings.EqualFold(req.EntityType, "agent") {
+			ea.AgentID = req.EntityID
+		} else {
+			// document/data quarantine is a tenant-scoped hold, not an agent action.
+			ea.Scope = "tenant"
 		}
 		if err := store.db.InsertRow(database.TblCoreEnforcementActions, ea); err != nil {
 			slog.Error("dlp/quarantine: enforcement action insert failed",
