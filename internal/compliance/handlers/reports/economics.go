@@ -53,7 +53,7 @@ func HandleGetEscrowHistory(db database.DB) http.HandlerFunc {
 			var fallback []map[string]any
 			if _dbErr := db.QueryRowsWithin90Days(database.TblCoreEscrowTxns, database.ColsEscrowTransactions, tenantID, &fallback); _dbErr != nil {
 				slog.Error("db operation failed", "method", "QueryRowsWithin90Days", "error", _dbErr)
-				respond.InternalError(w, http.StatusInternalServerError, "escrow_query_failed", nil)
+				respond.InternalError(w, http.StatusInternalServerError, "escrow_query_failed", _dbErr)
 				return
 			}
 			if fallback == nil {
@@ -107,7 +107,7 @@ func HandleValidateEscrow(db database.DB) http.HandlerFunc {
 		var rows []map[string]any
 		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreEscrowTxns, "status,agent_id,tool_name,tenant_id", "transaction_id", req.EscrowID, &rows); _dbErr != nil {
 			slog.Error("db operation failed", "method", "QueryRows", "error", _dbErr)
-			respond.InternalError(w, http.StatusInternalServerError, "escrow_validate_query_failed", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "escrow_validate_query_failed", _dbErr)
 			return
 		}
 		if len(rows) == 0 {

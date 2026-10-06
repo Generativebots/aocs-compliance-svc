@@ -335,7 +335,7 @@ func HandleUpdateDepartmentBudget(db database.DB) http.HandlerFunc {
 			existingID, _ := existing[0]["department_budget_id"].(string)
 			if err := db.UpdateRowCompound(database.TblTenantDeptBudgets, "department_budget_id", existingID, "tenant_id", tenantID, update); err != nil {
 				slog.Error("HandleUpdateDepartmentBudget: update failed", "dept", deptSlug, "error", err)
-				respond.InternalError(w, http.StatusInternalServerError, "failed to update department budget", nil)
+				respond.InternalError(w, http.StatusInternalServerError, "failed to update department budget", err)
 				return
 			}
 		} else {
@@ -363,7 +363,7 @@ func HandleUpdateDepartmentBudget(db database.DB) http.HandlerFunc {
 			}
 			if err := db.InsertRow(database.TblTenantDeptBudgets, row); err != nil {
 				slog.Error("HandleUpdateDepartmentBudget: insert failed", "dept", deptSlug, "error", err)
-				respond.InternalError(w, http.StatusInternalServerError, "failed to create department budget", nil)
+				respond.InternalError(w, http.StatusInternalServerError, "failed to create department budget", err)
 				return
 			}
 		}

@@ -746,7 +746,7 @@ func HandleCreateCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClien
 		created, err := CreateCase(r.Context(), db, psBroker, input, coreClient)
 		if err != nil {
 			slog.Error("HandleCreateCase failed", "tenant_id", tenantID, "err", err)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to create case", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to create case", err)
 			return
 		}
 

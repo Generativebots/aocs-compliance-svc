@@ -56,7 +56,7 @@ func HandleGetDocument(db database.DB) http.HandlerFunc {
 		// SCHEMA FIX (normalization pass): intent rows live in core_intents
 		if err := db.QueryRowsCtx(r.Context(), database.TblIAIntents, database.ColsIAIntent, "tenant_id", tenantID, &intents); err != nil {
 			slog.Error("GetDocument: failed to load extracted intents", "document_id", docID, "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to load extracted intents", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to load extracted intents", err)
 			return
 		}
 		if intents == nil {
@@ -80,7 +80,7 @@ func HandleListRelationships(db database.DB) http.HandlerFunc {
 		var rels []map[string]any
 		if err := db.QueryRowsCtx(r.Context(), database.TblCoreResourceRelationships, database.ColsCoreResourceRel, "tenant_id", tenantID, &rels); err != nil {
 			slog.Error("ListRelationships failed", "error", err, "tenant_id", tenantID)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to list relationships", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to list relationships", err)
 			return
 		}
 		if rels == nil {
@@ -129,7 +129,7 @@ func HandleCreateRelationship(db database.DB) http.HandlerFunc {
 		relID, err := db.InsertRowReturning(database.TblCoreResourceRelationships, row, "relationship_id")
 		if err != nil {
 			slog.Error("CreateRelationship failed", "error", err, "tenant_id", tenantID)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to create relationship", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to create relationship", err)
 			return
 		}
 		respond.JSON(w, http.StatusCreated, map[string]any{
@@ -188,7 +188,7 @@ func HandleBindPolicy(db database.DB) http.HandlerFunc {
 		// was ever created and the gate's policy lookup found zero bindings for every agent.
 		if err := db.InsertRow(database.TblCorePolicies, row); err != nil {
 			slog.Error("BindPolicy failed", "error", err, "tenant_id", tenantID)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to bind policy", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to bind policy", err)
 			return
 		}
 
@@ -219,7 +219,7 @@ func HandleUnbindPolicy(db database.DB) http.HandlerFunc {
 			"tenant_id", tenantID,
 			map[string]any{"is_active": false}); err != nil {
 			slog.Error("UnbindPolicy soft-delete failed", "error", err, "tenant_id", tenantID)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to unbind policy", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to unbind policy", err)
 			return
 		}
 		respond.OK(w, map[string]any{"unbound": true})

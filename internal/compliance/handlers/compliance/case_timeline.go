@@ -56,7 +56,7 @@ func HandleGetCaseTimeline(db database.DB) http.HandlerFunc {
 		); err != nil {
 			slog.Error("HandleGetCaseTimeline: DB query failed",
 				"case_id", caseID, "tenant_id", tenantID, "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to fetch timeline", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to fetch timeline", err)
 			return
 		}
 		if events == nil {
@@ -97,7 +97,7 @@ func HandleGetDecisionTimeline(db database.DB) http.HandlerFunc {
 		); err != nil {
 			slog.Error("HandleGetDecisionTimeline: DB query failed",
 				"decision_id", decisionID, "tenant_id", tenantID, "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to fetch timeline", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to fetch timeline", err)
 			return
 		}
 		if events == nil {

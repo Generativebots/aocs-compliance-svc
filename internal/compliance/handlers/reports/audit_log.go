@@ -92,7 +92,7 @@ func HandleAdminListGovernanceAuditLogs(db database.DB) http.HandlerFunc {
 			}
 			if fbErr != nil {
 				slog.Error("list governance audit logs failed", "error", fbErr, "case_id", caseID)
-				respond.InternalError(w, http.StatusInternalServerError, "failed to query governance audit logs", nil)
+				respond.InternalError(w, http.StatusInternalServerError, "failed to query governance audit logs", fbErr)
 				return
 			}
 		}
@@ -144,7 +144,7 @@ func HandleListCaseEvents(db database.DB) http.HandlerFunc {
 		var result []map[string]any
 		if err := db.QueryRowsWithin90DaysCompound(database.TblCoreEvents, database.ColsPlatformEvent, tenantID, "entity_id", caseID, &result); err != nil {
 			slog.Error("list case events failed", "error", err, "case_id", caseID)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to query case events", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to query case events", err)
 			return
 		}
 		if result == nil {
@@ -171,7 +171,7 @@ func HandleListEntropyAuditLogs(db database.DB) http.HandlerFunc {
 		var result []map[string]any
 		if err := db.QueryRowsWithin90Days(database.TblCoreEvents, database.ColsPlatformEvent, tenantID, &result); err != nil {
 			slog.Error("list entropy audit logs failed", "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to query entropy audit logs", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to query entropy audit logs", err)
 			return
 		}
 		if result == nil {

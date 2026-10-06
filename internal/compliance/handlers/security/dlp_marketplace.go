@@ -45,7 +45,7 @@ func HandleListTenantIntegrations(store *DLPStore) http.HandlerFunc {
 			coreIntgs, err := store.coreClient.ListDLPIntegrations(r.Context(), tenantID)
 			if err != nil {
 				slog.Error("HandleListTenantIntegrations ocx-core-svc call failed", "error", err, "tenant_id", tenantID)
-				respond.InternalError(w, http.StatusInternalServerError, "failed to list tenant integrations", nil)
+				respond.InternalError(w, http.StatusInternalServerError, "failed to list tenant integrations", err)
 				return
 			}
 			for _, ri := range coreIntgs {
@@ -64,7 +64,7 @@ func HandleListTenantIntegrations(store *DLPStore) http.HandlerFunc {
 			}
 		} else if err := store.db.QueryRowsCtx(r.Context(), database.TblSharDlpIntegrations, database.ColsSentiDLPIntegration, "tenant_id", tenantID, &integrations); err != nil {
 			slog.Error("HandleListTenantIntegrations DB query failed", "error", err, "tenant_id", tenantID)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to list tenant integrations", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to list tenant integrations", err)
 			return
 		}
 

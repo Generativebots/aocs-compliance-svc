@@ -170,7 +170,7 @@ func complianceCreate(db database.DB, actionType string) http.HandlerFunc {
 		}
 		if err := db.InsertRow(database.TblCoreEnforcementActions, row); err != nil {
 			slog.Error("complianceCreate", "action_type", actionType, "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "insert failed", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "insert failed", err)
 			return
 		}
 		respond.JSON(w, http.StatusCreated, row)
@@ -409,7 +409,7 @@ func complianceAddComment(db database.DB) http.HandlerFunc {
 			"content":   commentText, // compl_case_comments.content (was "body": 42703)
 		}
 		if err := db.InsertRow(database.TblCaseComments, comment); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "comment failed", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "comment failed", err)
 			return
 		}
 		respond.JSON(w, http.StatusCreated, map[string]string{"status": "comment added"})

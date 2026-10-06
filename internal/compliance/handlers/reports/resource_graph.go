@@ -362,7 +362,7 @@ func HandleListImportSources(db database.DB) http.HandlerFunc {
 		var sources []map[string]any
 		if err := db.QueryRowsCtx(r.Context(), database.TblCoreTenantDocs, database.ColsImportSource, "tenant_id", tenantID, &sources); err != nil {
 			slog.Error("ListImportSources failed", "error", err, "tenant_id", tenantID)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to list import sources", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to list import sources", err)
 			return
 		}
 		if sources == nil {
@@ -403,7 +403,7 @@ func HandleCreateImportSource(db database.DB) http.HandlerFunc {
 		// created_at DEFAULT NOW() — DB handles
 		if err := db.InsertRow(database.TblCoreTenantDocs, row); err != nil {
 			slog.Error("CreateImportSource failed", "error", err, "tenant_id", tenantID)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to create import source", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to create import source", err)
 			return
 		}
 		respond.JSON(w, http.StatusCreated, map[string]any{"status": "created"})
@@ -424,7 +424,7 @@ func HandleListDocuments(db database.DB) http.HandlerFunc {
 		var docs []map[string]any
 		if err := db.QueryRowsCtx(r.Context(), database.TblCoreTenantDocs, database.ColsTenantDocument, "tenant_id", tenantID, &docs); err != nil {
 			slog.Error("ListDocuments failed", "error", err, "tenant_id", tenantID)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to list documents", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to list documents", err)
 			return
 		}
 		if docs == nil {
@@ -500,7 +500,7 @@ func HandleSyncConnectorDocuments(db database.DB) http.HandlerFunc {
 		if err := db.QueryRowsCtx(r.Context(), database.TblConrRagSources,
 			"connector_id,connector_type,display_name,config,auth_config,status",
 			"tenant_id", tenantID, &connectors); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "failed to load connectors", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to load connectors", err)
 			return
 		}
 		var connector map[string]any

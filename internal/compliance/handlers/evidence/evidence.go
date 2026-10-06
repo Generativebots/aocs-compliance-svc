@@ -106,7 +106,7 @@ func HandleListEvidence(db database.DB) http.HandlerFunc {
 		var records []database.QCoreEvidenceRecord
 		if err := db.QueryRowsCtx(r.Context(), database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, &records); err != nil {
 			slog.Error("ListEvidence DB query failed", "error", err, "tenant_id", tenantID)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to list evidence records", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to list evidence records", err)
 			return
 		}
 
@@ -269,7 +269,7 @@ func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 		if insertErr != nil {
 			slog.Error("CreateEvidence: primary insert failed after retries, queuing to outbox", "error", insertErr, "tenant_id", tenantID, "evidence_id", record.ID)
 			QueueEvidenceOutbox(database.TblCoreEvidenceRecords, record)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to create evlt", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to create evlt", insertErr)
 			return
 		}
 

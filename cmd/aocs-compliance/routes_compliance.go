@@ -106,7 +106,7 @@ func registerIntelComplianceRoutes(
 	api.HandleFunc("/dlp/policies/{id}", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleUpdateDLPPolicy(db)))).Methods("PATCH")
 	api.HandleFunc("/dlp/policies/{id}", auth.RequireAccess(pc, "compliance", "delete", middleware.RequireValidPathVars("id")(compliance.HandleDeleteDLPPolicy(db)))).Methods("DELETE")
 	api.HandleFunc("/gra/compliance-summary/dlp-findings", auth.RequireAccess(pc, "compliance", "read", compliance.HandleListDLPFindings(db))).Methods("GET")
-	api.HandleFunc("/compliance/dlp/monitors", auth.RequireAccess(pc, "compliance", "read", hsecurity.HandleDLPMonitorPID(dlpStore))).Methods("GET")
+	api.HandleFunc("/compliance/dlp/monitors", auth.RequireAccess(pc, "compliance", "read", hsecurity.HandleListDLPMonitors(dlpStore))).Methods("GET")
 	// ── DLP quarantine & incident log ───────────────────────────────────────────────
 	api.HandleFunc("/dlp/quarantine", auth.RequireAccess(pc, "compliance", "write", hsecurity.HandleDLPQuarantine(dlpStore))).Methods("POST")
 	api.HandleFunc("/dlp/incidents", auth.RequireAccess(pc, "compliance", "write", compliance.HandleCreateDLPFinding(db))).Methods("POST")

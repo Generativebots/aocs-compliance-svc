@@ -121,7 +121,7 @@ func HandleCheckSybil(sybil *security.SybilDetector, db database.DB, coreClients
 			}
 			if dbErr := db.InsertRow(database.TblCoreEvents, evt); dbErr != nil {
 				slog.Error("Failed to persist sybil event", "agent_id", agentID, "error", dbErr)
-				respond.InternalError(w, http.StatusInternalServerError, "failed to record sybil event", nil)
+				respond.InternalError(w, http.StatusInternalServerError, "failed to record sybil event", dbErr)
 				return
 			}
 		}

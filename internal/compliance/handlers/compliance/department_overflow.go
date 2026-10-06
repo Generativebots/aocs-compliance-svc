@@ -104,7 +104,7 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 		} else if _dbErr := db.QueryRowsCompound(database.TblCoreHitl, "decision_id,created_at",
 			"department_id", slug, "status", "PENDING", &pendingRows); _dbErr != nil {
 			slog.Error("db.QueryRowsCompound failed", "error", _dbErr)
-			respond.InternalError(w, http.StatusInternalServerError, "overflow_check_query_failed", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "overflow_check_query_failed", _dbErr)
 			return
 		}
 		openCases := len(pendingRows)
@@ -293,7 +293,7 @@ func HandleGuardDeptDeletion(db database.DB, coreClients ...*serviceclient.Clien
 		} else if _dbErr := db.QueryRowsCompound(database.TblCoreHitl, "decision_id",
 			"department_id", slug, "status", "PENDING", &pendingRows); _dbErr != nil {
 			slog.Error("db.QueryRowsCompound failed", "error", _dbErr)
-			respond.InternalError(w, http.StatusInternalServerError, "overflow_check_query_failed", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "overflow_check_query_failed", _dbErr)
 			return
 		}
 		openCount := len(pendingRows)

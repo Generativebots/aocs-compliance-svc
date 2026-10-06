@@ -63,7 +63,7 @@ func HandleListComplianceCases(db database.DB) http.HandlerFunc {
 			"tenant_id", tenantID, &rows,
 		); err != nil {
 			slog.Error("HandleListComplianceCases: query failed", "tenant_id", tenantID, "err", err)
-			respond.Error(w, http.StatusInternalServerError, "failed to list compliance cases")
+			respond.InternalError(w, http.StatusInternalServerError, "failed to list compliance cases", err)
 			return
 		}
 		if rows == nil {
@@ -151,7 +151,7 @@ func HandleCreateComplianceCase(db database.DB) http.HandlerFunc {
 		}
 		if err := db.InsertRow(database.TblComplianceComplianceCases, row); err != nil {
 			slog.Error("HandleCreateComplianceCase: insert failed", "tenant_id", tenantID, "err", err)
-			respond.Error(w, http.StatusInternalServerError, "failed to create compliance case")
+			respond.InternalError(w, http.StatusInternalServerError, "failed to create compliance case", err)
 			return
 		}
 		respond.JSON(w, http.StatusCreated, map[string]any{
@@ -202,7 +202,7 @@ func HandleUpdateComplianceCaseStatus(db database.DB) http.HandlerFunc {
 				"case_id", caseID, "tenant_id", tenantID, updates,
 			)
 		}); txErr != nil {
-			respond.Error(w, http.StatusInternalServerError, "failed to update case status")
+			respond.InternalError(w, http.StatusInternalServerError, "failed to update case status", txErr)
 			return
 		}
 		respond.JSON(w, http.StatusOK, map[string]any{"case_id": caseID, "status": body.Status, "updated_at": now})
@@ -238,7 +238,7 @@ func HandleAssignComplianceCase(db database.DB) http.HandlerFunc {
 				map[string]any{"assigned_to": body.AssignedTo, "status": "INVESTIGATING", "updated_at": now},
 			)
 		}); txErr != nil {
-			respond.Error(w, http.StatusInternalServerError, "failed to assign case")
+			respond.InternalError(w, http.StatusInternalServerError, "failed to assign case", txErr)
 			return
 		}
 		respond.JSON(w, http.StatusOK, map[string]any{"case_id": caseID, "assigned_to": body.AssignedTo, "status": "INVESTIGATING", "updated_at": now})
@@ -286,7 +286,7 @@ func HandleAddComplianceCaseComment(db database.DB) http.HandlerFunc {
 		if err := db.QueryRowsCompound(database.TblComplianceComplianceCases, "case_comments",
 			"case_id", caseID, "tenant_id", tenantID, &rows); err != nil {
 			slog.Error("failed to query case comments", "case_id", caseID, "tenant_id", tenantID, "err", err)
-			respond.Error(w, http.StatusInternalServerError, "failed to load case comments")
+			respond.InternalError(w, http.StatusInternalServerError, "failed to load case comments", err)
 			return
 		}
 		if len(rows) == 0 {
@@ -315,7 +315,7 @@ func HandleAddComplianceCaseComment(db database.DB) http.HandlerFunc {
 				"case_id", caseID, "tenant_id", tenantID,
 				map[string]any{"case_comments": string(commentsJSON), "updated_at": now},
 			); err != nil {
-				respond.Error(w, http.StatusInternalServerError, "failed to add comment")
+				respond.InternalError(w, http.StatusInternalServerError, "failed to add comment", err)
 				return
 			}
 		} else {

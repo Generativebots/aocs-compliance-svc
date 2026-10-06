@@ -35,7 +35,7 @@ func HandleSearchEvidence(db database.DB) http.HandlerFunc {
 		var records []database.QCoreEvidenceRecord
 		if err := db.QueryRowsCtx(r.Context(), database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, &records); err != nil {
 			slog.Error("SearchEvidence DB query failed", "error", err, "tenant_id", tenantID)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to search evidence records", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to search evidence records", err)
 			return
 		}
 
@@ -157,7 +157,7 @@ func HandleCreateComplianceReport(db database.DB) http.HandlerFunc {
 
 		if err := db.InsertRow(database.TblSharComplianceReports, row); err != nil {
 			slog.Error("CreateComplianceReport failed", "error", err, "tenant_id", tenantID)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to create report", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to create report", err)
 			return
 		}
 		respond.OK(w, map[string]string{"status": "created"})
@@ -229,7 +229,7 @@ func HandleUpdateComplianceReport(db database.DB) http.HandlerFunc {
 		}
 		if err := db.UpdateRowCompound(database.TblSharComplianceReports, "compliance_report_id", reportID, "tenant_id", tenantID, update); err != nil {
 			slog.Error("UpdateComplianceReport failed", "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to update report", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to update report", err)
 			return
 		}
 		respond.OK(w, map[string]string{"status": "updated"})

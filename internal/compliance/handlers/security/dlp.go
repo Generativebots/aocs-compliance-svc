@@ -128,7 +128,7 @@ func HandleDLPScan(store *DLPStore) http.HandlerFunc {
 		}
 		if err := store.db.InsertRow(database.TblCoreCompliance, scanEA); err != nil {
 			slog.Error("DLP scan: failed to persist scan result", "error", err, "tenant_id", tenantID)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to persist DLP scan result", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to persist DLP scan result", err)
 			return
 		}
 
@@ -319,7 +319,7 @@ func HandleDLPMonitorPID(store *DLPStore) http.HandlerFunc {
 		}
 		if err := store.db.InsertRow(database.TblCoreCompliance, pidEA); err != nil {
 			slog.Error("DLP: PID DB persist failed", "error", err, "tenant_id", tenantID)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to register PID for monitoring", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to register PID for monitoring", err)
 			return
 		}
 
@@ -349,6 +349,33 @@ func HandleDLPMonitorPID(store *DLPStore) http.HandlerFunc {
 		})
 	}
 }
+// HandleListDLPMonitors — GET /compliance/dlp/monitors
+// Lists the tenant's registered DLP PID monitors (core_enforcement_actions rows
+// with action_type=dlp_pid_monitor). Previously this GET was wired to the POST
+// create handler, so it always failed body validation (400).
+func HandleListDLPMonitors(store *DLPStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if store == nil || respond.RequireDB(w, store.db) {
+			return
+		}
+		tenantID, ok := auth.MustGetTenantID(w, r)
+		if !ok {
+			return
+		}
+		var rows []map[string]any
+		if err := store.db.QueryRowsCompoundCtx(r.Context(), database.TblCoreCompliance, "*",
+			"tenant_id", tenantID, "action_type", fmt.Sprint(database.EnforcementTypeDLPPIDMonitor), &rows); err != nil {
+			slog.Error("DLP: list monitors failed", "error", err, "tenant_id", tenantID)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to list DLP monitors", err)
+			return
+		}
+		if rows == nil {
+			rows = []map[string]any{}
+		}
+		respond.OK(w, map[string]any{"monitors": rows, "total": len(rows)})
+	}
+}
+
 func HandleDLPWebhook(store *DLPStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if store == nil || respond.RequireDB(w, store.db) {
@@ -417,7 +444,7 @@ func HandleListDLPIntegrations(store *DLPStore) http.HandlerFunc {
 			coreIntgs, err := store.coreClient.ListDLPIntegrations(r.Context(), tenantID)
 			if err != nil {
 				slog.Error("ListDLPIntegrations ocx-core-svc call failed", "error", err, "tenant_id", tenantID)
-				respond.InternalError(w, http.StatusInternalServerError, "failed to list DLP integrations", nil)
+				respond.InternalError(w, http.StatusInternalServerError, "failed to list DLP integrations", err)
 				return
 			}
 			// Map shared types to local DLPIntegration shape
@@ -435,7 +462,7 @@ func HandleListDLPIntegrations(store *DLPStore) http.HandlerFunc {
 			// Fallback for test mode
 			if err := store.db.QueryRowsCtx(r.Context(), database.TblSharDlpIntegrations, database.ColsSentiDLPIntegration, "tenant_id", tenantID, &integrations); err != nil {
 				slog.Error("ListDLPIntegrations DB query failed", "error", err, "tenant_id", tenantID)
-				respond.InternalError(w, http.StatusInternalServerError, "failed to list DLP integrations", nil)
+				respond.InternalError(w, http.StatusInternalServerError, "failed to list DLP integrations", err)
 				return
 			}
 		}
@@ -511,12 +538,12 @@ func HandleCreateDLPIntegration(store *DLPStore) http.HandlerFunc {
 		if store.coreClient != nil {
 			if err := store.coreClient.CreateDLPIntegration(r.Context(), row); err != nil {
 				slog.Error("DLP: Failed to persist integration via ocx-core-svc", "error", err)
-				respond.InternalError(w, http.StatusInternalServerError, "Failed to create integration", nil)
+				respond.InternalError(w, http.StatusInternalServerError, "Failed to create integration", err)
 				return
 			}
 		} else if err := store.db.InsertRow(database.TblSharDlpIntegrations, row); err != nil {
 			slog.Error("DLP: Failed to persist integration", "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "Failed to create integration", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "Failed to create integration", err)
 			return
 		}
 
@@ -560,7 +587,7 @@ func HandleDeleteDLPIntegration(store *DLPStore) http.HandlerFunc {
 			// Delete via ocx-core-svc (soft-delete: status='DELETED')
 			if err := store.coreClient.DeleteDLPIntegration(r.Context(), tenantID, integrationID); err != nil {
 				slog.Error("DLP: Failed to delete integration via ocx-core-svc", "error", err)
-				respond.InternalError(w, http.StatusInternalServerError, "Failed to delete integration", nil)
+				respond.InternalError(w, http.StatusInternalServerError, "Failed to delete integration", err)
 				return
 			}
 		} else {
@@ -576,7 +603,7 @@ func HandleDeleteDLPIntegration(store *DLPStore) http.HandlerFunc {
 			}
 			if err := store.db.SoftDeleteRowCompound(database.TblSharDlpIntegrations, "dlp_integration_id", integrationID, "tenant_id", tenantID); err != nil {
 				slog.Error("DLP: Failed to delete integration", "error", err)
-				respond.InternalError(w, http.StatusInternalServerError, "Failed to delete integration", nil)
+				respond.InternalError(w, http.StatusInternalServerError, "Failed to delete integration", err)
 				return
 			}
 		}
@@ -667,7 +694,7 @@ func HandleUpdateDLPIntegration(store *DLPStore) http.HandlerFunc {
 
 		if err := store.db.UpdateRowCompound(database.TblSharDlpIntegrations, "dlp_integration_id", integrationID, "tenant_id", tenantID, update); err != nil {
 			slog.Error("DLP: Failed to update integration", "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "Failed to update integration", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "Failed to update integration", err)
 			return
 		}
 

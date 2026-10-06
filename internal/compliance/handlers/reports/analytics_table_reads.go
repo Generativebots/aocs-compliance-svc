@@ -65,7 +65,7 @@ func HandleListAdaptiveThresholds(db database.DB) http.HandlerFunc {
 		}
 		if err != nil {
 			slog.Error("HandleListAdaptiveThresholds: db query failed", "tenant_id", tenantID, "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to fetch thresholds", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to fetch thresholds", err)
 			return
 		}
 		respond.JSON(w, http.StatusOK, map[string]any{"thresholds": rows, "count": len(rows)})
@@ -175,7 +175,7 @@ func HandleListGuardianVerdicts(db database.DB) http.HandlerFunc {
 		}
 		if err != nil {
 			slog.Error("HandleListGuardianVerdicts: db query failed", "tenant_id", tenantID, "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to fetch guardian verdicts", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to fetch guardian verdicts", err)
 			return
 		}
 		if rows == nil {

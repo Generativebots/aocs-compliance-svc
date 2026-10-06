@@ -206,7 +206,7 @@ func HandleStreamNexusRealtime(db database.DB) http.HandlerFunc {
 			"event_type,action,severity,agent_id,created_at",
 			"tenant_id", tenantID, database.ParseCursorPage(r), &events); _dbErr != nil {
 			slog.Error("QueryRowsLimited failed", "error", _dbErr)
-			respond.InternalError(w, http.StatusInternalServerError, "query_events_failed", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "query_events_failed", _dbErr)
 			return
 		}
 		if events == nil {

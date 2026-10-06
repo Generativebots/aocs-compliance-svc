@@ -100,7 +100,7 @@ func HandleDLPQuarantine(store *DLPStore) http.HandlerFunc {
 		if err := store.db.InsertRow(database.TblCoreEnforcementActions, ea); err != nil {
 			slog.Error("dlp/quarantine: enforcement action insert failed",
 				"entity_id", req.EntityID, "err", err)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to record quarantine", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to record quarantine", err)
 			return
 		}
 

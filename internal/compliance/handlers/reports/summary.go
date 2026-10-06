@@ -249,7 +249,7 @@ func HandleCreateReport(db database.DB) http.HandlerFunc {
 		}
 		if err := db.InsertRow(database.TblSharComplianceReports, row); err != nil {
 			slog.Error("CreateReport failed", "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to create report", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to create report", err)
 			return
 		}
 		respond.JSON(w, http.StatusCreated, map[string]any{
@@ -327,7 +327,7 @@ func HandleUpdateReport(db database.DB) http.HandlerFunc {
 		}
 		if err := db.UpdateRowCompound(database.TblSharComplianceReports, "compliance_report_id", reportID, "tenant_id", tenantID, update); err != nil {
 			slog.Error("UpdateReport failed", "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "update_report_failed", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "update_report_failed", err)
 			return
 		}
 		respond.OK(w, map[string]string{"status": "updated"})
@@ -354,7 +354,7 @@ func HandleDeleteReport(db database.DB) http.HandlerFunc {
 		// Scope delete to tenant
 		if err := db.SoftDeleteRowCompound(database.TblSharComplianceReports, "compliance_report_id", reportID, "tenant_id", tenantID); err != nil {
 			slog.Error("DeleteReport failed", "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "delete_report_failed", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "delete_report_failed", err)
 			return
 		}
 		respond.OK(w, map[string]string{"status": "deleted"})
@@ -436,7 +436,7 @@ func HandleScheduleReport(db database.DB) http.HandlerFunc {
 		// Scope update to tenant
 		if err := db.UpdateRowCompound(database.TblSharComplianceReports, "compliance_report_id", reportID, "tenant_id", tenantID, patch); err != nil {
 			slog.Error("ScheduleReport persist failed", "report_id", reportID, "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to persist schedule", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to persist schedule", err)
 			return
 		}
 		respond.OK(w, map[string]string{"status": "scheduled", "report_id": reportID})
@@ -481,7 +481,7 @@ func HandleCreateExport(db database.DB) http.HandlerFunc {
 		}
 		if err := db.InsertRow(database.TblCoreJobs, row); err != nil {
 			slog.Error("CreateExport insert failed", "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "failed to create export job", nil)
+			respond.InternalError(w, http.StatusInternalServerError, "failed to create export job", err)
 			return
 		}
 		respond.JSON(w, http.StatusAccepted, map[string]any{
