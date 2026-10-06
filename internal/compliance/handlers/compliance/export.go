@@ -31,7 +31,7 @@ func HandleGetCaseExportJob(db database.DB) http.HandlerFunc {
 			return
 		}
 		var rows []map[string]any
-		// SCHEMA FIX: PK on aocs_bulk_import_jobs (TblCoreJobs) is job_id, not nexus_export_job_id.
+		// PK on aocs_bulk_import_jobs (TblCoreJobs) is job_id, not nexus_export_job_id.
 		if err := db.QueryRowsCompound(database.TblCoreJobs, database.ColsNexusExportJobs, "job_id", mux.Vars(r)["id"], "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "export job not found")
 			return
@@ -61,7 +61,7 @@ func HandleMergeCase(db database.DB) http.HandlerFunc {
 		if !validate.Bind(w, r, &body) {
 			return
 		}
-		if body.ParentCaseID == ""{
+		if body.ParentCaseID == "" {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "parent_case_id required")
 			return
 		}
@@ -74,7 +74,7 @@ func HandleMergeCase(db database.DB) http.HandlerFunc {
 			return
 		}
 
-		// GAP-CRUD-19: Verify parent case exists and belongs to the same tenant
+		// Verify parent case exists and belongs to the same tenant
 		var parentRows []map[string]any
 		if err := db.QueryRowsCompound(database.TblCoreHitl, "decision_id,status", "decision_id", body.ParentCaseID, "tenant_id", tenantID, &parentRows); err != nil || len(parentRows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "parent case not found")
@@ -134,7 +134,7 @@ func HandleCasesSubmitJuryVote(db database.DB, coreClient *serviceclient.Client)
 		}
 		respond.LimitBody(r)
 		var body CasesSubmitJuryVoteRequest
-	// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
+		// (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &body) {
 			return
 		}
@@ -427,7 +427,7 @@ func HandleListHITLVotes(db database.DB) http.HandlerFunc {
 			return
 		}
 		var rows []map[string]any
-		// SCHEMA FIX: votes are in core_hitl_votes (TblCoreHitlVotes), not core_hitl.
+		// votes are in core_hitl_votes (TblCoreHitlVotes), not core_hitl.
 		// core_hitl_votes columns: vote_id, case_id, tenant_id, voter_id, decision, voted_at.
 		if err := db.QueryRowsCompound(database.TblCoreHitlVotes, database.ColsHitlVote, "case_id", caseID, "tenant_id", tenantID, &rows); err != nil {
 			slog.Error("ListHITLVotes failed", "case_id", caseID, "error", err)

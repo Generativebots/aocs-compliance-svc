@@ -16,16 +16,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/ocx/shared/infra/concurrent"
 	"github.com/gorilla/mux"
 	"github.com/ocx/shared/infra/auth"
+	"github.com/ocx/shared/infra/concurrent"
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/infra/eventbus"
 	"github.com/ocx/shared/infra/serviceclient"
 
 	"github.com/ocx/shared/respond"
-	"github.com/ocx/shared/validate"
 	"github.com/ocx/shared/types"
+	"github.com/ocx/shared/validate"
 )
 
 // HandleListCases returns compliance / HITL cases for the current tenant.
@@ -167,7 +167,6 @@ func HandleListCases(db database.DB) http.HandlerFunc {
 			}
 		}
 
-
 		if rows == nil {
 			rows = []map[string]any{}
 		}
@@ -179,7 +178,7 @@ func HandleListCases(db database.DB) http.HandlerFunc {
 		statusFilter := r.URL.Query().Get("status")
 		agentIDFilter := r.URL.Query().Get("agent_id")
 
-		// F-021 FIX (9.4): Deduplicate by decision_id + apply query filters in one pass.
+		// (9.4): Deduplicate by decision_id + apply query filters in one pass.
 		seen := make(map[string]bool, len(rows))
 		deduped := make([]map[string]any, 0, len(rows))
 		for _, row := range rows {
@@ -255,7 +254,6 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 			return
 		}
 
-		// Was hardcoded to "APPROVED" regardless of reviewer intent.
 		// Read verdict or vote from body and map to the CHECK-constrained values.
 		verdict, _ := body["verdict"].(string)
 		if verdict == "" {
@@ -329,7 +327,7 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 			if err := tx.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
 				return fmt.Errorf("update verdict: %w", err)
 			}
-			// GAP-CRUD-14: Audit row written durably in the same transaction as the verdict update
+			// Audit row written durably in the same transaction as the verdict update
 			capturedAgent, _ := body["agent_id"].(string)
 			auditRow := map[string]any{
 				"action":    "HITL_VERDICT",
@@ -450,7 +448,6 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 			return
 		}
 		respond.LimitBody(r)
-		// Previously any JSON key could leak into the classifier or downstream update logic.
 		var req struct {
 			AssignedTo     string   `json:"assigned_to"`
 			ReviewerID     string   `json:"reviewer_id"`
@@ -490,7 +487,7 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 			update["updated_by"] = operatorID
 		}
 
-		// F-004 FIX: Accept department_ids[] for multi-department routing.
+		// Accept department_ids[] for multi-department routing.
 		// When department_ids is empty, auto-route using AI-driven classification.
 		deptIDs := req.DepartmentIDs
 		if d := strings.TrimSpace(req.DepartmentID); d != "" {
@@ -506,7 +503,7 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 		if len(deptIDs) == 0 && hasClassSignal {
 			classResult := classifier.Classify(r.Context(), req.CaseType, req.PolicyCategory, req.RuleType, req.Description)
 			deptIDs = classResult.Departments
-			// FIX: ai_intent, ai_confidence, routing_source are NOT real DB columns.
+			// ai_intent, ai_confidence, routing_source are NOT real DB columns.
 			// Store classification metadata in context_data JSONB to avoid 500s.
 			classificationMeta := map[string]any{
 				"ai_intent":      classResult.Intent,
@@ -601,7 +598,7 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 			}
 		}
 
-		// F-021 FIX (8.5): Persist case_type for self-heal classification and FA-03 §7 server-side filter.
+		// (8.5): Persist case_type for self-heal classification and FA-03 §7 server-side filter.
 		if req.CaseType != "" {
 			update["case_type"] = req.CaseType
 		}
@@ -621,7 +618,7 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 		classMeta, _ := update["_classification_meta"].(map[string]any)
 		delete(update, "_classification_meta") // temp key — never a DB column
 
-		// P1-B: Lock the case, reject missing/terminal cases honestly, merge
+		// Lock the case, reject missing/terminal cases honestly, merge
 		// assignment metadata into context_data, update and write the audit row
 		// in one transaction.
 		var caseRows []map[string]any

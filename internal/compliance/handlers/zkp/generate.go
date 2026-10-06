@@ -296,7 +296,7 @@ func HandleGenerateZKPProof(db database.DB) http.HandlerFunc {
 
 		respond.LimitBody(r)
 		var req GenerateZKPProofRequest
-		// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
+		// (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &req) {
 			return
 		}
@@ -354,7 +354,7 @@ func HandleGenerateZKPProof(db database.DB) http.HandlerFunc {
 		// Chain linkage — link this proof to the previous one for this agent+tenant
 		// creating a Merkle-linked evidence chain.
 		var previousCommitment string
-		// BUG FIX: QueryRowsCompound has no ORDER BY — prevRows order is non-deterministic.
+		// QueryRowsCompound has no ORDER BY — prevRows order is non-deterministic.
 		// Use QueryRowsCompoundCtx and sort by issued_at to always chain from the newest proof.
 		var prevRows []struct {
 			ChallengeID string `json:"challenge_id"`
@@ -362,7 +362,7 @@ func HandleGenerateZKPProof(db database.DB) http.HandlerFunc {
 		}
 		if err := db.QueryRowsCompoundCtx(r.Context(), database.TblSharZkpVerify, "challenge_id,issued_at",
 			"agent_id", req.AgentID, "tenant_id", tenantID, &prevRows); err == nil && len(prevRows) > 0 {
-			// BUG-Z1 FIX: old O(n²) bubble sort used RFC3339 string comparison which breaks
+			// old O(n²) bubble sort used RFC3339 string comparison which breaks
 			// for timestamps with mixed precision ("2026-01T10:30:00Z" vs "2026-01-15T10:30:00.000Z").
 			// Now: sort.Slice with time.Parse(RFC3339Nano) for correct temporal ordering.
 			sort.Slice(prevRows, func(i, j int) bool {
@@ -378,7 +378,7 @@ func HandleGenerateZKPProof(db database.DB) http.HandlerFunc {
 		}
 		chainHash := ""
 		if previousCommitment != "" {
-			// BUG-Z2 FIX: old hash was sha256(prevCommitment + ":" + commitment) with no entity binding.
+			// old hash was sha256(prevCommitment + ":" + commitment) with no entity binding.
 			// Two agents with identical proof histories produced identical chain_hashes.
 			// Fix: bind tenant_id and agent_id so the chain hash is entity-scoped.
 			ch := sha256.Sum256([]byte(tenantID + ":" + req.AgentID + ":" + previousCommitment + ":" + commitment))
@@ -433,8 +433,6 @@ func HandleGenerateZKPProof(db database.DB) http.HandlerFunc {
 		}
 
 		if err := db.InsertRow(database.TblSharZkpVerify, record); err != nil {
-			// BUG-Z3 FIX: previously the proof was returned as 201 Created even when the DB
-			// persist failed. The caller stored the proof; future VerifyProof calls returned 404.
 			// Compliance audit trails were silently broken.
 			// Fix: return 503 + Retry-After:30 so the caller knows to retry. Proof data is
 			// NOT returned until successfully stored — no proof without a storage receipt.
@@ -455,7 +453,7 @@ func HandleGenerateZKPProof(db database.DB) http.HandlerFunc {
 	}
 }
 
-// HANDLER-1 FIX: Canonical name alias — HandleCreateZKPProof is the enterprise AIP standard name.
+// Canonical name alias — HandleCreateZKPProof is the enterprise AIP standard name.
 // Handle{Verb}{Noun} where Verb ∈ {Create, Get, List, Update, Delete}.
 // HandleGenerateZKPProof kept for backward compatibility; new code should use HandleCreateZKPProof.
 var HandleCreateZKPProof = HandleGenerateZKPProof

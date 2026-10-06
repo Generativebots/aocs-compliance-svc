@@ -1,9 +1,9 @@
 package compliance
 
 import (
-	"fmt"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -57,7 +57,7 @@ func HandleGetPolicySummary(pgx *database.PGXPool) http.HandlerFunc {
 			return
 		}
 
-		// K4 FIX: has_more was always false — frontend couldn't paginate.
+		// has_more was always false — frontend couldn't paginate.
 		// Compute from actual row count vs requested limit (default 100).
 		limit := 100
 		if l := r.URL.Query().Get("limit"); l != "" {
@@ -96,7 +96,7 @@ func getPolicySummary(ctx context.Context, p *database.PGXPool, tenantID string)
 
 	pgxRows, err := p.Query(ctx, query, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("Query: %w", err) // ERRH-3 FIX
+		return nil, fmt.Errorf("Query: %w", err)
 	}
 	defer pgxRows.Close()
 
@@ -162,7 +162,7 @@ func getComplianceObligations(ctx context.Context, p *database.PGXPool, tenantID
 	// Fall back to direct query against gra_frameworks (actual table name).
 	// tenant_id is NULL for global frameworks — include both global and tenant-specific.
 	//
-	// P1-C FIX: compliance_score was hardcoded 0.0::float8 — permanently misrepresented
+	// compliance_score was hardcoded 0.0::float8 — permanently misrepresented
 	// compliance coverage on the EU AI Act / SOC2 obligation dashboard.
 	// Now computed as: (active_policies_covering_framework / total_policies) where
 	// a policy covers a framework when core_policies.framework_id matches OR the tenant
@@ -219,7 +219,7 @@ func getComplianceObligations(ctx context.Context, p *database.PGXPool, tenantID
 
 	pgxRows, err := p.Query(ctx, query, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("Query: %w", err) // ERRH-3 FIX
+		return nil, fmt.Errorf("Query: %w", err)
 	}
 	defer pgxRows.Close()
 
@@ -286,7 +286,7 @@ func HandleGetPolicyImpact(pgx *database.PGXPool) http.HandlerFunc {
 // policyImpactSQL scores each policy from its gate verdict history in
 // the gate decision log (lv_core_gate_decisions). impact_score is on a 0-1 scale (fraction of evaluated
 // actions the policy blocked); policies with no verdicts fall back to
-// priority/10. $2 = '' returns all policies, otherwise only that policy.
+// priority/10. $2 = ” returns all policies, otherwise only that policy.
 const policyImpactSQL = `
 	WITH stats AS (
 		SELECT p.policy_id, p.name, COALESCE(p.status, '') AS status, p.priority,
@@ -390,14 +390,14 @@ func HandleGetPolicyImpactPreview(pgx *database.PGXPool) http.HandlerFunc {
 			return
 		}
 
-		// B-GC1 FIX: r.PathValue("id") is net/http 1.22+ stdlib — NOT populated by gorilla/mux.
+		// r.PathValue("id") is net/http 1.22+ stdlib — NOT populated by gorilla/mux.
 		// Always returned "" causing handler to return aggregate instead of requested policy.
 		policyID := mux.Vars(r)["id"]
 		if policyID == "" {
 			policyID = r.URL.Query().Get("policy_id")
 		}
 
-		// P2-F FIX: was getPolicyImpactAnalysis(tenantID) which scans ALL tenant policies
+		// was getPolicyImpactAnalysis(tenantID) which scans ALL tenant policies
 		// then filters in Go. For tenants with 500+ policies this is a full table scan on
 		// every impact preview click. Now passes policyID directly to the DB function/query
 		// so only the requested policy is scanned. Falls back to full scan if no ID given.

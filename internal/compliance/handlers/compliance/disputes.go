@@ -37,14 +37,14 @@
 package compliance
 
 import (
-	"log/slog"
-	"net/http"
-	"time"
 	"github.com/gorilla/mux"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/respond"
 	"github.com/ocx/shared/validate"
+	"log/slog"
+	"net/http"
+	"time"
 )
 
 // HandleListDisputes returns all disputes for the calling tenant.
@@ -104,7 +104,7 @@ func HandleGetDispute(db database.DB) http.HandlerFunc {
 // HandleCreateDispute opens a new dispute against an enforcement decision.
 // POST /api/v1/disputes
 //
-// CIP-1: Each dispute is linked to a case_id (core_hitl.decision_id).
+// Each dispute is linked to a case_id (core_hitl.decision_id).
 // The case is created upstream by the enforcement engine (workflow/enforcement.go)
 // or the QCore Gate (governance/gate.go) — never by this handler.
 // Sustained dispute volume (>15% of decisions) triggers the self-heal advisor
@@ -121,7 +121,7 @@ func HandleCreateDispute(db database.DB) http.HandlerFunc {
 		}
 		respond.LimitBody(r)
 		var body CreateDisputeRequest
-	// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
+		// (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &body) {
 			return
 		}
@@ -182,7 +182,7 @@ func HandleResolveDispute(db database.DB) http.HandlerFunc {
 			Verdict    string `json:"verdict"`    // UPHELD | OVERTURNED
 			Resolution string `json:"resolution"` // human-readable explanation
 		}
-	// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
+		// (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &body) {
 			return
 		}
@@ -204,11 +204,11 @@ func HandleResolveDispute(db database.DB) http.HandlerFunc {
 		}
 		if txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
 			return tx.UpdateRowCompound(database.TblCoreDisputes, "dispute_id", id, "tenant_id", tenantID, map[string]any{
-				"dispute_status":    body.Verdict, // UPHELD | OVERTURNED
-				"status":            "RESOLVED",   // case lifecycle
-				"resolution":        body.Resolution,
-				"resolved_at":       now,
-				"updated_at":        now,
+				"dispute_status": body.Verdict, // UPHELD | OVERTURNED
+				"status":         "RESOLVED",   // case lifecycle
+				"resolution":     body.Resolution,
+				"resolved_at":    now,
+				"updated_at":     now,
 			})
 		}); txErr != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "resolve dispute", txErr)
@@ -248,10 +248,10 @@ func HandleDeleteDispute(db database.DB) http.HandlerFunc {
 		now := time.Now().UTC().Format(time.RFC3339)
 		if txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
 			return tx.UpdateRowCompound(database.TblCoreDisputes, "dispute_id", id, "tenant_id", tenantID, map[string]any{
-				"dispute_status":    "WITHDRAWN",
-				"status":            "CLOSED", // case lifecycle
-				"resolved_at":       now,
-				"updated_at":        now,
+				"dispute_status": "WITHDRAWN",
+				"status":         "CLOSED", // case lifecycle
+				"resolved_at":    now,
+				"updated_at":     now,
 			})
 		}); txErr != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "withdraw dispute", txErr)

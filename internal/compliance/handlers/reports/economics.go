@@ -18,7 +18,6 @@ import (
 // ESC — Missing routes called by frontend
 
 // HandleEscrowStats DELETED — architectural anti-pattern.
-// Was: fetches core_escrow_txns → counts pending/released/blocked in Go.
 // Frontend derives these from GET /esc/history which it already fetches.
 
 // ─── Admin Economics Overview ─────────────────────────────────────────────────

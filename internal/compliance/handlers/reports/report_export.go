@@ -43,7 +43,7 @@ func HandleDeleteComplianceReport(db database.DB) http.HandlerFunc {
 			respond.InternalError(w, http.StatusInternalServerError, "delete compliance report", dbErr)
 			return
 		}
-		// H-NEW-4 FIX: Audit log — compliance report deletion is a state-changing operation
+		// Audit log — compliance report deletion is a state-changing operation
 		// required to be traceable under EU AI Act Article 13 and SOC2 CC6.1.
 		slog.Info("audit: compliance report archived",
 			"action", "DELETE_COMPLIANCE_REPORT",
@@ -72,7 +72,7 @@ func HandleExecuteComplianceReport(db database.DB) http.HandlerFunc {
 			return
 		}
 		callerID := auth.GetUserID(r.Context())
-		// TI-C1 FIX: verify report belongs to this tenant before updating.
+		// verify report belongs to this tenant before updating.
 
 		var existing []map[string]any
 		if err := db.QueryRowsCtx(r.Context(), database.TblSharComplianceReports,
@@ -126,7 +126,7 @@ func HandleScheduleComplianceReport(db database.DB) http.HandlerFunc {
 			return
 		}
 		callerID := auth.GetUserID(r.Context())
-		// TI-C2 FIX: verify report belongs to this tenant before updating.
+		// verify report belongs to this tenant before updating.
 
 		var existing []map[string]any
 		if err := db.QueryRowsCtx(r.Context(), database.TblSharComplianceReports,

@@ -1,15 +1,15 @@
 package reports
 
-// monitoring.go — PERF-001 fix
+// monitoring.go —
 //
 // HandleGetMonitorAuditSummary: GET /monitor/audit-summary
 //   Returns aggregated audit counts for the ops health dashboard.
-//   PERF FIX: Now uses DB-side COUNT aggregations instead of fetching all 30-day rows
+//   Now uses DB-side COUNT aggregations instead of fetching all 30-day rows
 //   and filtering in-process (was causing 10+ second responses on tables with 10k+ rows).
 //
 // HandleGetSystemOverview: GET /monitor/overview
 //   Returns real system metrics for the command-center dashboard.
-//   PERF FIX: Same aggregation approach — COUNT in SQL, not Go slice iteration.
+//   Same aggregation approach — COUNT in SQL, not Go slice iteration.
 
 // HandleGetMonitorAuditSummary — GET /monitor/audit-summary
 

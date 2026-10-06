@@ -47,7 +47,7 @@ type EscalationMessage struct {
 type EscalateFunc func(ctx context.Context, msg EscalationMessage) error
 
 // JuryConsumer subscribes to Pub/Sub and forwards escalations to the Jury service.
-// 2 + PATENT-GAP-3 FIX: the gRPC JuryClient is held as a struct field and
+// 2 + the gRPC JuryClient is held as a struct field and
 // dialed exactly once — per-message dials were (a) expensive and (b) reset the
 // CircuitBreaker's failure window on every new connection, defeating its purpose.
 type JuryConsumer struct {

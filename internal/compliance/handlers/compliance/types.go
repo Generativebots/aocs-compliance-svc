@@ -8,8 +8,8 @@ import (
 // CaseCreateRequest is the body for POST /compliance/cases.
 type CaseCreateRequest struct {
 	CaseType     string         `json:"case_type"`
-	AgentID	string	`json:"agent_id" validate:"required"`
-	Reason	string	`json:"reason" validate:"required"`
+	AgentID      string         `json:"agent_id" validate:"required"`
+	Reason       string         `json:"reason" validate:"required"`
 	DepartmentID string         `json:"department_id,omitempty"`
 	Priority     string         `json:"priority,omitempty"` // LOW | MEDIUM | HIGH | CRITICAL
 	ContextData  map[string]any `json:"context_data,omitempty"`
@@ -17,9 +17,9 @@ type CaseCreateRequest struct {
 
 // EscalationRequest is the body for POST /compliance/cases/:id/escalate.
 type EscalationRequest struct {
-	CaseID	string	`json:"case_id" validate:"required"`
-	AgentID	string	`json:"agent_id" validate:"required"`
-	Reason	string	`json:"reason" validate:"required"`
+	CaseID      string `json:"case_id" validate:"required"`
+	AgentID     string `json:"agent_id" validate:"required"`
+	Reason      string `json:"reason" validate:"required"`
 	EvidenceURL string `json:"evidence_url,omitempty"`
 }
 
@@ -31,7 +31,7 @@ type CaseCommentRequest struct {
 
 // CaseDismissRequest is the body for POST /compliance/cases/:id/dismiss.
 type CaseDismissRequest struct {
-	Reason	string	`json:"reason" validate:"required"`
+	Reason  string `json:"reason" validate:"required"`
 	JurorID string `json:"juror_id,omitempty"`
 }
 
@@ -49,7 +49,7 @@ type ComplianceBatchReportRequest struct {
 
 // ComplianceSingleReportRequest is the body for POST /compliance/reports/single.
 type ComplianceSingleReportRequest struct {
-	AgentID	string	`json:"agent_id" validate:"required"`
+	AgentID string `json:"agent_id" validate:"required"`
 	Period  string `json:"period"` // YYYY-MM
 }
 
@@ -86,15 +86,15 @@ type AddCaseCommentRequest struct {
 type ReassignCaseRequest struct {
 	FromDeptID      string `json:"from_dept_id"`
 	ToDeptID        string `json:"to_dept_id"`
-	Reason	string	`json:"reason" validate:"required"`
+	Reason          string `json:"reason" validate:"required"`
 	EscalationLevel int    `json:"escalation_level"`
 }
 
 // CreateCaseRequest is the request body for HandleCreateCase. (6 fields)
 type CreateCaseRequest struct {
 	CaseType     string         `json:"case_type"`
-	AgentID	string	`json:"agent_id" validate:"required"`
-	Reason	string	`json:"reason" validate:"required"`
+	AgentID      string         `json:"agent_id" validate:"required"`
+	Reason       string         `json:"reason" validate:"required"`
 	DepartmentID string         `json:"department_id,omitempty"`
 	Priority     string         `json:"priority,omitempty"`
 	ContextData  map[string]any `json:"context_data,omitempty"`
@@ -117,15 +117,15 @@ type DepartmentRouteRequest struct {
 	PolicyCategory string `json:"policy_category"`
 	RuleType       string `json:"rule_type"`
 	Description    string `json:"description"`
-	AgentID	string	`json:"agent_id" validate:"required"`
+	AgentID        string `json:"agent_id" validate:"required"`
 	CheckCapacity  *bool  `json:"check_capacity"`
 }
 
 // CreateDisputeRequest is the request body for HandleCreateDispute. (4 fields)
 type CreateDisputeRequest struct {
-	CaseID	string	`json:"case_id" validate:"required"`
-	AgentID	string	`json:"agent_id" validate:"required"`
-	Reason	string	`json:"reason" validate:"required"`
+	CaseID      string `json:"case_id" validate:"required"`
+	AgentID     string `json:"agent_id" validate:"required"`
+	Reason      string `json:"reason" validate:"required"`
 	EvidenceURL string `json:"evidence_url,omitempty"`
 }
 
@@ -135,21 +135,21 @@ type CreateDLPFindingRequest struct {
 	Severity    string         `json:"severity"`
 	DataType    string         `json:"data_type"`
 	Description string         `json:"description"`
-	Source	string	`json:"source" validate:"required"`	// SCAN | MANUAL | ALERT
+	Source      string         `json:"source" validate:"required"` // SCAN | MANUAL | ALERT
 	AgentID     string         `json:"agent_id,omitempty"`
 	Metadata    map[string]any `json:"metadata,omitempty"`
 }
 
 // CasesSubmitJuryVoteRequest is the request body for HandleCasesSubmitJuryVote. (8 fields)
 type CasesSubmitJuryVoteRequest struct {
-	CaseID	string	`json:"case_id" validate:"required"`
+	CaseID     string  `json:"case_id" validate:"required"`
 	VoterID    string  `json:"voter_id"`
 	MemberID   string  `json:"member_id"` // alias
 	Decision   string  `json:"decision"`
 	Verdict    string  `json:"verdict"` // alias
 	Confidence float64 `json:"confidence"`
 	Rationale  string  `json:"rationale"`
-	PolicyID	string	`json:"policy_id" validate:"required"`	// accepted, not required
+	PolicyID   string  `json:"policy_id" validate:"required"` // accepted, not required
 }
 
 // UpdateSIEMConfigRequest is the request body for HandleUpdateSIEMConfig. (4 fields)
@@ -162,9 +162,9 @@ type UpdateSIEMConfigRequest struct {
 
 // VerifyProofInclusionRequest is the request body for HandleVerifyProofInclusion. (5 fields)
 type VerifyProofInclusionRequest struct {
-	ProofHash     string                       `json:"proof_hash"`
-	ChainRoot     string                       `json:"chain_root"`
+	ProofHash     string                  `json:"proof_hash"`
+	ChainRoot     string                  `json:"chain_root"`
 	InclusionPath []types.MerkleProofStep `json:"inclusion_path"`
-	AgentID	string	`json:"agent_id" validate:"required"`
-	Period        string                       `json:"period"`
+	AgentID       string                  `json:"agent_id" validate:"required"`
+	Period        string                  `json:"period"`
 }

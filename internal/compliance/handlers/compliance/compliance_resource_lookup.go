@@ -28,7 +28,7 @@ func HandleDeleteComplianceObligation(db *database.SupabaseClient) http.HandlerF
 }
 
 // HandleRevokeCredential — DELETE /compliance/credentials/:id.
-// B7 FIX: core_tenant_creds has no status/revoked_by columns; revocation is
+// core_tenant_creds has no status/revoked_by columns; revocation is
 // is_active=false, scoped to the caller's tenant.
 func HandleRevokeCredential(db *database.SupabaseClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

@@ -9,10 +9,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ocx/shared/infra/httpclient"
 	"io"
 	"log/slog"
 	"net/http"
-	"github.com/ocx/shared/infra/httpclient"
 	"net/url"
 	"strings"
 
@@ -99,16 +99,16 @@ func syncGoogleDrive(ctx context.Context, db database.DB, tenantID, connectorID 
 	synced := 0
 	for _, f := range driveResp.Files {
 		row := map[string]any{
-			"tenant_id":    tenantID,
-			"connector_id": connectorID,
-			"source_id":    f.ID,
-			"source_type":  "google_drive",
-			"name":         f.Name,
+			"tenant_id":     tenantID,
+			"connector_id":  connectorID,
+			"source_id":     f.ID,
+			"source_type":   "google_drive",
+			"name":          f.Name,
 			"document_type": mimeToDocType(f.MimeType),
-			"mime_type":    f.MimeType,
-			"external_url": f.WebViewLink,
-			"status":       "synced",
-			"description":  fmt.Sprintf("Synced from %s (Google Drive)", displayName),
+			"mime_type":     f.MimeType,
+			"external_url":  f.WebViewLink,
+			"status":        "synced",
+			"description":   fmt.Sprintf("Synced from %s (Google Drive)", displayName),
 		}
 		if err := upsertDriveDocument(db, row); err != nil {
 			slog.Error("google_drive: upsert failed", "file_id", f.ID, "name", f.Name, "error", err)
@@ -182,16 +182,16 @@ func syncSharePoint(ctx context.Context, db database.DB, tenantID, connectorID s
 			continue // Skip folders
 		}
 		row := map[string]any{
-			"tenant_id":    tenantID,
-			"connector_id": connectorID,
-			"source_id":    item.ID,
-			"source_type":  "sharepoint",
-			"name":         item.Name,
+			"tenant_id":     tenantID,
+			"connector_id":  connectorID,
+			"source_id":     item.ID,
+			"source_type":   "sharepoint",
+			"name":          item.Name,
 			"document_type": mimeToDocType(item.File.MimeType),
-			"mime_type":    item.File.MimeType,
-			"external_url": item.WebURL,
-			"status":       "synced",
-			"description":  fmt.Sprintf("Synced from %s (SharePoint)", displayName),
+			"mime_type":     item.File.MimeType,
+			"external_url":  item.WebURL,
+			"status":        "synced",
+			"description":   fmt.Sprintf("Synced from %s (SharePoint)", displayName),
 		}
 		if err := upsertDriveDocument(db, row); err != nil {
 			slog.Error("sharepoint: upsert failed", "item_id", item.ID, "error", err)
@@ -269,15 +269,15 @@ func syncS3(ctx context.Context, db database.DB, tenantID, connectorID string, c
 		externalURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", bucket, region, url.PathEscape(key))
 
 		row := map[string]any{
-			"tenant_id":    tenantID,
-			"connector_id": connectorID,
-			"source_id":    key,
-			"source_type":  "s3",
-			"name":         name,
+			"tenant_id":     tenantID,
+			"connector_id":  connectorID,
+			"source_id":     key,
+			"source_type":   "s3",
+			"name":          name,
 			"document_type": extToDocType(ext),
-			"external_url": externalURL,
-			"status":       "synced",
-			"description":  fmt.Sprintf("Synced from %s (S3: %s)", displayName, bucket),
+			"external_url":  externalURL,
+			"status":        "synced",
+			"description":   fmt.Sprintf("Synced from %s (S3: %s)", displayName, bucket),
 		}
 		if err := upsertDriveDocument(db, row); err != nil {
 			slog.Error("s3: upsert failed", "key", key, "error", err)

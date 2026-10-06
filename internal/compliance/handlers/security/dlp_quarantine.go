@@ -29,7 +29,7 @@ import (
 type quarantineRequest struct {
 	EntityID   string `json:"entity_id"`
 	EntityType string `json:"entity_type"` // agent | document | data | tool
-	Reason	string	`json:"reason" validate:"required"`
+	Reason     string `json:"reason" validate:"required"`
 	Severity   string `json:"severity"` // LOW | MEDIUM | HIGH | CRITICAL
 }
 

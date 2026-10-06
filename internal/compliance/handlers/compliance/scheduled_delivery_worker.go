@@ -1,4 +1,4 @@
-// compliance_scheduled_delivery_worker.go — B-5 FIX: FLOW-07 B2
+// compliance_scheduled_delivery_worker.go — FLOW-07 B2
 //
 // The compliance report scheduler (HandleScheduleReport) writes
 // cron_expression + notify_emails to schedule_config JSONB, but there was

@@ -1,4 +1,4 @@
-// dept_overflow.go — D2D-FIX: Department capacity overflow routing.
+// dept_overflow.go — D2D-Department capacity overflow routing.
 //
 // D2D Gap-4: There are no capacity limits per department and no overflow routing.
 // When a department hits its case limit, new cases pile up silently with no
@@ -15,9 +15,9 @@
 package compliance
 
 import (
-	"github.com/ocx/shared/infra/concurrent"
 	"encoding/json"
 	"fmt"
+	"github.com/ocx/shared/infra/concurrent"
 	"log/slog"
 	"net/http"
 	"time"

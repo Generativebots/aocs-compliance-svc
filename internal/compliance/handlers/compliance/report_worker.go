@@ -298,12 +298,12 @@ func generateTenantReport(ctx context.Context, db database.DB, coreClient *servi
 		// 'EU_AI_ACT','HIPAA','CCPA','CUSTOM'). "DAILY" violated it (23514 in
 		// Supabase logs) so no daily report was ever stored. The cadence is
 		// already recorded in metadata.period ("24h").
-		"report_type":          "CUSTOM",
-		"status":               "COMPLETED", // CHECK: DRAFT|PENDING|GENERATING|COMPLETED|FAILED|EXPIRED ("READY" is not allowed)
-		"metadata":             reportData,
-		"period_start":         now.Add(-consts.DefaultLookbackWindow).Format(time.RFC3339),
-		"period_end":           now.Format(time.RFC3339),
-		"created_by":           "system@ocx.ai", // background worker — no user context
+		"report_type":  "CUSTOM",
+		"status":       "COMPLETED", // CHECK: DRAFT|PENDING|GENERATING|COMPLETED|FAILED|EXPIRED ("READY" is not allowed)
+		"metadata":     reportData,
+		"period_start": now.Add(-consts.DefaultLookbackWindow).Format(time.RFC3339),
+		"period_end":   now.Format(time.RFC3339),
+		"created_by":   "system@ocx.ai", // background worker — no user context
 	})
 }
 

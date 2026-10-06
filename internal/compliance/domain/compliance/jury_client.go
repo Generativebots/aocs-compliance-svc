@@ -50,7 +50,7 @@ func (jc *JuryClient) AuditIntent(
 		AgentID:       agentID,
 		ToolName:      toolName,
 		Parameters:    params,
-		// G2 FIX: intent-scoped ML policy rules require intentID and departmentID.
+		// intent-scoped ML policy rules require intentID and departmentID.
 		Context: map[string]any{
 			"intent_id":     intentID,
 			"department_id": departmentID,
@@ -60,7 +60,7 @@ func (jc *JuryClient) AuditIntent(
 	if tenantID != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-tenant-id", tenantID)
 	}
-	// M6 FIX: Forward X-Request-ID into gRPC metadata for distributed trace correlation.
+	// Forward X-Request-ID into gRPC metadata for distributed trace correlation.
 	// The request ID is set by gateway-client.ts on every request and echoed by NGINX.
 	// Forwarding it here closes the Go → Python gRPC trace gap.
 	if reqID, ok := ctx.Value("x-request-id").(string); ok && reqID != "" {

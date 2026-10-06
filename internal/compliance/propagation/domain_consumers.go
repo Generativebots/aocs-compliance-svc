@@ -203,7 +203,7 @@ func startConsumer(ctx context.Context, db database.DB, projectID, topic, subID 
 
 func isProcessed(ctx context.Context, db database.DB, messageID string) bool {
 	var rows []map[string]any
-	// DC-I1 FIX: DB error on idempotency check now returns true (fail-safe).
+	// DB error on idempotency check now returns true (fail-safe).
 	// Previous: silent drop returned false, causing message reprocessing on DB hiccup.
 	if err := db.QueryRowsCtx(ctx, "compl_idempotency_log",
 		"message_id", "message_id", messageID, &rows); err != nil {
@@ -227,7 +227,7 @@ func markProcessed(ctx context.Context, db database.DB, messageID, topic, tenant
 		"result":       "OK",
 		"processed_at": time.Now().UTC().Format(time.RFC3339),
 	}
-	// DC-I2 FIX: idempotency mark insert failure is now logged.
+	// idempotency mark insert failure is now logged.
 	// Silent drop meant messages were never marked processed —
 	// causing infinite reprocessing of the same event.
 	if err := db.InsertRowIdempotent("compl_idempotency_log", row, "message_id"); err != nil {

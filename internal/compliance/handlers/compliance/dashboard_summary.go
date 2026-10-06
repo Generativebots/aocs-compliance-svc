@@ -42,7 +42,7 @@ func HandleGetComplianceDashboardSummary(db database.DB) http.HandlerFunc {
 			"report_id, framework, status, compliance_score, total_controls, passed_controls, certifier_name, created_at, updated_at",
 			"tenant_id", tenantID, "status", "pending", &reports); err != nil {
 			// Fallback to all reports if no pending reports found
-			_ = db.QueryRows(database.TblComplReports,  //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+			_ = db.QueryRows(database.TblComplReports, //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
 				"report_id, framework, status, compliance_score, total_controls, passed_controls, certifier_name, created_at, updated_at",
 				"tenant_id", tenantID, &reports)
 		}
@@ -55,7 +55,7 @@ func HandleGetComplianceDashboardSummary(db database.DB) http.HandlerFunc {
 
 		// 2. Violations / Enforcement actions
 		var violations []map[string]any
-		_ = db.QueryRows(database.TblCoreEnforcementActions,  //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+		_ = db.QueryRows(database.TblCoreEnforcementActions, //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
 			database.ColsEnforcementActions,
 			"tenant_id", tenantID, &violations)
 		if violations == nil {
@@ -120,7 +120,7 @@ func HandleGetComplianceDashboardSummary(db database.DB) http.HandlerFunc {
 
 		// 4. DLP Scan telemetry from evidence
 		var dlpEvidence []map[string]any
-		_ = db.QueryRowsCompound(database.TblComplEvidence,  //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+		_ = db.QueryRowsCompound(database.TblComplEvidence, //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
 			"evidence_id, title, framework, created_at",
 			"tenant_id", tenantID, "evidence_type", "DLP_SCAN", &dlpEvidence)
 		dlpCount := len(dlpEvidence)
@@ -135,7 +135,7 @@ func HandleGetComplianceDashboardSummary(db database.DB) http.HandlerFunc {
 		// 5. 7-Day History
 		var historyRows []map[string]any
 		sevenDaysAgo := now.AddDate(0, 0, -7).Format(time.RFC3339)
-		_ = db.QueryRowsCompound(database.TblComplReports,  //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+		_ = db.QueryRowsCompound(database.TblComplReports, //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
 			"report_id, framework, compliance_score, created_at",
 			"tenant_id", tenantID, "status", "CERTIFIED", &historyRows)
 		var history7d []map[string]any

@@ -5,8 +5,8 @@ package security
 
 // ThreatMitigationRequest is the body for POST /security/threats/:id/mitigate.
 type ThreatMitigationRequest struct {
-	Action	string	`json:"action" validate:"required"`	// BLOCK | QUARANTINE | ALERT | DISMISS
-	Reason	string	`json:"reason" validate:"required"`
+	Action string `json:"action" validate:"required"` // BLOCK | QUARANTINE | ALERT | DISMISS
+	Reason string `json:"reason" validate:"required"`
 }
 
 // EntropyAnalysisRow is the DB projection for entropy analysis reads.
@@ -21,7 +21,7 @@ type EntropyAnalysisRow struct {
 
 // CreateEntropyEventRequest is the request body for HandleCreateEntropyEvent. (6 fields)
 type CreateEntropyEventRequest struct {
-	AgentID	string	`json:"agentId" validate:"required"`
+	AgentID       string  `json:"agentId" validate:"required"`
 	VarianceScore float64 `json:"varianceScore"`
 	// Actor chain FKs
 	IntentID    string `json:"intent_id,omitempty"`
@@ -33,6 +33,6 @@ type CreateEntropyEventRequest struct {
 // NonceValidateRequest is the request body for HandleValidateNonce. (3 fields)
 type NonceValidateRequest struct {
 	Nonce    string `json:"nonce"`
-	AgentID	string	`json:"agent_id" validate:"required"`
-	TenantID	string	`json:"tenant_id" validate:"required"`
+	AgentID  string `json:"agent_id" validate:"required"`
+	TenantID string `json:"tenant_id" validate:"required"`
 }

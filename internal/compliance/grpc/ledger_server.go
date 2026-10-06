@@ -165,7 +165,7 @@ func (s *LedgerServer) GetEvidence(ctx context.Context, req *pb.GetEvidenceReque
 	}
 
 	row := rows[0]
-	// BUG FIX: columns queried are "evidence_id, entity_id, chain_data, updated_at"
+	// columns queried are "evidence_id, entity_id, chain_data, updated_at"
 	// — "decision_id", "status", "hash" don't exist as top-level columns; they
 	// live inside chain_data JSONB. Read them correctly.
 	entityID, _ := row["entity_id"].(string)

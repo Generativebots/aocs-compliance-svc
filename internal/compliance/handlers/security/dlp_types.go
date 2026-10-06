@@ -72,7 +72,7 @@ type DLPIntegration struct {
 	EventCount  int64     `json:"event_count"`
 }
 type MonitorPIDRequest struct {
-	TenantID	string	`json:"tenant_id"`
+	TenantID string `json:"tenant_id"`
 	PID      int    `json:"pid"`
 	Label    string `json:"label"` // "agt", "browser", "service"
 }
@@ -93,9 +93,9 @@ type MarketplaceDLPConnector struct {
 type DLPStore struct {
 	mu            sync.RWMutex
 	db            database.DB
-	coreClient      *serviceclient.Client  // ocx-core-svc internal API client
-	monitoredPIDs map[int]string          // PID -> label (in-memory cache, synced to DB)
-	Resolver      providers.Resolver      // pluggable provider resolver (nil = always builtin)
+	coreClient    *serviceclient.Client // ocx-core-svc internal API client
+	monitoredPIDs map[int]string        // PID -> label (in-memory cache, synced to DB)
+	Resolver      providers.Resolver    // pluggable provider resolver (nil = always builtin)
 }
 
 var piiPatterns = []struct {

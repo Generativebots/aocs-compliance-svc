@@ -171,8 +171,7 @@ func HandleGetLedgerRoot(db database.DB) http.HandlerFunc {
 		if respond.RequireDB(w, db) {
 			return
 		}
-		// SEC-5 FIX: Removed URL-param tenant_id bypass — JWT context is sole source of truth.
-		// Previously a caller could read any tenant's ledger root by supplying ?tenant_id=<other>.
+		// Removed URL-param tenant_id bypass — JWT context is sole source of truth.
 		tenantID, ok := auth.MustGetTenantID(w, r)
 		if !ok {
 			return
@@ -213,7 +212,7 @@ func HandleGetComplianceSIEMConfig(db database.DB) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		// B7 FIX: shared SIEM config row (core_tenant_creds CUSTOM/"siem").
+		// shared SIEM config row (core_tenant_creds CUSTOM/"siem").
 		cred, err := database.GetTenantCredentialAny(r.Context(), db, tenantID, database.CredTypeCustom, database.CredProviderSIEM)
 		if err != nil {
 			respond.OK(w, map[string]any{"tenant_id": tenantID, "webhook_url": "", "format": "CEF", "enabled": false})

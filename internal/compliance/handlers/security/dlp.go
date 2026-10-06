@@ -19,9 +19,9 @@ package security
 
 import (
 	"context"
-	"github.com/ocx/shared/idgen"
 	"encoding/json"
 	"fmt"
+	"github.com/ocx/shared/idgen"
 	"log/slog"
 
 	"net/http"
@@ -31,11 +31,11 @@ import (
 	"github.com/ocx/shared/infra/concurrent"
 	"github.com/ocx/shared/infra/providers"
 
-	"github.com/ocx/shared/respond"
-	"github.com/ocx/shared/validate"
 	"github.com/gorilla/mux"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
+	"github.com/ocx/shared/respond"
+	"github.com/ocx/shared/validate"
 )
 
 // generatePlatformID generates a platform-standard ID: YYYYMM + 8 UPPERCASE alphanumeric chars.
@@ -58,7 +58,7 @@ func HandleDLPScan(store *DLPStore) http.HandlerFunc {
 		}
 
 		var req DLPScanRequest
-		// GATE-06 FIX: removed — LimitBodyLarge already set the limit above
+		// removed — LimitBodyLarge already set the limit above
 		if !validate.Bind(w, r, &req) {
 			return
 		}
@@ -144,8 +144,7 @@ func HandleDLPScan(store *DLPStore) http.HandlerFunc {
 			"persisted", true,
 		)
 
-		// CIP-4 FIX: DLP → Sentinel bridge.
-		// Was: DLP scan only wrote to core_enforcement_actions (audit only). No Sentinel alert raised.
+		// DLP → Sentinel bridge.
 		// The DLP ↔ SIEM integration loop was broken — threats detected but never surfaced.
 		// Now: RESTRICTED or CONFIDENTIAL content fires a senti_alerts row, surfacing in the
 		// Sentinel dashboard and triggering SSE fan-out for real-time operator notification.
@@ -298,7 +297,7 @@ func HandleDLPMonitorPID(store *DLPStore) http.HandlerFunc {
 		}
 
 		var req MonitorPIDRequest
-		// GATE-06 FIX: removed duplicate LimitBody — already called above
+		// removed duplicate LimitBody — already called above
 		if !validate.Bind(w, r, &req) {
 			return
 		}
@@ -349,6 +348,7 @@ func HandleDLPMonitorPID(store *DLPStore) http.HandlerFunc {
 		})
 	}
 }
+
 // HandleListDLPMonitors — GET /compliance/dlp/monitors
 // Lists the tenant's registered DLP PID monitors (core_enforcement_actions rows
 // with action_type=dlp_pid_monitor). Previously this GET was wired to the POST
@@ -388,7 +388,7 @@ func HandleDLPWebhook(store *DLPStore) http.HandlerFunc {
 			return
 		}
 
-		// CLASS-2 FIX: Webhook signature verification.
+		// Webhook signature verification.
 		// Without this, any attacker who discovers the endpoint URL can inject
 		// fake DLP scan results into compliance audit logs.
 		signature := r.Header.Get("X-Webhook-Signature")
@@ -498,7 +498,7 @@ func HandleCreateDLPIntegration(store *DLPStore) http.HandlerFunc {
 		}
 
 		var intg DLPIntegration
-		// GATE-06 FIX: removed duplicate LimitBody — already called above
+		// removed duplicate LimitBody — already called above
 		if !validate.Bind(w, r, &intg) {
 			return
 		}
@@ -657,7 +657,6 @@ func HandleUpdateDLPIntegration(store *DLPStore) http.HandlerFunc {
 		}
 
 		respond.LimitBody(r)
-		// Previously any JSON key was forwarded directly to senti_dlp_integrations.
 		var req struct {
 			Name       string `json:"name"`
 			WebhookURL string `json:"webhook_url"`

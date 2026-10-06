@@ -108,7 +108,7 @@ func HandleCreateDLPFinding(db database.DB) http.HandlerFunc {
 		respond.LimitBody(r)
 
 		var req CreateDLPFindingRequest
-		// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
+		// (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &req) {
 			return
 		}
@@ -138,7 +138,7 @@ func HandleCreateDLPFinding(db database.DB) http.HandlerFunc {
 		}
 		metaJSON, marshalErr := json.Marshal(req.Metadata)
 		if marshalErr != nil {
-			// SF-01 FIX: bare return left client with empty 200 — write proper 500.
+			// bare return left client with empty 200 — write proper 500.
 			slog.Error("dlp/findings: metadata marshal failed", "err", marshalErr)
 			respond.InternalError(w, http.StatusInternalServerError, "marshal metadata", marshalErr)
 			return
@@ -249,7 +249,7 @@ func HandleUpdateDLPFinding(db database.DB) http.HandlerFunc {
 			Status   *string `json:"status,omitempty"`
 			Severity *string `json:"severity,omitempty"`
 		}
-		// GATE-06 FIX: removed duplicate LimitBody — double-wrapping halves max body size.
+		// removed duplicate LimitBody — double-wrapping halves max body size.
 		if !validate.Bind(w, r, &req) {
 			return
 		}
@@ -277,7 +277,7 @@ func HandleUpdateDLPFinding(db database.DB) http.HandlerFunc {
 			}
 			metaJSON, marshalErr := json.Marshal(meta)
 			if marshalErr != nil {
-				// SF-02 FIX: bare return left client with empty 200 on metadata merge failure.
+				// bare return left client with empty 200 on metadata merge failure.
 				slog.Error("dlp/findings: metadata merge marshal failed", "err", marshalErr)
 				respond.InternalError(w, http.StatusInternalServerError, "marshal updated metadata", marshalErr)
 				return
@@ -310,7 +310,7 @@ func HandleDeleteDLPFinding(db database.DB) http.HandlerFunc {
 			return
 		}
 		findingID := mux.Vars(r)["id"]
-		// PROC-3 FIX: X-User-ID header is forgeable; derive actor from JWT sub.
+		// X-User-ID header is forgeable; derive actor from JWT sub.
 		actorID := auth.GetUserID(r.Context())
 
 		var existing []map[string]any

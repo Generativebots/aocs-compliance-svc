@@ -23,8 +23,8 @@ import (
 
 // bulkHITLResolveRequest is the JSON body for POST /hitl/ops/resolve.
 type bulkHITLResolveRequest struct {
-	DecisionIDs []string `json:"decision_ids"` // required, max 50
-	Verdict     string   `json:"verdict"`      // APPROVED | REJECTED | ESCALATED
+	DecisionIDs []string `json:"decision_ids"`               // required, max 50
+	Verdict     string   `json:"verdict"`                    // APPROVED | REJECTED | ESCALATED
 	Reason      string   `json:"reason" validate:"required"` // human-readable rationale
 }
 

@@ -88,7 +88,7 @@ type CreateCaseInput struct {
 	DepartmentID string         `json:"department_id,omitempty"`
 	CaseSource   string         `json:"case_source"` // gate|sentinel|manual|gra|sop_drift
 	ContextData  map[string]any `json:"context_data,omitempty"`
-	// CIP-4: Sentinel escalation — set when case is created from a senti_alert
+	// Sentinel escalation — set when case is created from a senti_alert
 	AlertID            string `json:"alert_id,omitempty"`
 	EscalatedFromAlert bool   `json:"escalated_from_alert,omitempty"`
 	// Patent §8: Evidence chain linkage
@@ -147,11 +147,11 @@ func CreateCase(
 		return nil, fmt.Errorf("caselifecycle.CreateCase: db is nil")
 	}
 
-	// 4.1 FIX: Always use generatePlatformID() — never 6-char hash (invariant #9)
+	// 4.1 Always use generatePlatformID() — never 6-char hash (invariant #9)
 	caseID := generatePlatformID()
 	now := time.Now().UTC()
 
-	// 4.3 FIX: Set SLA deadline from priority (CIP-2).
+	// 4.3 Set SLA deadline from priority (CIP-2).
 	priority := input.Priority
 	if priority == "" {
 		priority = PriorityNormal
@@ -228,11 +228,11 @@ func CreateCase(
 		"case_source", caseSource,
 	)
 
-	// 4.2 FIX: Write lifecycle event (CIP-2 audit trail)
+	// 4.2 Write lifecycle event (CIP-2 audit trail)
 	writeLifecycleEvent(ctx, db, caseID, input.TenantID,
 		"", string(StatusPending), input.Reason, "system", r1)
 
-	// CIP-4 FIX: If escalated from a Sentinel alert, mark the alert record
+	// If escalated from a Sentinel alert, mark the alert record
 	if input.EscalatedFromAlert && input.AlertID != "" {
 		markAlertEscalated(ctx, db, input.AlertID, input.TenantID, caseID, r1)
 	}
@@ -266,7 +266,7 @@ func CreateCase(
 		})
 		orderKey := input.TenantID + ":" + input.AgentID
 		broker := psBroker
-		// CONC-1: anonymous goroutine — ensure this is lifecycle-managed via svcboot.BgCtx
+		// anonymous goroutine — ensure this is lifecycle-managed via svcboot.BgCtx
 		concurrent.Go("aocs-compliance/compliance/case_lifecycle", func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -339,7 +339,7 @@ func writeLifecycleEvent(
 	}
 	// aocs_case_lifecycle_events is the compliance record; aocs_hitl_timeline is the
 	// analytics timeseries that powers the HITL workload and SLA dashboards.
-	// F-HITL-01 FIX: was _ = (silent drop). SLA dashboard gaps break regulator reporting.
+	// was _ = (silent drop). SLA dashboard gaps break regulator reporting.
 	tlRow := map[string]any{
 		"event_id":    generatePlatformID(),
 		"entity_id":   caseID,
@@ -367,7 +367,7 @@ func writeLifecycleEvent(
 }
 
 // markAlertEscalated sets escalated_to_hitl=true and hitl_decision_id on the senti_alert.
-// CIP-4: Sentinel→HITL auto-escalation — links the alert to the created case.
+// Sentinel→HITL auto-escalation — links the alert to the created case.
 func markAlertEscalated(ctx context.Context, db database.DB, alertID, tenantID, caseID string, rc ...*serviceclient.Client) {
 	var r1 *serviceclient.Client
 	if len(rc) > 0 {

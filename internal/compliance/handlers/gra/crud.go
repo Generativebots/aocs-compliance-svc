@@ -86,7 +86,7 @@ func HandleAdminCreateFederationPeer(db database.DB) http.HandlerFunc {
 		}
 
 		// Write core_legal — peer activation consent record.
-		// CONC-1: anonymous goroutine — ensure this is lifecycle-managed via svcboot.BgCtx
+		// anonymous goroutine — ensure this is lifecycle-managed via svcboot.BgCtx
 		concurrent.Go("admin/crud", func() {
 			peerTenantID := req.PartnerTenantID
 			if peerTenantID == "" {
@@ -122,7 +122,6 @@ func HandleAdminUpdateFederationPeer(db database.DB) http.HandlerFunc {
 			return
 		}
 		respond.LimitBody(r)
-		// Previously any JSON key was forwarded directly to UpdateRowCompound → column injection.
 		var req struct {
 			Name        string         `json:"name"`
 			Description string         `json:"description"`
@@ -266,7 +265,6 @@ func HandleUpdateGovernanceProposal(db database.DB) http.HandlerFunc {
 			return
 		}
 		respond.LimitBody(r)
-		// Previously any JSON key was forwarded directly to UpdateRowCompound → column injection into governance tables.
 		var req struct {
 			Title       string         `json:"title"`
 			Description string         `json:"description"`
@@ -300,7 +298,7 @@ func HandleUpdateGovernanceProposal(db database.DB) http.HandlerFunc {
 		// When status transitions to VOTING, insert an core_gov_rounds record
 		// so the governance round is tracked for voting quorum calculations.
 		if req.Status == "VOTING" {
-			// CONC-1: anonymous goroutine — ensure this is lifecycle-managed via svcboot.BgCtx
+			// anonymous goroutine — ensure this is lifecycle-managed via svcboot.BgCtx
 			concurrent.Go("admin/crud", func() {
 				if _dbErr := db.InsertRow(database.TblCoreGovRounds, map[string]any{
 					"tenant_id":   tenantID,

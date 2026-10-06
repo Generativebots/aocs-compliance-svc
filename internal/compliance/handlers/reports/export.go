@@ -57,7 +57,7 @@ func HandleExportHistory(db database.DB) http.HandlerFunc {
 	}
 }
 
-// HANDLER-1 FIX: Canonical name alias — HandleListExportHistory is the enterprise AIP standard name.
+// Canonical name alias — HandleListExportHistory is the enterprise AIP standard name.
 // Handle{Verb}{Noun} where Verb ∈ {Create, Get, List, Update, Delete}.
 // HandleExportHistory kept for backward compatibility; new code should use HandleListExportHistory.
 var HandleListExportHistory = HandleExportHistory

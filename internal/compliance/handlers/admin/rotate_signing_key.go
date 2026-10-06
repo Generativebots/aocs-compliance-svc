@@ -27,8 +27,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/ocx/shared/respond"
 	"github.com/ocx/shared/infra/security"
+	"github.com/ocx/shared/respond"
 )
 
 // RotateSigningKeyDB is the DB interface needed by the rotate handler.

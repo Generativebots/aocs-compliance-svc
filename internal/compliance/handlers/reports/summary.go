@@ -10,8 +10,6 @@ import (
 )
 
 // HandleGetAnalyticsQuery — POST /api/v1/analytics/query
-// Was returning HTTP 501. Now performs real DB reads across key
-// analytics tables and returns aggregated results keyed to the requested metric.
 
 // generatePlatformID generates a platform-standard ID: YYYYMM + 8 UPPERCASE alphanumeric chars.
 func generatePlatformID() string { return idgen.GenID() }

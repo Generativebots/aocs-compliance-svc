@@ -88,17 +88,17 @@ func HandleCheckSybil(sybil *security.SybilDetector, db database.DB, coreClients
 		if coreClient != nil {
 			// Preferred path: route audit event via ocx-core-svc API.
 			evtPayload := map[string]any{
-				"event_type":  database.PlatformEventSybilDetected,
-				"tenant_id":   tenantID,
-				"agent_id":    agentID,
-				"allowed":     allowed,
-				"ip_address":  ipAddress,
-				"action":      action,
-				"severity":    severity,
-				"intent_id":   r.URL.Query().Get("intent_id"),
-				"activity_id": r.URL.Query().Get("activity_id"),
+				"event_type":   database.PlatformEventSybilDetected,
+				"tenant_id":    tenantID,
+				"agent_id":     agentID,
+				"allowed":      allowed,
+				"ip_address":   ipAddress,
+				"action":       action,
+				"severity":     severity,
+				"intent_id":    r.URL.Query().Get("intent_id"),
+				"activity_id":  r.URL.Query().Get("activity_id"),
 				"execution_id": r.URL.Query().Get("execution_id"),
-				"process_id":  r.URL.Query().Get("process_id"),
+				"process_id":   r.URL.Query().Get("process_id"),
 			}
 			if postErr := coreClient.PostEvent(r.Context(), evtPayload); postErr != nil {
 				slog.Error("Failed to persist sybil event via coreClient", "agent_id", agentID, "error", postErr)
@@ -107,13 +107,13 @@ func HandleCheckSybil(sybil *security.SybilDetector, db database.DB, coreClients
 			// Fallback: direct DB (no coreClient wired).
 			allowedBool := allowed
 			evt := database.PlatformEvent{
-				EventType: database.PlatformEventSybilDetected,
-				TenantID:  tenantID,
-				AgentID:   agentID,
-				Allowed:   &allowedBool,
-				IPAddress: ipAddress,
-				Action:    action,
-				Severity:  severity,
+				EventType:   database.PlatformEventSybilDetected,
+				TenantID:    tenantID,
+				AgentID:     agentID,
+				Allowed:     &allowedBool,
+				IPAddress:   ipAddress,
+				Action:      action,
+				Severity:    severity,
 				IntentID:    r.URL.Query().Get("intent_id"),
 				ActivityID:  r.URL.Query().Get("activity_id"),
 				ExecutionID: r.URL.Query().Get("execution_id"),
@@ -142,7 +142,7 @@ func HandleValidateNonce(nonce *security.NonceStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		respond.LimitBody(r)
 		var req NonceValidateRequest
-	// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
+		// (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &req) {
 			return
 		}

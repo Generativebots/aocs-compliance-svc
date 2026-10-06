@@ -1,4 +1,4 @@
-// compliance_delivery.go — GAP-R3 FIX: Compliance report delivery verification and on-demand delivery.
+// compliance_delivery.go — Compliance report delivery verification and on-demand delivery.
 //
 // cron_expression + notify_emails to schedule_config JSONB, but there was NO:
 //  1. Background worker / pg_cron job reading scheduled_reports and sending emails
@@ -363,13 +363,9 @@ type smtpDeliveryConfig struct {
 // loadTenantSMTPForDelivery loads SMTP config from core_tenant_smtp and
 // decrypts the stored API key / password before returning.
 //
-// CQ-04 FIX: Previously passed r.APIKeyEnc (AES-GCM ciphertext) directly as the
-// SMTP password. smtp.PlainAuth sends this blob to the SMTP server verbatim —
-// authentication always fails. Fixed: decrypt using AES-GCM + OCX_ENCRYPTION_KEY
-// (same approach as tenant.decryptValue). Falls back to base64 decode when
 // OCX_ENCRYPTION_KEY is not set (matching the original tenant.loadSMTPConfig behavior).
 func loadTenantSMTPForDelivery(ctx context.Context, db database.DB, tenantID string) (*smtpDeliveryConfig, error) {
-	// B7 FIX: SMTP config is a typed SMTP credential in core_tenant_creds
+	// SMTP config is a typed SMTP credential in core_tenant_creds
 	// (written by aocs-system-svc tenant/smtp.go). The previous query selected
 	// host/port/... columns that core_tenant_creds does not have.
 	r, err := database.LoadTenantSMTP(ctx, db, tenantID)
@@ -377,7 +373,7 @@ func loadTenantSMTPForDelivery(ctx context.Context, db database.DB, tenantID str
 		return nil, fmt.Errorf("no SMTP config found for tenant %s: %w", tenantID, err)
 	}
 
-	// CQ-04 FIX: Decrypt the stored API key before use.
+	// Decrypt the stored API key before use.
 	// The tenant SMTP handler (tenant/smtp.go) stores the password via encryptValue()
 	// which uses AES-GCM when OCX_ENCRYPTION_KEY is set, or base64 otherwise.
 	// We must reverse that transformation here before passing to smtp.PlainAuth.

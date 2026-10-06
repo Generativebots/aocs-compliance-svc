@@ -32,9 +32,6 @@ type dbQuery struct {
 
 // runConcurrent runs N DB queries in parallel, scoped to the HTTP request context.
 //
-// N-2 FIX: Previously called runConcurrentCtx(context.Background(), ...) which meant
-// client disconnects were never propagated — in-flight DB queries ran for the full
-// 10s cap even after the response was abandoned, wasting pgx pool connections.
 // Now the request context is the root: client disconnect cancels all sub-queries.
 func runConcurrent(ctx context.Context, queries []dbQuery) {
 	// 10s hard cap overlaid on the request context — whichever fires first wins.
@@ -137,7 +134,7 @@ func HandleGetAccessClaims(db database.DB) http.HandlerFunc {
 		runConcurrent(r.Context(), []dbQuery{
 			// nolint:tenant_filter — SuperAdmin RBAC view: cross-tenant permission data
 			{fn: func() error {
-				// B7: syst_role_perms is dropped — expand syst_roles.permissions (platform roles).
+				// syst_role_perms is dropped — expand syst_roles.permissions (platform roles).
 				rows, err := database.ListRolePerms(r.Context(), db, "", "")
 				permissions = rows
 				return err
@@ -172,5 +169,5 @@ func HandleGetAccessClaims(db database.DB) http.HandlerFunc {
 // 14. FED GOV DASHBOARD — GET /api/v1/fed/gov/dashboard
 //     Replaces: /gov/proposals + /gov/committee  (2 → 1)
 
-// N-1: HandleGetTrustTaxClaims lives in dashboard_analytics.go (same package).
+// HandleGetTrustTaxClaims lives in dashboard_analytics.go (same package).
 // The stub comment previously here was a maintenance hazard — removed.

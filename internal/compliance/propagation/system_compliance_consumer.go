@@ -20,10 +20,10 @@
 //
 // # DB wiring
 //
-//   READ  (syst_outbox_events):       PLATFORM_DATABASE_URL or SYSTEM_DATABASE_URL → System Supabase DB.
-//   WRITE (compl_tenant_baselines,    svc.DB / db arg                              → Compliance Supabase DB
-//          compl_agent_evidence_vault,                                                (DATABASE_URL for compliance).
-//          compl_idempotency_log):
+//	READ  (syst_outbox_events):       PLATFORM_DATABASE_URL or SYSTEM_DATABASE_URL → System Supabase DB.
+//	WRITE (compl_tenant_baselines,    svc.DB / db arg                              → Compliance Supabase DB
+//	       compl_agent_evidence_vault,                                                (DATABASE_URL for compliance).
+//	       compl_idempotency_log):
 //
 // # Idempotency
 //

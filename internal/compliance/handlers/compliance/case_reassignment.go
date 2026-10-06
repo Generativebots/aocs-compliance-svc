@@ -1,4 +1,4 @@
-// case_reassign.go — D2D-FIX-1 (Sprint 3): Department-to-department case handover.
+// case_reassign.go — D2D-Department-to-department case handover.
 //
 // POST /api/v1/hitl/cases/{id}/reassign
 //
@@ -22,7 +22,6 @@ import (
 
 	"net/http"
 	"time"
-
 
 	"github.com/gorilla/mux"
 	"github.com/ocx/shared/infra/auth"
@@ -55,7 +54,7 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 		respond.LimitBody(r)
 
 		var req ReassignCaseRequest
-	// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
+		// (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &req) {
 			return
 		}
@@ -140,7 +139,7 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 			}
 		}
 
-		// ── D2D-6: Cross-department policy re-evaluation ─────────────────────
+		// ── Cross-department policy re-evaluation ─────────────────────
 		// Compare source dept vs target dept governance policy thresholds.
 		// If policies diverge, surface a policy_conflict in the response for
 		// the Co-Pilot to alert the operator before committing the handover.
@@ -245,7 +244,7 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 			"reason":           req.Reason,
 			"new_sla_hours":    slaHours,
 			"new_sla_deadline": newDeadline,
-			"policy_conflict":  policyConflict, // D2D-6: persisted in audit trail
+			"policy_conflict":  policyConflict, // persisted in audit trail
 		})
 		auditRow := map[string]any{
 			"event_type": "case.dept_handover",
@@ -257,7 +256,7 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 			"created_at": now,
 		}
 
-		// P1-B: Atomically update department assignment and insert handover audit event in tx
+		// Atomically update department assignment and insert handover audit event in tx
 		if txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
 			if err := tx.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
 				return err
@@ -288,7 +287,7 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 			"new_sla_deadline": newDeadline,
 			"sla_hours":        slaHours,
 		}
-		// D2D-6: Co-Pilot surface — include advisory policy conflict if detected
+		// Co-Pilot surface — include advisory policy conflict if detected
 		if policyConflict != "" {
 			resp["policy_conflict"] = policyConflict
 			resp["requires_confirmation"] = true

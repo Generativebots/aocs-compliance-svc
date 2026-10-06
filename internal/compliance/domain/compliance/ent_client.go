@@ -97,8 +97,6 @@ func (e *EntClient) DetectHallucination(
 	var respBytes []byte
 	err = e.conn.Invoke(ctx, "/aocs.ent.EntService/DetectHallucination", reqBytes, &respBytes)
 	if err != nil {
-		// FIX-HALL-01: Previously fail-open returned hallucination_detected=false/LOW regardless
-		// of content, making the stage entirely useless when ENT is down (common in dev/staging).
 		// Now: run the local rule-based scorer as a fallback so obvious patterns are caught
 		// even without the ML service. IsFallback=true signals the audit dashboard that the
 		// score came from the local scorer, not the full ML pipeline.

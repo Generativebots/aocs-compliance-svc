@@ -25,7 +25,7 @@ func HandleDeleteSIEMConfig(db database.DB) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		// B7 FIX: soft-disable the shared SIEM credential (keeps audit trail).
+		// soft-disable the shared SIEM credential (keeps audit trail).
 		err := database.SetTenantCredentialActive(r.Context(), db, tenantID, database.CredTypeCustom, database.CredProviderSIEM, false)
 		if errors.Is(err, database.ErrCredentialNotFound) {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "no SIEM config found for tenant")

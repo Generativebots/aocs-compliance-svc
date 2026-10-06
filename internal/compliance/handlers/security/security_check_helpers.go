@@ -8,7 +8,7 @@ import (
 )
 
 // tenantFromRequest extracts the tenant ID from the JWT context using fail-closed semantics.
-// SEC-5+SEC-6 FIX: Removed IsDevelopment() header bypass — JWT context is the sole
+// SEC-5+Removed IsDevelopment() header bypass — JWT context is the sole
 // source of truth. Any missing tenant causes a 401; no header override allowed on any env.
 //
 // Usage:

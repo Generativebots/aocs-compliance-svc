@@ -101,7 +101,7 @@ func HandleAdminListAuthorityContracts(db database.DB) http.HandlerFunc {
 		}
 		respond.JSON(w, http.StatusOK, map[string]any{
 			"contract_records": contracts,
-			"total":     len(contracts),
+			"total":            len(contracts),
 		})
 	}
 }

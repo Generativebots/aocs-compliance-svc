@@ -37,7 +37,7 @@ type JuryClientAdapter struct {
 // AuditIntent implements contracts.IntentAuditor.
 //
 // Parameter order: tenantID, txID, agentID, toolName, intentID, departmentID, params.
-// intentID and departmentID were added in G2 FIX so the Jury can apply intent-scoped ML policy rules.
+// intentID and departmentID were added in so the Jury can apply intent-scoped ML policy rules.
 func (a *JuryClientAdapter) AuditIntent(
 	ctx context.Context,
 	tenantID, txID, agentID, toolName string,

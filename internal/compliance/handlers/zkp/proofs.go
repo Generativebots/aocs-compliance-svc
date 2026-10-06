@@ -17,8 +17,8 @@ import (
 	"github.com/ocx/shared/infra/config"
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/respond"
-	"github.com/ocx/shared/validate"
 	"github.com/ocx/shared/types"
+	"github.com/ocx/shared/validate"
 )
 
 // POST /api/v1/zkp/proofs

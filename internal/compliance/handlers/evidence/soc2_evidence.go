@@ -43,42 +43,42 @@ import (
 
 // SOC2EvidencePackage is the structured evidence document for SOC2 Type II audit.
 type SOC2EvidencePackage struct {
-	PackageID    string    `json:"package_id"`
-	TenantID     string    `json:"tenant_id"`
-	GeneratedAt  string    `json:"generated_at"`
-	GeneratedBy  string    `json:"generated_by"`
-	PeriodStart  string    `json:"period_start"`
-	PeriodEnd    string    `json:"period_end"`
-	AuditType    string    `json:"audit_type"` // SOC2_TYPE_I | SOC2_TYPE_II
-	Status       string    `json:"status"`     // DRAFT | READY | SUBMITTED
+	PackageID   string `json:"package_id"`
+	TenantID    string `json:"tenant_id"`
+	GeneratedAt string `json:"generated_at"`
+	GeneratedBy string `json:"generated_by"`
+	PeriodStart string `json:"period_start"`
+	PeriodEnd   string `json:"period_end"`
+	AuditType   string `json:"audit_type"` // SOC2_TYPE_I | SOC2_TYPE_II
+	Status      string `json:"status"`     // DRAFT | READY | SUBMITTED
 
 	// Control evidence, keyed by TSC category
-	ControlEnvironment   SOC2ControlSection `json:"CC1_control_environment"`
-	Communication        SOC2ControlSection `json:"CC2_communication"`
-	RiskAssessment       SOC2ControlSection `json:"CC3_risk_assessment"`
-	Monitoring           SOC2ControlSection `json:"CC4_monitoring"`
-	ControlActivities    SOC2ControlSection `json:"CC5_control_activities"`
-	LogicalAccess        SOC2ControlSection `json:"CC6_logical_access"`
-	SystemOperations     SOC2ControlSection `json:"CC7_system_operations"`
-	ChangeManagement     SOC2ControlSection `json:"CC8_change_management"`
-	RiskMitigation       SOC2ControlSection `json:"CC9_risk_mitigation"`
-	Availability         SOC2ControlSection `json:"A1_availability"`
+	ControlEnvironment SOC2ControlSection `json:"CC1_control_environment"`
+	Communication      SOC2ControlSection `json:"CC2_communication"`
+	RiskAssessment     SOC2ControlSection `json:"CC3_risk_assessment"`
+	Monitoring         SOC2ControlSection `json:"CC4_monitoring"`
+	ControlActivities  SOC2ControlSection `json:"CC5_control_activities"`
+	LogicalAccess      SOC2ControlSection `json:"CC6_logical_access"`
+	SystemOperations   SOC2ControlSection `json:"CC7_system_operations"`
+	ChangeManagement   SOC2ControlSection `json:"CC8_change_management"`
+	RiskMitigation     SOC2ControlSection `json:"CC9_risk_mitigation"`
+	Availability       SOC2ControlSection `json:"A1_availability"`
 }
 
 // SOC2ControlSection holds evidence items and metadata for one TSC category.
 type SOC2ControlSection struct {
-	Criteria    string            `json:"criteria"`
-	Description string            `json:"description"`
-	Evidence    []SOC2EvidenceItem `json:"evidence"`
-	ControlStatus string          `json:"control_status"` // EFFECTIVE | PARTIAL | NOT_TESTED
-	Notes       string            `json:"notes,omitempty"`
+	Criteria      string             `json:"criteria"`
+	Description   string             `json:"description"`
+	Evidence      []SOC2EvidenceItem `json:"evidence"`
+	ControlStatus string             `json:"control_status"` // EFFECTIVE | PARTIAL | NOT_TESTED
+	Notes         string             `json:"notes,omitempty"`
 }
 
 // SOC2EvidenceItem is a single piece of evidence with source traceability.
 type SOC2EvidenceItem struct {
-	Type        string `json:"type"`        // SYSTEM_GENERATED | MANUAL | POLICY | AUDIT_LOG
+	Type        string `json:"type"` // SYSTEM_GENERATED | MANUAL | POLICY | AUDIT_LOG
 	Description string `json:"description"`
-	Source      string `json:"source"`      // table/handler that produced this
+	Source      string `json:"source"` // table/handler that produced this
 	Count       int    `json:"count,omitempty"`
 	Period      string `json:"period,omitempty"`
 }
@@ -132,7 +132,9 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 		// Each count becomes an evidence item for the respective TSC category.
 
 		// CC5/CC6: Active policies and gate verdicts
-		var policyRows []struct{ PolicyID string `json:"policy_id"` }
+		var policyRows []struct {
+			PolicyID string `json:"policy_id"`
+		}
 		policyCount := 0
 		// Reads core_policies to count active governance policies for TSC CC5/CC6 evidence.
 		if err := db.QueryRowsCompound(database.TblCorePolicies, "policy_id",
@@ -140,16 +142,20 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 			policyCount = len(policyRows)
 		}
 
-		// CC7: Compliance cases (incidents, violations)
-		var violationRows []struct{ CaseID string `json:"case_id"` }
+		// Compliance cases (incidents, violations)
+		var violationRows []struct {
+			CaseID string `json:"case_id"`
+		}
 		violationCount := 0
 		if err := db.QueryRowsCompound(database.TblCoreCompliance, "case_id",
 			"tenant_id", tenantID, "case_type", "VIOLATION", &violationRows); err == nil {
 			violationCount = len(violationRows)
 		}
 
-		// CC6: Active agents (each represents an access principal)
-		var agentRows []struct{ AgentID string `json:"agent_id"` }
+		// Active agents (each represents an access principal)
+		var agentRows []struct {
+			AgentID string `json:"agent_id"`
+		}
 		agentCount := 0
 		if err := db.QueryRowsCompound(database.TblCoreAgents, "agent_id",
 			"tenant_id", tenantID, "status", "ACTIVE", &agentRows); err == nil {
@@ -157,15 +163,19 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 		}
 
 		// CC4/CC7: HITL cases (human monitoring decisions)
-		var hitlRows []struct{ CaseID string `json:"case_id"` }
+		var hitlRows []struct {
+			CaseID string `json:"case_id"`
+		}
 		hitlCount := 0
 		if err := db.QueryRowsCompound(database.TblCoreCompliance, "case_id",
 			"tenant_id", tenantID, "case_type", "HITL", &hitlRows); err == nil {
 			hitlCount = len(hitlRows)
 		}
 
-		// CC3: GRA risk assessments
-		var graRows []struct{ CaseID string `json:"case_id"` }
+		// GRA risk assessments
+		var graRows []struct {
+			CaseID string `json:"case_id"`
+		}
 		graCount := 0
 		if err := db.QueryRowsCompound(database.TblGRACases, "case_id",
 			"tenant_id", tenantID, "case_type", "RISK_ASSESSMENT", &graRows); err == nil {
@@ -192,8 +202,8 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 			Status:      "DRAFT",
 
 			ControlEnvironment: SOC2ControlSection{
-				Criteria:    "CC1 — Control Environment",
-				Description: "Governance structure, accountability, and oversight mechanisms.",
+				Criteria:      "CC1 — Control Environment",
+				Description:   "Governance structure, accountability, and oversight mechanisms.",
 				ControlStatus: "EFFECTIVE",
 				Evidence: []SOC2EvidenceItem{
 					{Type: "SYSTEM_GENERATED", Description: "RBAC permission matrix enforced via AOCS auth middleware", Source: "ocx-shared-go/infra/auth", Count: 0},
@@ -203,8 +213,8 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 			},
 
 			Communication: SOC2ControlSection{
-				Criteria:    "CC2 — Communication and Information",
-				Description: "Internal and external communication of security and compliance controls.",
+				Criteria:      "CC2 — Communication and Information",
+				Description:   "Internal and external communication of security and compliance controls.",
 				ControlStatus: "EFFECTIVE",
 				Evidence: []SOC2EvidenceItem{
 					{Type: "SYSTEM_GENERATED", Description: "EU AI Act Art.13 transparency card generation", Source: "aocs-compliance/handlers/compliance/eu_ai_act.go"},
@@ -213,8 +223,8 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 			},
 
 			RiskAssessment: SOC2ControlSection{
-				Criteria:    "CC3 — Risk Assessment",
-				Description: "Risk identification, analysis, and response processes.",
+				Criteria:      "CC3 — Risk Assessment",
+				Description:   "Risk identification, analysis, and response processes.",
 				ControlStatus: "EFFECTIVE",
 				Evidence: []SOC2EvidenceItem{
 					{Type: "SYSTEM_GENERATED", Description: "GRA (Governance Risk Assessment) cases in period", Source: "core_compliance (case_type=RISK_ASSESSMENT)", Count: graCount, Period: req.PeriodStart + " to " + req.PeriodEnd},
@@ -224,8 +234,8 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 			},
 
 			Monitoring: SOC2ControlSection{
-				Criteria:    "CC4 — Monitoring Activities",
-				Description: "Ongoing monitoring and evaluation of system controls.",
+				Criteria:      "CC4 — Monitoring Activities",
+				Description:   "Ongoing monitoring and evaluation of system controls.",
 				ControlStatus: "EFFECTIVE",
 				Evidence: []SOC2EvidenceItem{
 					{Type: "SYSTEM_GENERATED", Description: "HITL (Human-in-the-Loop) oversight decisions in period", Source: "core_compliance (case_type=HITL)", Count: hitlCount, Period: req.PeriodStart + " to " + req.PeriodEnd},
@@ -235,8 +245,8 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 			},
 
 			ControlActivities: SOC2ControlSection{
-				Criteria:    "CC5 — Control Activities",
-				Description: "Policies, procedures, and controls that address risk responses.",
+				Criteria:      "CC5 — Control Activities",
+				Description:   "Policies, procedures, and controls that address risk responses.",
 				ControlStatus: "EFFECTIVE",
 				Evidence: []SOC2EvidenceItem{
 					{Type: "SYSTEM_GENERATED", Description: "Active enforcement policies in period", Source: "core_policies (status=ACTIVE)", Count: policyCount, Period: req.PeriodStart + " to " + req.PeriodEnd},
@@ -246,8 +256,8 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 			},
 
 			LogicalAccess: SOC2ControlSection{
-				Criteria:    "CC6 — Logical and Physical Access Controls",
-				Description: "Authentication, authorisation, and access control mechanisms.",
+				Criteria:      "CC6 — Logical and Physical Access Controls",
+				Description:   "Authentication, authorisation, and access control mechanisms.",
 				ControlStatus: "EFFECTIVE",
 				Evidence: []SOC2EvidenceItem{
 					{Type: "SYSTEM_GENERATED", Description: "Active AI agents — each with scoped authority profile", Source: "core_agents (status=ACTIVE)", Count: agentCount, Period: req.PeriodStart + " to " + req.PeriodEnd},
@@ -258,8 +268,8 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 			},
 
 			SystemOperations: SOC2ControlSection{
-				Criteria:    "CC7 — System Operations",
-				Description: "Detection of and response to security events and incidents.",
+				Criteria:      "CC7 — System Operations",
+				Description:   "Detection of and response to security events and incidents.",
 				ControlStatus: "EFFECTIVE",
 				Evidence: []SOC2EvidenceItem{
 					{Type: "SYSTEM_GENERATED", Description: "Compliance violations (incidents) in period", Source: "core_compliance (case_type=VIOLATION)", Count: violationCount, Period: req.PeriodStart + " to " + req.PeriodEnd},
@@ -270,10 +280,10 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 			},
 
 			ChangeManagement: SOC2ControlSection{
-				Criteria:    "CC8 — Change Management",
-				Description: "SDLC controls, change testing, and deployment management.",
+				Criteria:      "CC8 — Change Management",
+				Description:   "SDLC controls, change testing, and deployment management.",
 				ControlStatus: "PARTIAL",
-				Notes:        "CI/CD pipeline documented. Formal change advisory board process recommended for SOC2 Type II.",
+				Notes:         "CI/CD pipeline documented. Formal change advisory board process recommended for SOC2 Type II.",
 				Evidence: []SOC2EvidenceItem{
 					{Type: "MANUAL", Description: "GitHub Actions CI/CD with change detection per service", Source: ".github/workflows"},
 					{Type: "MANUAL", Description: "Policy Studio enforces explicit APPROVED state before PUBLISHED — no direct production writes", Source: "aocs-studio-svc"},
@@ -282,8 +292,8 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 			},
 
 			RiskMitigation: SOC2ControlSection{
-				Criteria:    "CC9 — Risk Mitigation",
-				Description: "Vendor and business partner risk management.",
+				Criteria:      "CC9 — Risk Mitigation",
+				Description:   "Vendor and business partner risk management.",
 				ControlStatus: "EFFECTIVE",
 				Evidence: []SOC2EvidenceItem{
 					{Type: "SYSTEM_GENERATED", Description: "AI provider credential isolation per tenant (not shared)", Source: "aocs-system-svc/handlers/agents/provider_oauth.go"},
@@ -293,8 +303,8 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 			},
 
 			Availability: SOC2ControlSection{
-				Criteria:    "A1 — Availability",
-				Description: "System availability, capacity, and incident SLA performance.",
+				Criteria:      "A1 — Availability",
+				Description:   "System availability, capacity, and incident SLA performance.",
 				ControlStatus: "EFFECTIVE",
 				Evidence: []SOC2EvidenceItem{
 					{Type: "SYSTEM_GENERATED", Description: "SLA breach monitoring (aocs-hub/handlers/sla)", Source: "aocs-hub"},

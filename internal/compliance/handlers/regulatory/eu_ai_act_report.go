@@ -223,7 +223,7 @@ func HandleSubmitEUAIActReport(db database.DB) http.HandlerFunc {
 		// Parse the stored report and update filing metadata
 		var stored RegulatoryReport
 		if caseData, ok := cases[0]["case_data"].(string); ok {
-			// COMP-03 FIX: was _ = json.Unmarshal (silently dropped). If the stored DRAFT
+			// was _ = json.Unmarshal (silently dropped). If the stored DRAFT
 			// report JSON is corrupt, stored stays zero-value and the EU AI Act filing is
 			// submitted with all mandatory fields (Art.13 card, risk classification, agent
 			// scope) silently missing. Regulatory filings must never proceed on corrupt data.

@@ -39,7 +39,7 @@ func registerIntelComplianceRoutes(
 	// from LicenseFeatureGuard("compliance") — allowing Studio to render unpurchased
 	// compliance nodes in locked/upgrade-prompt state for tenants before buying compliance.
 
-	// ── GAP-P3: Consolidated Dashboard Summary (Batch SWR Elimination) ───────
+	// ── Consolidated Dashboard Summary (Batch SWR Elimination) ───────
 	api.HandleFunc("/compliance/dashboard-summary", auth.RequireAccess(pc, "compliance", "read", compliance.HandleGetComplianceDashboardSummary(db))).Methods("GET")
 
 	// ── Violations ────────────────────────────────────────────────────────────
@@ -184,7 +184,7 @@ func registerIntelComplianceRoutes(
 	api.HandleFunc("/compliance/siem", auth.RequireAccess(pc, "compliance", "write", compliance.HandleUpdateComplianceSIEMConfig(db))).Methods("PUT")
 	api.HandleFunc("/compliance/siem", auth.RequireAccess(pc, "compliance", "write", compliance.HandleUpdateComplianceSIEMConfig(db))).Methods("POST")
 
-	// ── COMP-P1: EU AI Act Article 13 — Formal Regulatory Report ─────────────
+	// ── EU AI Act Article 13 — Formal Regulatory Report ─────────────
 	// GET  /compliance/regulatory/eu-ai-act/report        → generate DRAFT report artefact
 	// POST /compliance/regulatory/eu-ai-act/report/submit → file (immutable FILED state)
 	// GET  /compliance/regulatory/eu-ai-act/report/{id}   → retrieve saved report
@@ -266,7 +266,7 @@ func registerIntelComplianceRoutes(
 		auth.RequireAccess(pc, "compliance", "read",
 			compliance.HandleAdminListParsedDocuments(db))).Methods("GET")
 
-	// ── compliance.compliance_cases — investigative case store (C1 FIX 2026-09-04) ──
+	// ── compliance.compliance_cases — investigative case store (2026-09-04) ──
 	// DISTINCT from /compliance/cases which backs core_hitl (HITL decisions in ocx-core-svc).
 	// These routes manage the compliance-module's own investigation case tracking.
 	api.HandleFunc("/compliance/investigation-cases",

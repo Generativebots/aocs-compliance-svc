@@ -329,7 +329,7 @@ func (v *ZKPVerifier) verifyEd25519Proof(challenge *ZKPChallenge, proof *ZKPProo
 // without the prover revealing the exact score.
 // Uses Ed25519 signature verification instead of HMAC.
 // verifyTrustRangeProof implements a Pedersen commitment range proof for trust scores.
-// T1 FIX: Previous implementation used ONLY Ed25519 signature — this proves KEY OWNERSHIP,
+// Previous implementation used ONLY Ed25519 signature — this proves KEY OWNERSHIP,
 //
 // Protocol (simplified Sigma-protocol / interactive proof):
 //

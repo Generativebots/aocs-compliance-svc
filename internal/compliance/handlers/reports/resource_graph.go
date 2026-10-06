@@ -18,7 +18,7 @@ import (
 )
 
 // getResourceTenantID extracts tenant ID from JWT context only.
-// SEC-5 FIX: Removed URL-param tenant_id fallback — JWT context is sole source of truth.
+// Removed URL-param tenant_id fallback — JWT context is sole source of truth.
 // Returns empty string if not authenticated (callers must check and reject).
 func getResourceTenantID(r *http.Request) string {
 	tenantID, _ := auth.GetTenantID(r.Context())
@@ -131,7 +131,7 @@ func HandleSyncConnectorDocuments(db database.DB) http.HandlerFunc {
 					"documents_synced": synced,
 				},
 			); _wErr != nil {
-				slog.Error("SILENT_DROP_FIXED: UpdateRowCompound",
+				slog.Error("db write failed: UpdateRowCompound",
 					"table", database.TblConrRagSources, "file", "reports/resource_graph.go", "err", _wErr)
 			}
 		}(syncCtx, tenantID, connectorID, connType, displayName, connector)
@@ -146,7 +146,7 @@ func HandleSyncConnectorDocuments(db database.DB) http.HandlerFunc {
 	}
 }
 
-// HANDLER-1 FIX: Canonical name alias — HandleCreateConnectorSyncJob is the Enterprise AIP standard name.
+// Canonical name alias — HandleCreateConnectorSyncJob is the Enterprise AIP standard name.
 // Handle{Verb}{Noun} where Verb ∈ {Create, Get, List, Update, Delete}.
 // HandleSyncConnectorDocuments kept for backward compatibility; new code should use HandleCreateConnectorSyncJob.
 var HandleCreateConnectorSyncJob = HandleSyncConnectorDocuments

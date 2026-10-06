@@ -126,12 +126,12 @@ func HandleListEvidence(db database.DB) http.HandlerFunc {
 			records = []database.QCoreEvidenceRecord{}
 		}
 
-		// GAP-P3 FIX: inline tamper detection on list.
+		// inline tamper detection on list.
 		// Records with hash mismatch are flagged — never silently returned.
 		type evidenceWithIntegrity struct {
 			database.QCoreEvidenceRecord
-			IntegrityOK    bool   `json:"integrity_ok"`
-			TamperDetected bool   `json:"tamper_detected,omitempty"`
+			IntegrityOK    bool `json:"integrity_ok"`
+			TamperDetected bool `json:"tamper_detected,omitempty"`
 		}
 		result := make([]evidenceWithIntegrity, 0, len(records))
 		tamperedCount := 0
@@ -259,7 +259,7 @@ func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 		record.ChainHash = hex.EncodeToString(chainSum[:])
 		record.PreviousBlockHash = prevHash
 
-		// GAP-BE3: Attempt insertion with exponential backoff retry & outbox queue fallback
+		// Attempt insertion with exponential backoff retry & outbox queue fallback
 		var insertErr error
 		for attempt := 0; attempt < 3; attempt++ {
 			insertErr = db.InsertRow(database.TblCoreEvidenceRecords, record)
@@ -311,7 +311,7 @@ func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 			slog.Warn("CreateEvidence: compl_evidence sync failed after retries, queuing to outbox", "evidence_id", record.ID, "err", syncErr)
 			QueueEvidenceOutbox(database.TblComplEvidence, complRow)
 		}
-		// L-NEW-4 + H-NEW-4 FIX: Audit log for evidence creation.
+		// L-NEW-4 + Audit log for evidence creation.
 		// Evidence IS the audit system — but its own creation must still be attributed.
 		// EU AI Act Art.13 requires all AI decision records to be traceable to their creator.
 		slog.Info("audit: evidence created",
@@ -361,7 +361,7 @@ func HandleGetEvidence(db database.DB) http.HandlerFunc {
 		}
 		rec := result[0]
 
-		// GAP-P3 FIX: verify hash on every GET — tamper-evidence is meaningless if only written.
+		// verify hash on every GET — tamper-evidence is meaningless if only written.
 		// If hash mismatch: log SECURITY alert and return 409 Conflict with tamper details.
 		integrityOK, stored, computed := verifyEvidenceHash(rec)
 		if !integrityOK {
@@ -380,7 +380,7 @@ func HandleGetEvidence(db database.DB) http.HandlerFunc {
 }
 
 // HandleVerifyEvidence — POST /api/v1/evlt/{id}/verify
-// F-RPT-02 FIX: accepts optional vault to check signing availability.
+// accepts optional vault to check signing availability.
 // Returns 503 SERVICE_SIGNING_UNAVAILABLE if signing is disabled.
 func HandleVerifyEvidence(db database.DB, vault ...VaultSigner) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -388,7 +388,7 @@ func HandleVerifyEvidence(db database.DB, vault ...VaultSigner) http.HandlerFunc
 			return
 		}
 
-		// F-RPT-02: Refuse verification when signing is disabled.
+		// Refuse verification when signing is disabled.
 		// Signing disabled = keypair generation failed at startup = no cryptographic proof.
 		if len(vault) > 0 && vault[0] != nil && !vault[0].IsSigningEnabled() {
 			slog.Error("F-RPT-02: VerifyEvidence blocked — signing disabled, evidence would be stamped without crypto proof")
@@ -406,7 +406,7 @@ func HandleVerifyEvidence(db database.DB, vault ...VaultSigner) http.HandlerFunc
 			return
 		}
 
-		// TAMPER-VERIFY FIX: Load the full record (not just tenant_id) so we can
+		// Load the full record (not just tenant_id) so we can
 		// verify the hash BEFORE stamping verified=true. Attesting a tampered record
 		// would produce a false compliance claim — block it with 409.
 		var currentRows []database.QCoreEvidenceRecord
@@ -455,7 +455,7 @@ type VaultSigner interface {
 }
 
 // HandleAttestEvidence — POST /api/v1/evlt/{id}/attest
-// F-RPT-02 FIX: accepts optional vault to check signing availability.
+// accepts optional vault to check signing availability.
 // Returns 503 SERVICE_SIGNING_UNAVAILABLE if signing is disabled.
 func HandleAttestEvidence(db database.DB, vault ...VaultSigner) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -463,7 +463,7 @@ func HandleAttestEvidence(db database.DB, vault ...VaultSigner) http.HandlerFunc
 			return
 		}
 
-		// F-RPT-02: Refuse attestation when signing is disabled.
+		// Refuse attestation when signing is disabled.
 		if len(vault) > 0 && vault[0] != nil && !vault[0].IsSigningEnabled() {
 			slog.Error("F-RPT-02: AttestEvidence blocked — signing disabled, attestation would have no cryptographic proof")
 			respond.ErrorWithCode(w, http.StatusServiceUnavailable, "SERVICE_SIGNING_UNAVAILABLE",
@@ -497,7 +497,7 @@ func HandleAttestEvidence(db database.DB, vault ...VaultSigner) http.HandlerFunc
 		}
 		ownerRec := ownership[0]
 
-		// TAMPER-ATTEST FIX: Verify record integrity BEFORE stamping attestation.
+		// Verify record integrity BEFORE stamping attestation.
 		// Attesting a tampered record creates a false compliance proof — block it.
 		integrityOK, stored, computed := verifyEvidenceHash(ownerRec)
 		if !integrityOK {
@@ -605,7 +605,7 @@ func HandleGetEvidenceAttestations(db database.DB) http.HandlerFunc {
 		}
 		evr := result[0]
 
-		// TAMPER-ATTEST-READ FIX: Verify hash on attestation read.
+		// Verify hash on attestation read.
 		// Returning attestation data from a tampered record without flagging it
 		// could mislead auditors into treating a compromised record as valid.
 		attestIntegrityOK, attestStored, attestComputed := verifyEvidenceHash(evr)
@@ -666,7 +666,7 @@ func HandleListEvidenceAttestations(db database.DB) http.HandlerFunc {
 			if !ev.Attested {
 				continue
 			}
-			// TAMPER-LIST-ATTEST FIX: verify hash on every attested record in the list.
+			// verify hash on every attested record in the list.
 			ok, stored, computed := verifyEvidenceHash(ev)
 			if !ok {
 				tamperedCount++
@@ -727,7 +727,7 @@ func HandleGetEvidenceChainByID(db database.DB) http.HandlerFunc {
 		}
 		evr := result[0]
 
-		// TAMPER-CHAIN FIX: Verify hash on chain read.
+		// Verify hash on chain read.
 		// Chain data is used by ZKP proofs and Merkle validation.
 		// Returning chain metadata from a tampered record poisons downstream proof verification.
 		chainIntegrityOK, chainStored, chainComputed := verifyEvidenceHash(evr)

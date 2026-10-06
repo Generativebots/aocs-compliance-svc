@@ -37,7 +37,7 @@ func HandleRejectJuror(db database.DB) http.HandlerFunc {
 			Reason  string `json:"reason"`
 			JurorID string `json:"juror_id"`
 		}
-		// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
+		// (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &body) {
 			return
 		}
@@ -77,7 +77,7 @@ func HandleRejectJuror(db database.DB) http.HandlerFunc {
 }
 
 // HandleGetRecusalLog — GET /api/v1/hitl/cases/{id}/recusal-log
-// B6 FIX: Returns the recusal_log JSONB array for a HITL case so the case
+// Returns the recusal_log JSONB array for a HITL case so the case
 // detail view (E6) can display the full recusal history panel.
 // recusal_log is an append-only JSONB array: [{juror_id, reason, recused_at}, ...]
 func HandleGetRecusalLog(db database.DB) http.HandlerFunc {

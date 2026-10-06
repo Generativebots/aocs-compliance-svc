@@ -5,7 +5,7 @@
 package reports
 
 // tenantFromRequest extracts the tenant ID from the request context using fail-closed semantics.
-// SEC-5+SEC-6 FIX: Removed IsDevelopment() header bypass — JWT context is the sole
+// SEC-5+Removed IsDevelopment() header bypass — JWT context is the sole
 // source of truth. Any missing tenant causes a 401; no header override allowed.
 //
 // Usage:
@@ -14,5 +14,5 @@ package reports
 //	if !ok { return }
 // tenantFromRequestOrDefault returns the tenant from context without failing —
 // suitable for super-admin list endpoints that may operate cross-tenant.
-// SEC-5 FIX: Returns empty string from context only — no header fallback.
+// Returns empty string from context only — no header fallback.
 // Caller must handle the empty-string case explicitly.

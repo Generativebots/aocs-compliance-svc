@@ -5,8 +5,8 @@ import "encoding/json"
 
 // EvidenceCreateRequest is the body for POST /evaluation/evidence.
 type EvidenceCreateRequest struct {
-	AgentID	string	`json:"agent_id" validate:"required"`
-	ExecutionID	string	`json:"execution_id" validate:"required"`
+	AgentID      string          `json:"agent_id" validate:"required"`
+	ExecutionID  string          `json:"execution_id" validate:"required"`
 	EvidenceType string          `json:"evidence_type"` // output | audit | compliance
 	Content      json.RawMessage `json:"content"`
 	HashAlgo     string          `json:"hash_algo,omitempty"` // sha256 (default)

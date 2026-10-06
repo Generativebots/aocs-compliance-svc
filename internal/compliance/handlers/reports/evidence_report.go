@@ -147,7 +147,6 @@ func HandleUpdateComplianceReport(db database.DB) http.HandlerFunc {
 			return
 		}
 		respond.LimitBody(r)
-		// Previously any JSON key forwarded directly to nexus_compliance_reports.
 		var req struct {
 			ReportType  string          `json:"report_type"`
 			Status      string          `json:"status"    validate:"omitempty,oneof=PENDING RUNNING COMPLETED FAILED CANCELLED"`

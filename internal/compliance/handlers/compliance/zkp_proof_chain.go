@@ -20,11 +20,11 @@ import (
 	"github.com/ocx/shared/infra/config"
 
 	"github.com/gorilla/mux"
-	"github.com/ocx/shared/types"
 	"github.com/ocx/shared/consts"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/respond"
+	"github.com/ocx/shared/types"
 	"github.com/ocx/shared/validate"
 )
 
@@ -150,7 +150,7 @@ func HandleVerifyProofInclusion(db database.DB) http.HandlerFunc {
 				"agent_id", body.AgentID, "period", body.Period, &rows); _dbErr != nil {
 				slog.Error("db.QueryRowsCompound failed (best-effort)", "error", _dbErr)
 			}
-			// SEC-10 FIX: Enforce tenant isolation on ZKP proof chain root.
+			// Enforce tenant isolation on ZKP proof chain root.
 			filtered := rows[:0]
 			for _, row := range rows {
 				if tid, ok := row["tenant_id"].(string); ok && tid == tenantID {
@@ -289,7 +289,7 @@ func HandleExportVerifiableCredential(db database.DB) http.HandlerFunc {
 				"period": body.Period, "chain_root": chainRoot, "proof_count": proofCount,
 			},
 		}
-		// INF-1 FIX: ZKP signing key from centralised config.Get().Security.ZKPSigningKeyB64
+		// ZKP signing key from centralised config.Get().Security.ZKPSigningKeyB64
 		if keyB64 := config.Get().Security.ZKPSigningKeyB64; keyB64 != "" {
 			if kb, err := base64.StdEncoding.DecodeString(keyB64); err == nil && len(kb) == ed25519.PrivateKeySize {
 				vcBytes, marshalErr := json.Marshal(vc)

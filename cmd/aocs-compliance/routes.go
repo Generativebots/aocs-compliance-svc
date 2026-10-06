@@ -41,7 +41,7 @@ func registerComplianceRoutes(
 	// which are gated on secMgr != nil in registerIntelComplianceRoutes.
 	nonceStore := security.NewNonceStore(15 * time.Minute)
 
-	// S3 Fix: Cross-pod collusion detection backed by Supabase.
+	// Cross-pod collusion detection backed by Supabase.
 	// Redis L1 not available here (no Redis client injected into routes).
 	// DB-only mode is valid — Redis L1 is additive performance optimization.
 	var collusionStore security.CollusionStore
@@ -64,7 +64,7 @@ func registerComplianceRoutes(
 		slog.Info("S3: SybilDetector upgraded to cross-pod CollusionStore")
 	}
 
-	// S2 Fix: Load (or create once) the persistent Ed25519 signing key.
+	// Load (or create once) the persistent Ed25519 signing key.
 	// LoadOrCreateSigningKey reads from compliance.platform_signing_keys.
 	// If no active key exists, it generates one and persists it.
 	// PLATFORM_MASTER_KEY must be set — absent → fails-fast (by design).
@@ -96,7 +96,7 @@ func registerComplianceRoutes(
 		slog.Warn("S2: /system/compliance/rotate-signing-key NOT registered — pgx pool unavailable")
 	}
 
-	// SCAN-13: ChallengeVerifier secret — must be set in production via OCX_CHALLENGE_SECRET.
+	// ChallengeVerifier secret — must be set in production via OCX_CHALLENGE_SECRET.
 	challengeSecret := []byte(os.Getenv("OCX_CHALLENGE_SECRET"))
 	if len(challengeSecret) == 0 {
 		if os.Getenv("GOOGLE_CLOUD_PROJECT") != "" {
@@ -118,7 +118,7 @@ func registerComplianceRoutes(
 	registerIntelComplianceRoutes(
 		api, db, pc, pgx,
 		dlpStore,
-		nil,    // entropyMonitor — wire *escrow.EntropyMonitorLive adapter when aocs-hub is available
+		nil, // entropyMonitor — wire *escrow.EntropyMonitorLive adapter when aocs-hub is available
 		secMgr,
 		os.Getenv("INTENT_EXTRACTOR_URL"),
 		coreClient,

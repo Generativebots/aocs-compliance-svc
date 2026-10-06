@@ -2,9 +2,9 @@
 //
 // Resolves FA-27 SEV-1 issues:
 //
-//	S1-47: Sankey data aggregated without tenant_id filter
-//	S1-48: core_ograph_flows not populated by gate events
-//	S1-49: Ograph stats response key mismatch
+//	Sankey data aggregated without tenant_id filter
+//	core_ograph_flows not populated by gate events
+//	Ograph stats response key mismatch
 //
 // All queries derive live from core_events (the canonical gate event log),
 // avoiding the need for a separate core_ograph_flows ETL pipeline.
@@ -26,7 +26,7 @@ type platformEvent struct {
 	ToolName  string          `json:"tool_name"`
 	Payload   json.RawMessage `json:"payload"`
 	CreatedAt string          `json:"created_at"`
-	// GAP-P2 FIX: top-level verdict column fallback.
+	// top-level verdict column fallback.
 	// core_events migrated final_verdict from payload JSON to a top-level column.
 	// Include both so extractPayload can fall back gracefully.
 	Verdict     string `json:"verdict,omitempty"`
@@ -41,8 +41,6 @@ type payloadFields struct {
 
 // OGRAPH STATS — GET /api/v1/analytics/ograph/stats
 //   total_requests, allow_count, block_count, esc_count
-// Previously the handler returned different key names, causing the stats
-// footer to always show zeroes.
 
 // OGRAPH TIMELINE — GET /api/v1/analytics/ograph/timeline
 // Returns the last N gate classification events for the timeline chart.

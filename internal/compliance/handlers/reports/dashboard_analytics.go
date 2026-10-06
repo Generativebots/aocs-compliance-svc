@@ -82,7 +82,7 @@ func HandleGetSanctionSummary(db database.DB) http.HandlerFunc {
 			CreatedAt  string  `json:"created_at"`
 		}
 
-		// X-08 FIX: DB query failure returned empty array → dashboard showed "0 violations"
+		// DB query failure returned empty array → dashboard showed "0 violations"
 		// during outages. Operators saw clean dashboard during most dangerous periods.
 		dataUnavailable := false
 		if tenantID != "" {

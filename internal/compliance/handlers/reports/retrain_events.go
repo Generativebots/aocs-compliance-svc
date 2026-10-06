@@ -10,8 +10,4 @@
 //	  Called by the Python Vertex AI worker when a training job finishes.
 //	  Writes completed_at + model_version to the core_events row.
 //	  This fixes the always-NULL completed_at field on retrain records.
-//
-// Previously: completed_at was always NULL because no endpoint existed for
-// the Python ML worker to signal completion. Training jobs completed silently
-// with no record update.
 package reports

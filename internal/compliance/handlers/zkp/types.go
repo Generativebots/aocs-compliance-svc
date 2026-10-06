@@ -3,7 +3,7 @@ package zkp
 
 // ZKPProofRequest is the body for POST /zkp/prove.
 type ZKPProofRequest struct {
-	AgentID	string	`json:"agent_id" validate:"required"`
+	AgentID   string `json:"agent_id" validate:"required"`
 	ClaimType string `json:"claim_type"` // trust_score | policy_compliance | identity
 	Period    string `json:"period,omitempty"`
 }
@@ -28,10 +28,10 @@ type ZKPBatchRow struct {
 // GenerateZKPProofRequest is the request body for HandleGenerateZKPProof. (8 fields)
 type GenerateZKPProofRequest struct {
 	ProofType string         `json:"proof_type"`
-	AgentID	string	`json:"agent_id" validate:"required"`
+	AgentID   string         `json:"agent_id" validate:"required"`
 	ClaimData map[string]any `json:"claim_data"`
 	Expiry    string         `json:"expiry,omitempty"`
-	ReportID string `json:"report_id,omitempty"`
+	ReportID  string         `json:"report_id,omitempty"`
 	// Actor chain FKs
 	IntentID    string `json:"intent_id,omitempty"`
 	ActivityID  string `json:"activity_id,omitempty"`
@@ -48,7 +48,7 @@ type GenerateZKPProofRequest struct {
 
 // VerifyZKPRequest is the request body for HandleVerifyZKP. (9 fields)
 type VerifyZKPRequest struct {
-	AgentID	string	`json:"agent_id" validate:"required"`
+	AgentID     string   `json:"agent_id" validate:"required"`
 	ProofType   string   `json:"proof_type"`
 	Commitment  string   `json:"commitment"`
 	ProofBytes  string   `json:"proof_bytes"`

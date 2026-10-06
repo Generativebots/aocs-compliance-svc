@@ -35,31 +35,31 @@ import (
 
 // HIPAACheckItem represents a database-backed safeguard check under 45 CFR Part 164.
 type HIPAACheckItem struct {
-	ControlID   string `json:"control_id"`
-	Citation    string `json:"citation"`
-	Title       string `json:"title"`
-	Safeguard   string `json:"safeguard"` // Administrative | Physical | Technical | Privacy
-	Status      string `json:"status"`    // COMPLIANT | IN_PROGRESS | NON_COMPLIANT | WAIVED
-	EvidenceRef string `json:"evidence_ref,omitempty"`
-	EvidenceCount int  `json:"evidence_count"`
-	Details     string `json:"details"`
-	Remediation string `json:"remediation,omitempty"`
+	ControlID     string `json:"control_id"`
+	Citation      string `json:"citation"`
+	Title         string `json:"title"`
+	Safeguard     string `json:"safeguard"` // Administrative | Physical | Technical | Privacy
+	Status        string `json:"status"`    // COMPLIANT | IN_PROGRESS | NON_COMPLIANT | WAIVED
+	EvidenceRef   string `json:"evidence_ref,omitempty"`
+	EvidenceCount int    `json:"evidence_count"`
+	Details       string `json:"details"`
+	Remediation   string `json:"remediation,omitempty"`
 }
 
 // HIPAAReviewReport is the formal HIPAA attestation artifact backed by DB records.
 type HIPAAReviewReport struct {
-	ReportID        string           `json:"report_id"`
-	TenantID        string           `json:"tenant_id"`
-	Framework       string           `json:"framework"` // HIPAA_45CFR164
-	GeneratedAt     string           `json:"generated_at"`
-	Status          string           `json:"status"` // DRAFT | CERTIFIED
-	OverallScore    float64          `json:"overall_score_pct"`
-	PassedControls  int              `json:"passed_controls"`
-	TotalControls   int              `json:"total_controls"`
-	ContentHash     string           `json:"content_hash"`
-	BAAStatus       string           `json:"baa_status"`
-	DLPActive       bool             `json:"dlp_active"`
-	Controls        []HIPAACheckItem `json:"controls"`
+	ReportID       string           `json:"report_id"`
+	TenantID       string           `json:"tenant_id"`
+	Framework      string           `json:"framework"` // HIPAA_45CFR164
+	GeneratedAt    string           `json:"generated_at"`
+	Status         string           `json:"status"` // DRAFT | CERTIFIED
+	OverallScore   float64          `json:"overall_score_pct"`
+	PassedControls int              `json:"passed_controls"`
+	TotalControls  int              `json:"total_controls"`
+	ContentHash    string           `json:"content_hash"`
+	BAAStatus      string           `json:"baa_status"`
+	DLPActive      bool             `json:"dlp_active"`
+	Controls       []HIPAACheckItem `json:"controls"`
 }
 
 // defaultHIPAABaselineControls defines the required standard obligations to seed into compl_obligations.
@@ -197,7 +197,7 @@ func HandleGetHIPAAReview(db database.DB) http.HandlerFunc {
 
 		// 2. Query live evidence count from compl_evidence
 		var evidenceRows []map[string]any
-		_ = db.QueryRows(database.TblComplEvidence, "evidence_id, control_id, framework", "tenant_id", tenantID, &evidenceRows)  //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+		_ = db.QueryRows(database.TblComplEvidence, "evidence_id, control_id, framework", "tenant_id", tenantID, &evidenceRows) //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
 		evidenceCountByRef := make(map[string]int)
 		for _, ev := range evidenceRows {
 			fw, _ := ev["framework"].(string)
@@ -210,7 +210,7 @@ func HandleGetHIPAAReview(db database.DB) http.HandlerFunc {
 
 		// 3. Query live policy violations from compl_policy_violations to check for active breaches
 		var violations []map[string]any
-		_ = db.QueryRowsCompound(database.TblComplPolicyViolations, "violation_id, severity, status", "tenant_id", tenantID, "status", "OPEN", &violations)  //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+		_ = db.QueryRowsCompound(database.TblComplPolicyViolations, "violation_id, severity, status", "tenant_id", tenantID, "status", "OPEN", &violations) //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
 		hasCriticalViolations := false
 		for _, v := range violations {
 			sev, _ := v["severity"].(string)
@@ -340,7 +340,7 @@ func HandleSubmitHIPAAReport(db database.DB) http.HandlerFunc {
 		// Ensure baseline HIPAA obligations exist in DB before assessing (GAP-CRUD-7)
 		ensureHIPAAObligationsInDB(db, tenantID)
 
-		// GAP-CRUD-20: Ensure report_id is securely scoped to tenant to prevent arbitrary injection
+		// Ensure report_id is securely scoped to tenant to prevent arbitrary injection
 		reportID := req.ReportID
 		if reportID == "" || !strings.HasPrefix(reportID, "hipaa-"+tenantID) {
 			reportID = fmt.Sprintf("hipaa-%s-%s", tenantID, uuid.NewString()[:8])
@@ -348,7 +348,7 @@ func HandleSubmitHIPAAReport(db database.DB) http.HandlerFunc {
 
 		// 1. Query live controls from compl_obligations to calculate finalized score
 		var obRows []map[string]any
-		_ = db.QueryRowsCompound(database.TblComplObligations, "control_id, status", "tenant_id", tenantID, "framework", "HIPAA", &obRows)  //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+		_ = db.QueryRowsCompound(database.TblComplObligations, "control_id, status", "tenant_id", tenantID, "framework", "HIPAA", &obRows) //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
 		passed := 0
 		for _, ob := range obRows {
 			if st, _ := ob["status"].(string); st == "COMPLIANT" {
@@ -365,14 +365,14 @@ func HandleSubmitHIPAAReport(db database.DB) http.HandlerFunc {
 
 		// 2. Query evidence count
 		var evidenceRows []map[string]any
-		_ = db.QueryRows(database.TblComplEvidence, "evidence_id", "tenant_id", tenantID, &evidenceRows)  //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+		_ = db.QueryRows(database.TblComplEvidence, "evidence_id", "tenant_id", tenantID, &evidenceRows) //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
 
 		// 3. Compute hash
 		hashBytes := sha256.Sum256([]byte(reportID + ":" + tenantID + ":" + time.Now().UTC().Format(time.RFC3339)))
 		contentHash := hex.EncodeToString(hashBytes[:])
 
 		now := time.Now().UTC()
-		// GAP-GRC2: Derive certifier identity securely from JWT claims
+		// Derive certifier identity securely from JWT claims
 		certifierName := req.Certifier
 		certifierID := ""
 		if au, auErr := auth.GetAuthUser(r.Context()); auErr == nil && au != nil {
@@ -396,7 +396,7 @@ func HandleSubmitHIPAAReport(db database.DB) http.HandlerFunc {
 			"report_type":      "HIPAA",
 			"period_start":     now.Add(-30 * 24 * time.Hour).Format(time.RFC3339),
 			"period_end":       now.Format(time.RFC3339),
-			"status":          "GENERATED",
+			"status":           "GENERATED",
 			"case_count":       0,
 			"evidence_count":   len(evidenceRows),
 			"control_count":    total,

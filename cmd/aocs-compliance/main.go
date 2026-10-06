@@ -28,8 +28,8 @@ import (
 	"github.com/ocx/compliance/internal/compliance/propagation"
 
 	// Infrastructure
-	"github.com/ocx/shared/infra/config"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/ocx/shared/infra/config"
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/infra/license"
 	"github.com/ocx/shared/infra/middleware"
@@ -42,7 +42,7 @@ import (
 
 func main() {
 	config.MustValidateRequired()
-	// NEW-04 FIX: Read PORT from env so Cloud Run health checks work correctly.
+	// Read PORT from env so Cloud Run health checks work correctly.
 	// Cloud Run injects PORT at startup — hardcoding "8085" bypasses it.
 	compliancePort := os.Getenv("PORT")
 	if compliancePort == "" {
@@ -152,7 +152,7 @@ func main() {
 	// ── DLP Store ───────────────────────────────────────────────────────────
 	dlpStore := hsecurity.NewDLPStore(db, coreClient)
 
-	// M3 FIX: Use time.Minute constant instead of raw 60_000_000_000 nanoseconds.
+	// Use time.Minute constant instead of raw 60_000_000_000 nanoseconds.
 	// Three-layer rate limiting for compliance:
 	//   Layer 1 (API Gateway quota): per-consumer sliding window (300 req/min default).
 	//   Layer 2 (Cloud Armor): IP-level DDoS protection.
@@ -161,7 +161,7 @@ func main() {
 	//     sensitive cryptographic endpoints only (/nonce/validate, /sybil/check,
 	//     /security/attacks). These are more expensive to compute and more
 	//     attractive attack targets, so they get a stricter inner limit.
-	// T1 FIX: Transform JSON response keys from snake_case → camelCase.
+	// Transform JSON response keys from snake_case → camelCase.
 	svc.API.Use(middleware.CamelCaseResponse())
 	complianceRL := security.NewAttackRateLimiter(500, time.Minute)
 	svc.API.Use(middleware.AttackRateLimiterMiddleware(complianceRL))

@@ -82,7 +82,7 @@ func complianceList(db database.DB, actionType string) http.HandlerFunc {
 		if rows == nil {
 			rows = []map[string]any{}
 		}
-		// GAP-CRUD-18: Filter out soft-deleted records so they do not appear in list results
+		// Filter out soft-deleted records so they do not appear in list results
 		activeRows := make([]map[string]any, 0, len(rows))
 		for _, row := range rows {
 			if del, ok := row["deleted_at"]; ok && del != nil && del != "" {
@@ -109,7 +109,7 @@ func complianceGet(db database.DB, actionType string) http.HandlerFunc {
 			return
 		}
 		var rows []map[string]any
-		// AUDIT-FIX-CS2: was querying by "case_id" which is a FK to core_compliance_cases.
+		// AUDIT-was querying by "case_id" which is a FK to core_compliance_cases.
 		// This returned ALL enforcement actions for a compliance case, not the specific record.
 		// The PK of core_enforcement_actions is enforcement_action_id. Use the correct PK.
 		if err := db.QueryRowsCompound(database.TblCoreEnforcementActions, database.ColsEnforcementActions,
@@ -188,8 +188,6 @@ func complianceUpdate(db database.DB) http.HandlerFunc {
 			return
 		}
 		respond.LimitBody(r)
-		// Previously any JSON key was forwarded directly to core_enforcement_actions — column
-		// injection on compliance enforcement records (could overwrite action_type, tenant_id).
 		var req struct {
 			Status     string         `json:"status"     validate:"omitempty,oneof=ACTIVE INACTIVE PENDING RESOLVED EXPIRED"`
 			Notes      string         `json:"notes"`
@@ -259,8 +257,8 @@ func complianceDelete(db database.DB) http.HandlerFunc {
 		}
 		if err := db.SoftDeleteRowCompound(database.TblCoreEnforcementActions, "enforcement_action_id", id, "tenant_id", tenantID); err != nil {
 			slog.Error("complianceDelete", "error", err)
-				respond.InternalError(w, http.StatusInternalServerError, "db operation failed", err)
-				return
+			respond.InternalError(w, http.StatusInternalServerError, "db operation failed", err)
+			return
 		}
 		respond.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 	}
@@ -321,7 +319,7 @@ func complianceSetStatus(db database.DB, newStatus string) http.HandlerFunc {
 		if !validate.BindOptional(w, r, &optBody) {
 			return
 		}
-		// AUDIT-FIX-CS3: notes and reason both mapped to the same "reason" column.
+		// AUDIT-notes and reason both mapped to the same "reason" column.
 		// When both were provided, notes was silently overwritten by reason.
 		// Compliance case audit trail was unreliable. Fix: combine when both present.
 		switch {
@@ -355,8 +353,8 @@ func complianceSetStatus(db database.DB, newStatus string) http.HandlerFunc {
 		}
 		if err := db.UpdateRowCompound(database.TblCoreEnforcementActions, "enforcement_action_id", id, "tenant_id", tenantID, update); err != nil {
 			slog.Error("complianceSetStatus", "status", newStatus, "error", err)
-				respond.InternalError(w, http.StatusInternalServerError, "db operation failed", err)
-				return
+			respond.InternalError(w, http.StatusInternalServerError, "db operation failed", err)
+			return
 		}
 		respond.JSON(w, http.StatusOK, map[string]string{"status": newStatus})
 	}
@@ -380,8 +378,8 @@ func complianceAddComment(db database.DB) http.HandlerFunc {
 		respond.LimitBody(r)
 		// Accept `comment` or `body` key for ergonomic API use.
 		var req struct {
-			Comment string `json:"comment"`
-			Body    string `json:"body"`
+			Comment  string `json:"comment"`
+			Body     string `json:"body"`
 			AuthorID string `json:"author_id"`
 		}
 		if !validate.Bind(w, r, &req) {
@@ -395,7 +393,7 @@ func complianceAddComment(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "comment or body field required")
 			return
 		}
-		// GAP-CRUD-15: Resolve author_id securely from caller JWT context
+		// Resolve author_id securely from caller JWT context
 		authorID := ""
 		if au, auErr := auth.GetAuthUser(r.Context()); auErr == nil && au != nil && au.UserID != "" {
 			authorID = au.UserID
@@ -440,7 +438,7 @@ func HandleListViolations(db database.DB) http.HandlerFunc {
 		cp := database.ParseCursorPage(r)
 		// Optional status filter: ?status=pending|active|resolved
 		statusFilter := r.URL.Query().Get("status")
-		// SCOPE FIX: ?department_id= from ScopeBar filters violations to a specific department.
+		// ?department_id= from ScopeBar filters violations to a specific department.
 		// Violations reference agent_id; we resolve dept→agents then filter by agent_id set.
 		deptID := r.URL.Query().Get("department_id")
 
@@ -472,7 +470,7 @@ func HandleListViolations(db database.DB) http.HandlerFunc {
 			// Build agent→dept map once
 			var agentRows []database.Agt
 			agentDept := make(map[string]string)
-			// M40: department_id moved to core_agent_config — use vw_agent_full, not TblCoreAgents.
+			// department_id moved to core_agent_config — use vw_agent_full, not TblCoreAgents.
 			if err := db.QueryRowsCtx(r.Context(), database.TblAgentFullView, "agent_id,department_id",
 				"tenant_id", tenantID, &agentRows); err == nil {
 				for _, a := range agentRows {
@@ -573,8 +571,8 @@ func HandleEscalateViolation(db database.DB) http.HandlerFunc {
 		}
 		if err := db.UpdateRowCompound(database.TblCoreEnforcementActions, "enforcement_action_id", id, "tenant_id", tenantID, update); err != nil {
 			slog.Error("EscalateViolation", "error", err)
-				respond.InternalError(w, http.StatusInternalServerError, "db operation failed", err)
-				return
+			respond.InternalError(w, http.StatusInternalServerError, "db operation failed", err)
+			return
 		}
 		respond.JSON(w, http.StatusOK, map[string]string{"status": "ESCALATED"})
 	}

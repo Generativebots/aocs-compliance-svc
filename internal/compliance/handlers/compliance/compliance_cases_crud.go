@@ -2,7 +2,7 @@ package compliance
 
 // compliance_cases_crud.go — CRUD handlers for compliance.compliance_cases
 //
-// C1 FIX: Table moved from extc_compliance_cases (ocx-extension-svc) to
+// Table moved from extc_compliance_cases (ocx-extension-svc) to
 // compliance.compliance_cases (aocs-compliance-svc) on 2026-09-04.
 //
 // Routes registered in routes_compliance.go:
@@ -148,19 +148,19 @@ func HandleCreateComplianceCase(db database.DB) http.HandlerFunc {
 		now := time.Now().UTC().Format(time.RFC3339)
 		caseID := uuid.NewString()
 		row := map[string]any{
-			"case_id":      caseID,
-			"tenant_id":    tenantID,
-			"title":        input.Title,
-			"description":  input.Description,
-			"status":       "OPEN",
-			"severity":     severity,
-			"framework":    input.Framework,
-			"control_ref":  input.ControlRef,
-			"agent_id":     input.AgentID,
-			"metadata":     "{}",
+			"case_id":       caseID,
+			"tenant_id":     tenantID,
+			"title":         input.Title,
+			"description":   input.Description,
+			"status":        "OPEN",
+			"severity":      severity,
+			"framework":     input.Framework,
+			"control_ref":   input.ControlRef,
+			"agent_id":      input.AgentID,
+			"metadata":      "{}",
 			"case_comments": "[]",
-			"created_at":   now,
-			"updated_at":   now,
+			"created_at":    now,
+			"updated_at":    now,
 		}
 		if err := db.InsertRow(database.TblComplianceComplianceCases, row); err != nil {
 			slog.Error("HandleCreateComplianceCase: insert failed", "tenant_id", tenantID, "err", err)

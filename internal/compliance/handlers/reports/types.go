@@ -11,8 +11,8 @@ type AnalyticsQueryRequest struct {
 
 // PolicyBindingRequest is the body for POST /analytics/policy-bindings.
 type PolicyBindingRequest struct {
-	AgentID	string	`json:"agent_id" validate:"required"`
-	PolicyID	string	`json:"policy_id" validate:"required"`
+	AgentID       string `json:"agent_id" validate:"required"`
+	PolicyID      string `json:"policy_id" validate:"required"`
 	PolicyVersion int    `json:"policy_version"`
 	BindingType   string `json:"binding_type"`
 	BoundBy       string `json:"bound_by"`
@@ -58,16 +58,16 @@ type UpsertOgraphFlowRequest struct {
 
 // UpdateImportSourceRequest is the request body for HandleUpdateImportSource. (4 fields)
 type UpdateImportSourceRequest struct {
-	Name	string	`json:"name" validate:"required"`
+	Name       string         `json:"name" validate:"required"`
 	SourceType string         `json:"source_type"`
 	Config     map[string]any `json:"config"`
-	Status	string	`json:"status" validate:"required"`
+	Status     string         `json:"status" validate:"required"`
 }
 
 // BindPolicyRequest is the request body for HandleBindPolicy. (5 fields)
 type BindPolicyRequest struct {
-	AgentID	string	`json:"agent_id" validate:"required"`
-	PolicyID	string	`json:"policy_id" validate:"required"`
+	AgentID       string `json:"agent_id" validate:"required"`
+	PolicyID      string `json:"policy_id" validate:"required"`
 	PolicyVersion int    `json:"policy_version"`
 	BindingType   string `json:"binding_type"`
 	BoundBy       string `json:"bound_by"`

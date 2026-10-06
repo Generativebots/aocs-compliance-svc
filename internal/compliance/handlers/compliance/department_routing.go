@@ -1,4 +1,4 @@
-// department_route.go — FIX-036 (Patent P-06): AI-driven department routing endpoint.
+// department_route.go — AI-driven department routing endpoint.
 //
 // POST /api/v1/departments/route
 //
@@ -30,8 +30,8 @@ import (
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/infra/serviceclient"
 	"github.com/ocx/shared/respond"
-	"github.com/ocx/shared/validate"
 	"github.com/ocx/shared/types"
+	"github.com/ocx/shared/validate"
 )
 
 // HandleRouteDepartment — POST /api/v1/departments/route
@@ -73,7 +73,7 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 		respond.LimitBody(r)
 
 		var req DepartmentRouteRequest
-	// GATE-06 FIX (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
+		// (BATCH): removed duplicate LimitBody — double-wrapping halves max body size
 		if !validate.Bind(w, r, &req) {
 			return
 		}
@@ -121,7 +121,7 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 		}
 		if len(validDepts) == 0 {
 			// All classifier suggestions were invalid — fall back to compliance as the catch-all.
-			// X-19 FIX: Was slog.Warn only — no platform event. Compliance team received cases
+			// Was slog.Warn only — no platform event. Compliance team received cases
 			// without knowing routing degraded. Now writes platform event for audit trail.
 			slog.Warn("X-19: HITL routing fallback — no valid departments from classifier, defaulting to dept_compliance",
 				"tenant_id", tenantID, "intent", result.Intent, "routing_source", result.RoutingSource)
@@ -130,7 +130,7 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 				// Post audit event via ocx-core-svc API (boundary enforcement: no direct core_events write).
 				if coreClient != nil {
 					concurrent.Go("hitl-routing-fallback-event", func() {
-						// COMP-01 FIX: was _ = (silently dropped). Audit event delivery failure
+						// was _ = (silently dropped). Audit event delivery failure
 						// created gaps in the compliance routing trail with no operator signal.
 						if evErr := coreClient.PostEvent(context.Background(), map[string]any{
 							"tenant_id":   tenantID,
@@ -153,7 +153,7 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 					"new_value":   fmt.Sprintf(`{"intent":%q,"routing_source":%q,"invalid_depts":%d}`, result.Intent, result.RoutingSource, len(invalidDepts)),
 					"created_at":  time.Now().UTC().Format(time.RFC3339),
 				}); _wErr != nil {
-					slog.Error("SILENT_DROP_FIXED: InsertRow",
+					slog.Error("db write failed: InsertRow",
 						"table", database.TblCoreEvents, "file", "aocs-compliance/handlers/compliance/department_routing.go", "err", _wErr)
 				}
 			}
@@ -198,10 +198,10 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 				"agent_id":   req.AgentID,
 				"metadata": map[string]any{
 					"decision_type": req.CaseType,
-					"intent":      result.Intent,
-					"confidence":  result.Confidence,
-					"source":      result.Source,
-					"departments": validDepts,
+					"intent":        result.Intent,
+					"confidence":    result.Confidence,
+					"source":        result.Source,
+					"departments":   validDepts,
 				},
 			}); _dbErr != nil {
 				slog.Error("db.InsertRow failed (best-effort)", "error", _dbErr)
@@ -209,7 +209,7 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 		})
 
 		// ── Response ───────────────────────────────────────────────────────────
-		// F-HITL-03 FIX: UI had no easy way to detect degraded routing — add routing_degraded bool.
+		// UI had no easy way to detect degraded routing — add routing_degraded bool.
 		routingDegraded := result.RoutingSource == "hardcoded_fallback_db_error" ||
 			result.RoutingSource == "hardcoded_fallback_empty"
 		if routingDegraded {
