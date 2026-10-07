@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	dcompliance "github.com/ocx/compliance/internal/compliance/domain/compliance"
 	"github.com/ocx/compliance/internal/compliance/handlers/security"
 	"github.com/ocx/shared/idgen"
 	"github.com/ocx/shared/infra/auth"
@@ -129,13 +130,17 @@ func HandleUniversalAgentChatProxy(db database.DB, dlpStore *security.DLPStore) 
 			// Silent drop = no audit trail for a BLOCKED DLP violation (SOC2 CC6.1 gap).
 			if db != nil {
 				if vErr := db.InsertRow(database.TblComplPolicyViolations, map[string]any{
-					"violation_id": idgen.GenID(),
-					"tenant_id":    tenantID,
-					"policy_name":  "Ingress Enterprise DLP Exfiltration Guard",
-					"severity":     "HIGH",
-					"status":       "OPEN",
-					"details":      fmt.Sprintf("Agent %s attempted prompt violating DLP: %s", agentID, ingressScan.Reasoning),
-					"created_at":   time.Now().UTC().Format(time.RFC3339),
+					"violation_id":   idgen.GenID(),
+					"tenant_id":      tenantID,
+					"agent_id":       agentID,
+					"policy_name":    "Ingress Enterprise DLP Exfiltration Guard",
+					"violation_type": dcompliance.ViolationTypeDLPExfiltration,
+					"severity":       "HIGH",
+					"status":         "OPEN",
+					"description":    fmt.Sprintf("Agent %s attempted prompt violating DLP: %s", agentID, ingressScan.Reasoning),
+					"details":        map[string]any{"direction": "ingress", "reasoning": ingressScan.Reasoning},
+					"detected_at":    time.Now().UTC().Format(time.RFC3339),
+					"created_at":     time.Now().UTC().Format(time.RFC3339),
 				}); vErr != nil {
 					slog.Error("UniversalAgentProxy: DLP violation record insert failed — audit gap",
 						"tenant_id", tenantID, "agent_id", agentID, "error", vErr)
