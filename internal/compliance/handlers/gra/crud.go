@@ -46,7 +46,7 @@ func crudGetHandler(db database.DB, table, pk string) http.HandlerFunc {
 
 func HandleAdminCreateFederationPeer(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 
@@ -108,7 +108,7 @@ func HandleAdminCreateFederationPeer(db database.DB) http.HandlerFunc {
 
 func HandleAdminUpdateFederationPeer(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 
@@ -162,7 +162,7 @@ func HandleAdminUpdateFederationPeer(db database.DB) http.HandlerFunc {
 
 func HandleAdminDeleteFederationPeer(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 
@@ -201,7 +201,7 @@ func HandleGetGovernanceProposal(db database.DB) http.HandlerFunc {
 
 func HandleCreateGovernanceProposal(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 
@@ -251,7 +251,7 @@ func HandleCreateGovernanceProposal(db database.DB) http.HandlerFunc {
 
 func HandleUpdateGovernanceProposal(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 
@@ -316,7 +316,7 @@ func HandleUpdateGovernanceProposal(db database.DB) http.HandlerFunc {
 
 func HandleDeleteGovernanceProposal(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 

@@ -19,7 +19,7 @@ import (
 // DELETE /api/v1/evidence/{id}, DELETE /api/v1/compliance/evidence/{id}
 func HandleDeleteEvidence(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 

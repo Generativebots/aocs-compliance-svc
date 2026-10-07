@@ -236,7 +236,7 @@ func HandleCreateEntropyEvent(db database.DB, coreClients ...*serviceclient.Clie
 // PUT /api/v1/entropy/events/{id}
 func HandleUpdateEntropyEvent(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 		tenantID, ok := tenantFromRequest(w, r)
@@ -271,7 +271,7 @@ func HandleUpdateEntropyEvent(db database.DB) http.HandlerFunc {
 // DELETE /api/v1/entropy/events/{id}
 func HandleDeleteEntropyEvent(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 		tenantID, ok := tenantFromRequest(w, r)

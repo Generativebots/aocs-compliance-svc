@@ -89,7 +89,7 @@ func processPendingBatchJobs(ctx context.Context, db database.DB) {
 
 func HandleCreateZKPBatchJob(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 
@@ -235,7 +235,7 @@ func HandleGetComplianceSIEMConfig(db database.DB) http.HandlerFunc {
 
 func HandleUpdateComplianceSIEMConfig(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 
@@ -318,7 +318,7 @@ func HandleTestSIEMWebhook(db database.DB) http.HandlerFunc {
 
 func HandleCreateCaseExportJob(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 

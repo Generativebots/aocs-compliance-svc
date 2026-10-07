@@ -18,7 +18,7 @@ import (
 // Disables and clears the tenant's SIEM integration config.
 func HandleDeleteSIEMConfig(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 		tenantID, ok := auth.MustGetTenantID(w, r)

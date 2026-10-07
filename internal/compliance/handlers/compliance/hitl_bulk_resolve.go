@@ -37,7 +37,7 @@ func HandleResolveBulkHITL(db database.DB, coreClients ...*serviceclient.Client)
 		coreClient = coreClients[0]
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 		tenantID, ok := auth.MustGetTenantID(w, r)

@@ -98,7 +98,7 @@ func findingMeta(v any) map[string]any {
 // HandleCreateDLPFinding — POST /dlp/findings
 func HandleCreateDLPFinding(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 		tenantID, ok := auth.MustGetTenantID(w, r)
@@ -227,7 +227,7 @@ func HandleGetDLPFinding(db database.DB) http.HandlerFunc {
 // Used to transition status: OPEN → INVESTIGATING → RESOLVED | FALSE_POSITIVE
 func HandleUpdateDLPFinding(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 		tenantID, ok := auth.MustGetTenantID(w, r)
@@ -302,7 +302,7 @@ func HandleUpdateDLPFinding(db database.DB) http.HandlerFunc {
 // The row is excluded from active list queries but retained permanently for audit.
 func HandleDeleteDLPFinding(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 		tenantID, ok := auth.MustGetTenantID(w, r)

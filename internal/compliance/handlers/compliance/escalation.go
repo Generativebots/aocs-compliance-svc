@@ -21,7 +21,7 @@ import (
 // Appends to recusal_log JSONB column (bugfix3.sql M1).
 func HandleRejectJuror(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 		caseID := mux.Vars(r)["id"]

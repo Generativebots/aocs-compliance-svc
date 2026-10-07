@@ -298,7 +298,7 @@ func HandleGetEUAIActTransparency(db database.DB, coreClient *serviceclient.Clie
 // POST /compliance/eu-ai-act/transparency/submit
 func HandleSubmitEUAIActDeclaration(db database.DB, coreClient *serviceclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 		tenantID, ok := auth.MustGetTenantID(w, r)

@@ -110,7 +110,7 @@ func HandleGetComplianceCase(db database.DB) http.HandlerFunc {
 // HandleCreateComplianceCase — POST /compliance/investigation-cases
 func HandleCreateComplianceCase(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 		tenantID, ok := auth.MustGetTenantID(w, r)
@@ -182,7 +182,7 @@ func HandleUpdateComplianceCaseStatus(db database.DB) http.HandlerFunc {
 		"OPEN": true, "INVESTIGATING": true, "RESOLVED": true, "CLOSED": true, "ARCHIVED": true,
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 		tenantID, ok := auth.MustGetTenantID(w, r)
@@ -225,7 +225,7 @@ func HandleUpdateComplianceCaseStatus(db database.DB) http.HandlerFunc {
 // HandleAssignComplianceCase — POST /compliance/investigation-cases/{id}/assign
 func HandleAssignComplianceCase(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 		tenantID, ok := auth.MustGetTenantID(w, r)
@@ -261,7 +261,7 @@ func HandleAssignComplianceCase(db database.DB) http.HandlerFunc {
 // HandleAddComplianceCaseComment — POST /compliance/investigation-cases/{id}/comments
 func HandleAddComplianceCaseComment(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 		tenantID, ok := auth.MustGetTenantID(w, r)

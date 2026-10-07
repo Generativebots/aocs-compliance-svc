@@ -111,7 +111,7 @@ func HandleGetDispute(db database.DB) http.HandlerFunc {
 // to propose policy threshold relaxation (see governance/self_heal.go).
 func HandleCreateDispute(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 
@@ -164,7 +164,7 @@ func HandleCreateDispute(db database.DB) http.HandlerFunc {
 // OVERTURNED disputes trigger a re-evaluation of the linked HITL case.
 func HandleResolveDispute(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 
@@ -225,7 +225,7 @@ func HandleResolveDispute(db database.DB) http.HandlerFunc {
 // DELETE /api/v1/disputes/{id}
 func HandleDeleteDispute(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 

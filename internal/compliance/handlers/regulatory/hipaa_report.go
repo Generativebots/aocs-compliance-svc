@@ -319,7 +319,7 @@ func HandleGetHIPAAReview(db database.DB) http.HandlerFunc {
 // POST /api/v1/compliance/regulatory/hipaa/report/submit
 func HandleSubmitHIPAAReport(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 		tenantID, ok := auth.MustGetTenantID(w, r)

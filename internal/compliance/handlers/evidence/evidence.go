@@ -160,7 +160,7 @@ func HandleListEvidence(db database.DB) http.HandlerFunc {
 // HandleCreateEvidence — POST /api/v1/evlt
 func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 

@@ -123,7 +123,7 @@ func HandleMergeCase(db database.DB) http.HandlerFunc {
 // returns 409 Conflict on duplicate.
 func HandleCasesSubmitJuryVote(db database.DB, coreClient *serviceclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 		caseID := mux.Vars(r)["id"]

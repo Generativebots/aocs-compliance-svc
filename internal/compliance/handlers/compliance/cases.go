@@ -236,7 +236,7 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 		coreClient = coreClients[0]
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 		vars := mux.Vars(r)
@@ -430,7 +430,7 @@ var (
 
 func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 		vars := mux.Vars(r)
@@ -710,7 +710,7 @@ func HandleCreateCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClien
 		coreClient = coreClients[0]
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 		tenantID, ok := auth.MustGetTenantID(w, r)

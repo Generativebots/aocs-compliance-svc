@@ -483,7 +483,7 @@ func HandleListDLPIntegrations(store *DLPStore) http.HandlerFunc {
 }
 func HandleCreateDLPIntegration(store *DLPStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if store == nil || respond.RequireDB(w, store.db) {
+		if store == nil || respond.RequireDBWrite(w, store.db) {
 			return
 		}
 		respond.LimitBody(r)
@@ -564,7 +564,7 @@ func HandleCreateDLPIntegration(store *DLPStore) http.HandlerFunc {
 }
 func HandleDeleteDLPIntegration(store *DLPStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if store == nil || respond.RequireDB(w, store.db) {
+		if store == nil || respond.RequireDBWrite(w, store.db) {
 			return
 		}
 
@@ -622,7 +622,7 @@ func HandleDeleteDLPIntegration(store *DLPStore) http.HandlerFunc {
 }
 func HandleUpdateDLPIntegration(store *DLPStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if store == nil || respond.RequireDB(w, store.db) {
+		if store == nil || respond.RequireDBWrite(w, store.db) {
 			return
 		}
 

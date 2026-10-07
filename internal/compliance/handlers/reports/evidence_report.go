@@ -49,7 +49,7 @@ func HandleListComplianceReports(db database.DB) http.HandlerFunc {
 // HandleCreateComplianceReport — POST /api/v1/compliance/reports
 func HandleCreateComplianceReport(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 
@@ -138,7 +138,7 @@ func HandleCreateComplianceReport(db database.DB) http.HandlerFunc {
 // HandleUpdateComplianceReport — PUT /api/v1/compliance/reports/{id}
 func HandleUpdateComplianceReport(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 		reportID := mux.Vars(r)["id"]

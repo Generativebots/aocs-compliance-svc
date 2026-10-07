@@ -19,7 +19,7 @@ import (
 // Soft-delete: sets status=ARCHIVED. Reports are referenced by audit_trail records.
 func HandleDeleteComplianceReport(db database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDBWrite(w, db) {
 			return
 		}
 
