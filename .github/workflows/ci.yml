@@ -21,25 +21,31 @@ env:
   GO_VERSION: '1.23'
   SERVICE: aocs-compliance
 
+defaults:
+  run:
+    working-directory: aocs-compliance-svc
+
 jobs:
   lint-build:
     name: Lint & Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: aocs-compliance-svc
 
       - name: Checkout ocx-shared-go
         uses: actions/checkout@v4
         with:
           repository: Generativebots/ocx-shared-go
           token: ${{ secrets.REPO_ACCESS_TOKEN }}
-          path: ../ocx-shared-go
+          path: ocx-shared-go
 
       - uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: aocs-compliance-svc/go.mod
           cache: true
-          cache-dependency-path: go.sum
+          cache-dependency-path: aocs-compliance-svc/go.sum
 
       - name: go vet
         run: go vet ./...
@@ -61,17 +67,19 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: aocs-compliance-svc
 
       - name: Checkout ocx-shared-go
         uses: actions/checkout@v4
         with:
           repository: Generativebots/ocx-shared-go
           token: ${{ secrets.REPO_ACCESS_TOKEN }}
-          path: ../ocx-shared-go
+          path: ocx-shared-go
 
       - name: Build image for scan
         run: |
-          cd ..
+          cd "$GITHUB_WORKSPACE"
           docker build \
             -f aocs-compliance-svc/Dockerfile \
             -t aocs-compliance:scan \

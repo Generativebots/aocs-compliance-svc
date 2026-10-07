@@ -190,16 +190,17 @@ func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 			req.PayloadData = req.Content
 		}
 
-		// PKs/FKs default if not provided by external caller
+		// agent_id / intent_id are nullable: evidence that is not tied to an
+		// agent or intent stores NULL — never a fabricated identity.
 		if req.AgentID == "" {
 			if a, ok := req.PayloadData["agent_id"].(string); ok && a != "" {
 				req.AgentID = a
-			} else {
-				req.AgentID = "agent_system"
 			}
 		}
 		if req.IntentID == "" {
-			req.IntentID = "intent_system"
+			if i, ok := req.PayloadData["intent_id"].(string); ok && i != "" {
+				req.IntentID = i
+			}
 		}
 
 		ts := req.Timestamp
@@ -289,8 +290,8 @@ func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 		complRow := map[string]any{
 			"evidence_id":   record.ID,
 			"tenant_id":     tenantID,
-			"agent_id":      record.AgentID,
-			"execution_id":  record.ExecutionID,
+			"agent_id":      nilIfEmpty(record.AgentID),
+			"execution_id":  nilIfEmpty(record.ExecutionID),
 			"evidence_type": "DOCUMENT",
 			"title":         record.Type,
 			"description":   req.Description,
@@ -518,9 +519,15 @@ func HandleAttestEvidence(db database.DB, vault ...VaultSigner) http.HandlerFunc
 		if attestationStatus == "" {
 			attestationStatus = "APPROVED"
 		}
-		attestorID := req.Attestor
+		// The authenticated user is the attestor; a body-supplied attestor is
+		// only accepted when there is no user (service-to-service calls).
+		attestorID := auth.GetUserID(r.Context())
 		if attestorID == "" {
-			attestorID = "system"
+			attestorID = req.Attestor
+		}
+		if attestorID == "" {
+			respond.ErrorWithCode(w, http.StatusUnauthorized, respond.ErrCodeUnauthorized, "authenticated user required")
+			return
 		}
 
 		// core_evidence_records — write real attestation columns (added in 009_analytics_monitoring_parity.sql)
@@ -800,3 +807,11 @@ func HandleGetEvidenceStats(db database.DB) http.HandlerFunc {
 // NOTE: HandleSearchEvidence is declared in evidence_reporting.go.
 // Do NOT re-declare here — it caused a duplicate symbol compile error.
 // Search logic uses strings.Contains directly in evidence_reporting.go.
+
+// nilIfEmpty maps "" to SQL NULL for nullable reference columns.
+func nilIfEmpty(v string) any {
+	if v == "" {
+		return nil
+	}
+	return v
+}

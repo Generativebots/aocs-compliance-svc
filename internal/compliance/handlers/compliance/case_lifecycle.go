@@ -203,7 +203,7 @@ func CreateCase(
 		"context_data":     string(ctxBytes),
 		"dedup_key":        dedupKey,
 
-		"created_by": "system@ocx.ai",
+		"created_by": database.SystemActor("compliance-case"),
 		// updated_at is set by the trg_set_updated_at DB trigger on every UPDATE — do NOT set here.
 	}
 	if input.DepartmentID != "" {
@@ -381,7 +381,7 @@ func markAlertEscalated(ctx context.Context, db database.DB, alertID, tenantID, 
 		"escalated_to_hitl": true,
 		"hitl_decision_id":  caseID,
 		"assigned_at":       now.Format(time.RFC3339),
-		"updated_by":        "system@ocx.ai",
+		"updated_by":        database.SystemActor("compliance-case"),
 	}
 	if r1 != nil {
 		if err := r1.PatchSentiAlert(ctx, tenantID, alertID, update); err != nil {

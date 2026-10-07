@@ -162,7 +162,6 @@ func ensureGRCObligationsInDB(db database.DB, tenantID string) {
 			"name":             base.Name,
 			"description":      base.Description,
 			"status":           "COMPLIANT",
-			"owner":            "grc-officer@aocs.system",
 			"evidence_count":   1,
 			"last_assessed_at": now.Format(time.RFC3339),
 			"metadata": map[string]any{

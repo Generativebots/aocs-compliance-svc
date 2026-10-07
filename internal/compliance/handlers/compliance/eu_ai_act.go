@@ -34,6 +34,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -222,7 +223,7 @@ func BuildEUAIActTransparencyCard(ctx context.Context, db database.DB, coreClien
 			OverrideCapability: true,
 			AuditTrailRetained: true,
 			RetentionPeriodYrs: 7,
-			ContactEmail:       "dpo@aocs.io",
+			ContactEmail:       os.Getenv("COMPLIANCE_DPO_EMAIL"), // deployment config; empty = not declared
 		},
 
 		// Art.13.3.c
@@ -251,7 +252,7 @@ func BuildEUAIActTransparencyCard(ctx context.Context, db database.DB, coreClien
 		},
 
 		// Regulatory contacts
-		ProviderContact:         "compliance@aocs.io",
+		ProviderContact:         os.Getenv("COMPLIANCE_PROVIDER_CONTACT_EMAIL"),
 		EURepresentative:        "EU Representative: [Operator must configure]",
 		DeclarationOfConformity: "https://aocs.io/eu-ai-act/declaration-of-conformity",
 

@@ -303,7 +303,7 @@ func generateTenantReport(ctx context.Context, db database.DB, coreClient *servi
 		"metadata":     reportData,
 		"period_start": now.Add(-consts.DefaultLookbackWindow).Format(time.RFC3339),
 		"period_end":   now.Format(time.RFC3339),
-		"created_by":   "system@ocx.ai", // background worker — no user context
+		"created_by":   database.SystemActor("compliance-report-worker"), // background worker — no user context
 	})
 }
 

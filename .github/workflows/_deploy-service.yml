@@ -32,6 +32,10 @@ on:
       REPO_ACCESS_TOKEN:
         required: true
 
+defaults:
+  run:
+    working-directory: aocs-compliance-svc
+
 jobs:
   deploy:
     name: Build & Deploy ${{ inputs.service }} (${{ inputs.env }})
@@ -40,6 +44,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: aocs-compliance-svc
 
       # ── Checkout private dependency ──────────────────────────────────────
       - name: Checkout ocx-shared-go
@@ -47,7 +53,7 @@ jobs:
         with:
           repository: Generativebots/ocx-shared-go
           token: ${{ secrets.REPO_ACCESS_TOKEN }}
-          path: ../ocx-shared-go
+          path: ocx-shared-go
 
       # ── GCP Auth ─────────────────────────────────────────────────────────
       - id: auth
@@ -77,7 +83,7 @@ jobs:
       # Dockerfile uses go.mod replace: ../ocx-shared-go → we check it out above.
       - name: Build ${{ inputs.service }}
         run: |
-          cd ..
+          cd "$GITHUB_WORKSPACE"
           DOCKER_BUILDKIT=1 docker build \
             --cache-from ${{ steps.tag.outputs.image_latest }} \
             -t ${{ steps.tag.outputs.image }} \
