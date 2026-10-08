@@ -7,7 +7,6 @@ package reports
 
 import (
 	"encoding/json"
-	"log/slog"
 	"net/http"
 
 	"github.com/ocx/shared/respond"
@@ -32,10 +31,12 @@ func HandleGetEconomicsOverview(db database.DB) http.HandlerFunc {
 		var staking, escrow []map[string]any
 		// nexus_staking_ledger → nexus_ledger (Wave-9 consolidation). entry_type replaces event_type.
 		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblSharLedger, "entry_id,tenant_id,amount,entry_type,created_at", "", "", &staking); _dbErr != nil {
-			slog.Error("db operation failed", "method", "QueryRows", "error", _dbErr)
+			respond.InternalError(w, http.StatusServiceUnavailable, "query staking ledger", _dbErr)
+			return
 		}
 		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreEscrowTxns, "transaction_id,tenant_id,amount,status,created_at", "", "", &escrow); _dbErr != nil {
-			slog.Error("db operation failed", "method", "QueryRows", "error", _dbErr)
+			respond.InternalError(w, http.StatusServiceUnavailable, "query escrow transactions", _dbErr)
+			return
 		}
 		var stakingTotal, escrowTotal float64
 		for _, e := range staking {
@@ -70,7 +71,7 @@ func HandleGetEconomicsRevenue(db database.DB) http.HandlerFunc {
 		if err := db.QueryRowsCtx(r.Context(), database.TblSharLedger,
 			"entry_id,tenant_id,peer_id,amount,entry_type,properties,created_at",
 			"", "", &entries); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "query revenue", err)
+			respond.InternalError(w, http.StatusServiceUnavailable, "query revenue", err)
 			return
 		}
 		byType := map[string]float64{}
@@ -78,7 +79,7 @@ func HandleGetEconomicsRevenue(db database.DB) http.HandlerFunc {
 		var totalRevenue float64
 		for _, e := range entries {
 			amt, _ := adminParseFloat(e["amount"])
-			evType, _ := e["event_type"].(string)
+			evType, _ := e["entry_type"].(string)
 			tid, _ := e["tenant_id"].(string)
 			if evType == "" {
 				evType = "UNKNOWN"

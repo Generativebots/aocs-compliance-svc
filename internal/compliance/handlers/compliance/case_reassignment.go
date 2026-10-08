@@ -104,7 +104,7 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 			return
 		}
 		currentDept := txResult.currentDept
-		_ = txResult.currentStatus // terminal check is enforced inside the lock tx above //nolint:errcheck — audited: best-effort, failure is non-critical
+		_ = txResult.currentStatus // terminal check is enforced inside the lock tx above
 		// Warn (but don't block) if from_dept_id doesn't match current dept
 		if req.FromDeptID != "" && currentDept != req.FromDeptID {
 			slog.Warn("from_dept mismatch — proceeding with actual current dept",

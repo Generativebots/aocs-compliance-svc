@@ -37,12 +37,13 @@ import (
 	"strings"
 	"time"
 
+	"sync/atomic"
+
 	"github.com/gorilla/mux"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/respond"
 	"github.com/ocx/shared/validate"
-	"sync/atomic"
 )
 
 // pgcronDenied caches a permission-denied result for the cron schema.
@@ -321,8 +322,8 @@ If you did not expect this report, contact your OCX administrator.
 
 		// 6. Write last_sent_at back to the report row (regardless of partial failures)
 		if len(sent) > 0 {
-			if updateErr := db.UpdateRow(database.TblSharComplianceReports,
-				"compliance_report_id", reportID, map[string]any{
+			if updateErr := db.UpdateRowCompound(database.TblSharComplianceReports,
+				"compliance_report_id", reportID, "tenant_id", tenantID, map[string]any{
 					"last_sent_at": now.Format(time.RFC3339),
 					"updated_at":   now.Format(time.RFC3339),
 				}); updateErr != nil {

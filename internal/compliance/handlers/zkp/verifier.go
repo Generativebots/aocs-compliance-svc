@@ -231,7 +231,7 @@ func (v *ZKPVerifier) VerifyProof(proof *ZKPProof) (*ZKPVerificationResult, erro
 	if time.Now().UTC().After(challenge.ExpiresAt) {
 		delete(v.challenges, proof.ChallengeID)
 		if v.redis != nil {
-			_ = v.redis.Del(v.svcCtx, "zkp:challenge:"+proof.ChallengeID) //nolint:errcheck — audited: best-effort, failure is non-critical
+			_ = v.redis.Del(v.svcCtx, "zkp:challenge:"+proof.ChallengeID)
 		}
 		return &ZKPVerificationResult{
 			ChallengeID: proof.ChallengeID,
@@ -264,7 +264,7 @@ func (v *ZKPVerifier) VerifyProof(proof *ZKPProof) (*ZKPVerificationResult, erro
 	// Consume the challenge (single-use) — delete from both stores.
 	delete(v.challenges, proof.ChallengeID)
 	if v.redis != nil {
-		_ = v.redis.Del(v.svcCtx, "zkp:challenge:"+proof.ChallengeID) //nolint:errcheck — audited: best-effort, failure is non-critical
+		_ = v.redis.Del(v.svcCtx, "zkp:challenge:"+proof.ChallengeID)
 	}
 
 	result := &ZKPVerificationResult{

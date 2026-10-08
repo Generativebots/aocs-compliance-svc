@@ -182,19 +182,28 @@ func HandleUniversalAgentChatProxy(db database.DB, dlpStore *security.DLPStore) 
 				}
 				client := &http.Client{Timeout: 60 * time.Second}
 				resp, err := client.Do(upstreamReq) // #nosec G704 -- base URL comes from deployment configuration, not request input
-				if err == nil && resp.StatusCode == http.StatusOK {
+				if err == nil {
 					defer func() { _ = resp.Body.Close() }()
-					var upResp ChatCompletionResponse
-					if decErr := json.NewDecoder(resp.Body).Decode(&upResp); decErr == nil && len(upResp.Choices) > 0 {
-						assistantReply = upResp.Choices[0].Message.Content
-						promptTokens = upResp.Usage.PromptTokens
-						completionTokens = upResp.Usage.CompletionTokens
+					if resp.StatusCode == http.StatusOK {
+						var upResp ChatCompletionResponse
+						if decErr := json.NewDecoder(resp.Body).Decode(&upResp); decErr == nil && len(upResp.Choices) > 0 {
+							assistantReply = upResp.Choices[0].Message.Content
+							promptTokens = upResp.Usage.PromptTokens
+							completionTokens = upResp.Usage.CompletionTokens
+						}
 					}
 				}
 			}
+			if assistantReply == "" {
+				// A configured upstream that fails must not be answered with a
+				// fabricated "compliant" reply.
+				slog.Error("UniversalAgentProxy: upstream LLM call failed", "tenant_id", tenantID, "agent_id", agentID)
+				respond.ErrorWithCode(w, http.StatusBadGateway, "UPSTREAM_LLM_UNAVAILABLE", "upstream LLM provider did not return a completion")
+				return
+			}
 		}
 
-		// Fallback compliant response if upstream URL is unset or loopback
+		// Placeholder response only when no upstream is configured (local/dev).
 		if assistantReply == "" {
 			assistantReply = "AOCS Enterprise Control Plane: Agent request processed, audited, and cryptographically verified under Patent P-03."
 			promptTokens = len(promptText) / 4
@@ -208,60 +217,47 @@ func HandleUniversalAgentChatProxy(db database.DB, dlpStore *security.DLPStore) 
 		provEgressResult := dlpProv.Scan(r.Context(), tenantID, assistantReply)
 		egressScan := security.BridgeDLPResult(provEgressResult, assistantReply)
 
+		dlpStatus := "CLEAN"
 		if egressScan.ShouldBlock {
+			dlpStatus = "EGRESS_REDACTED"
 			slog.Warn("UniversalAgentProxy: Egress reply blocked by DLP guard",
 				"tenant_id", tenantID, "agent_id", agentID, "reason", egressScan.Reasoning)
 			assistantReply = "[REDACTED: Output contained sensitive data blocked by AOCS Enterprise DLP Guard]"
 		}
 
-		// Commit to Merkle Evidence Ledger (compl_evidence) under Patent P-03
-		evidenceID := idgen.GenID()
+		// Commit to Merkle Evidence Ledger (compl_evidence) under Patent P-03.
+		// The governed reply is only released once its evidence is recorded:
+		// an unaudited completion would break the tamper-evidence guarantee.
 		h := sha256.New()
 		h.Write([]byte(promptText + "::" + assistantReply))
 		contentHash := hex.EncodeToString(h.Sum(nil))
 
-		prevHash := "0000000000000000000000000000000000000000000000000000000000000000"
-		if db != nil {
-			var lastEvRows []map[string]any
-			_ = db.QueryRows(database.TblComplEvidence, "chain_hash", "tenant_id", tenantID, &lastEvRows) //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
-			if len(lastEvRows) > 0 {
-				if lastH, ok := lastEvRows[len(lastEvRows)-1]["chain_hash"].(string); ok && lastH != "" {
-					prevHash = lastH
-				}
-			}
-		}
-
-		ch := sha256.New()
-		ch.Write([]byte(prevHash + ":" + contentHash))
-		chainHash := hex.EncodeToString(ch.Sum(nil))
-
-		scanDuration := time.Since(start).Milliseconds()
-
-		if db != nil {
-			metaBytes, _ := json.Marshal(map[string]any{
+		receipt, evErr := appendEvidence(r.Context(), db, evidenceEntry{
+			TenantID:     tenantID,
+			AgentID:      agentID,
+			ActionType:   "llm_chat_completion",
+			EvidenceType: "API_RESPONSE",
+			Title:        "LLM chat completion",
+			ContentHash:  contentHash,
+			Metadata: map[string]any{
 				"model":             req.Model,
 				"prompt_tokens":     promptTokens,
 				"completion_tokens": completionTokens,
 				"ingress_dlp_risk":  ingressScan.RiskScore,
 				"egress_dlp_risk":   egressScan.RiskScore,
-			})
-			// Non-fatal: evidence write failure must be logged to detect Merkle chain gaps.
-			if evErr := db.InsertRow(database.TblComplEvidence, map[string]any{
-				"evidence_id":  evidenceID,
-				"tenant_id":    tenantID,
-				"agent_id":     agentID,
-				"action_type":  "llm_chat_completion",
-				"content_hash": contentHash,
-				"chain_hash":   chainHash,
-				"prev_hash":    prevHash,
-				"status":       "VERIFIED",
-				"metadata":     string(metaBytes),
-				"created_at":   time.Now().UTC().Format(time.RFC3339),
-			}); evErr != nil {
-				slog.Warn("UniversalAgentProxy: Merkle evidence insert failed — chain gap",
-					"evidence_id", evidenceID, "tenant_id", tenantID, "agent_id", agentID, "error", evErr)
-			}
+				"dlp_status":        dlpStatus,
+			},
+		})
+		if evErr != nil {
+			slog.Error("UniversalAgentProxy: evidence ledger write failed — reply withheld",
+				"tenant_id", tenantID, "agent_id", agentID, "error", evErr)
+			respond.ErrorWithCode(w, http.StatusServiceUnavailable, respond.ErrCodeUnavailable,
+				"evidence ledger unavailable; request not completed")
+			return
 		}
+		evidenceID, chainHash, prevHash := receipt.EvidenceID, receipt.ChainHash, receipt.PrevHash
+
+		scanDuration := time.Since(start).Milliseconds()
 
 		respObj := ChatCompletionResponse{
 			ID:      "chatcmpl-" + uuid.NewString(),
@@ -287,7 +283,7 @@ func HandleUniversalAgentChatProxy(db database.DB, dlpStore *security.DLPStore) 
 				EvidenceID:   evidenceID,
 				ChainHash:    chainHash,
 				PrevHash:     prevHash,
-				DLPStatus:    "CLEAN",
+				DLPStatus:    dlpStatus,
 				PolicyPassed: true,
 				ScanDuration: scanDuration,
 			},
@@ -349,9 +345,11 @@ func HandleOTelTraceIngress(db database.DB) http.HandlerFunc {
 		var traceReq OTLPTraceRequest
 		if err := json.Unmarshal(bodyBytes, &traceReq); err != nil {
 			slog.Warn("OTelTraceIngress: Non-standard OTLP payload received", "error", err)
+			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "invalid OTLP/JSON trace payload")
+			return
 		}
 
-		spanCount := 0
+		spanCount, failed := 0, 0
 		for _, rs := range traceReq.ResourceSpans {
 			for _, ss := range rs.ScopeSpans {
 				for _, span := range ss.Spans {
@@ -372,36 +370,45 @@ func HandleOTelTraceIngress(db database.DB) http.HandlerFunc {
 						}
 					}
 
-					if db != nil {
-						evidenceID := idgen.GenID()
-						h := sha256.New()
-						h.Write([]byte(fmt.Sprintf("%s:%s:%s", span.TraceID, span.SpanID, span.Name)))
-						contentHash := hex.EncodeToString(h.Sum(nil))
-
-						metaBytes, _ := json.Marshal(attrMap)
-						// Best-effort: high-volume OTLP span ingestion — non-fatal but log on failure.
-						if spErr := db.InsertRow(database.TblComplEvidence, map[string]any{
-							"evidence_id":  evidenceID,
-							"tenant_id":    tenantID,
-							"agent_id":     agentID,
-							"action_type":  actionType,
-							"content_hash": contentHash,
-							"chain_hash":   contentHash,
-							"status":       "VERIFIED",
-							"metadata":     string(metaBytes),
-							"created_at":   time.Now().UTC().Format(time.RFC3339),
-						}); spErr != nil {
-							slog.Warn("OTelTraceIngress: span evidence insert failed",
-								"evidence_id", evidenceID, "span", span.Name, "tenant_id", tenantID, "error", spErr)
-						}
+					h := sha256.New()
+					h.Write([]byte(fmt.Sprintf("%s:%s:%s", span.TraceID, span.SpanID, span.Name)))
+					contentHash := hex.EncodeToString(h.Sum(nil))
+					if _, spErr := appendEvidence(r.Context(), db, evidenceEntry{
+						TenantID:     tenantID,
+						AgentID:      agentID,
+						ActionType:   actionType,
+						EvidenceType: "AUDIT_LOG",
+						Title:        "OTel span: " + actionType,
+						ContentHash:  contentHash,
+						Metadata:     attrMap,
+					}); spErr != nil {
+						failed++
+						slog.Error("OTelTraceIngress: span evidence insert failed",
+							"span", span.Name, "tenant_id", tenantID, "error", spErr)
 					}
 				}
 			}
 		}
 
 		slog.Info("OTelTraceIngress: Processed spans into compliance ledger",
-			"tenant_id", tenantID, "span_count", spanCount)
+			"tenant_id", tenantID, "span_count", spanCount, "failed", failed)
 
+		if failed > 0 {
+			// OTLP partial success: tell the exporter how many spans were
+			// rejected so it can retry, instead of claiming all were audited.
+			status := http.StatusOK
+			if failed == spanCount {
+				status = http.StatusServiceUnavailable
+			}
+			respond.JSON(w, status, map[string]any{
+				"partialSuccess": map[string]any{
+					"rejectedSpans": failed,
+					"errorMessage":  "evidence ledger write failed",
+				},
+				"spans_audited": spanCount - failed,
+			})
+			return
+		}
 		respond.JSON(w, http.StatusOK, map[string]any{
 			"partialSuccess": map[string]any{},
 			"spans_audited":  spanCount,

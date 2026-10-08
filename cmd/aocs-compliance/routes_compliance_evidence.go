@@ -326,12 +326,14 @@ func registerComplianceEvidenceRoutes(
 
 	// ── Economics Dashboard (SuperAdmin cross-tenant) ─────────────────────────
 	// nolint:tenant_filter — SuperAdmin views intentionally span all tenants.
+	// RequireSuperAdmin sets the audited cross-tenant read scope the tenant
+	// guard needs; RequireAccess alone left every query blocked (500).
 	api.HandleFunc("/analytics/economics/overview",
-		auth.RequireAccess(pc, "sysadmin", "read",
-			analytics.HandleGetEconomicsOverview(db))).Methods("GET")
+		auth.RequireSuperAdmin(auth.RequireAccess(pc, "sysadmin", "read",
+			analytics.HandleGetEconomicsOverview(db)))).Methods("GET")
 	api.HandleFunc("/analytics/economics/revenue",
-		auth.RequireAccess(pc, "sysadmin", "read",
-			analytics.HandleGetEconomicsRevenue(db))).Methods("GET")
+		auth.RequireSuperAdmin(auth.RequireAccess(pc, "sysadmin", "read",
+			analytics.HandleGetEconomicsRevenue(db)))).Methods("GET")
 
 	// ── Resource Graph Snapshot ───────────────────────────────────────────────
 	api.HandleFunc("/analytics/resource-graph/snapshot",

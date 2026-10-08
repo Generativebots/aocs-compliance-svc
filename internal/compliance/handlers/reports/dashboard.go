@@ -55,7 +55,7 @@ func runConcurrent(ctx context.Context, queries []dbQuery) {
 				slog.Warn("dashboard query cancelled", "reason", ctx.Err())
 				return
 			default:
-				_ = q.fn() //nolint:errcheck — audited: best-effort, failure is non-critical
+				_ = q.fn()
 			}
 		})
 	}

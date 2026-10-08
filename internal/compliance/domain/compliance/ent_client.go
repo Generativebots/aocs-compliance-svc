@@ -16,6 +16,9 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/ocx/shared/infra/security"
+	entpb "github.com/ocx/shared/pb/ent"
+
 	"github.com/ocx/shared/types"
 	"google.golang.org/grpc"
 )
@@ -95,7 +98,8 @@ func (e *EntClient) DetectHallucination(
 	}
 
 	var respBytes []byte
-	err = e.conn.Invoke(ctx, "/aocs.ent.EntService/DetectHallucination", reqBytes, &respBytes)
+	respBytes, err = security.InvokeProtoJSON(ctx, e.conn, "/aocs.ent.EntService/DetectHallucination", reqBytes,
+		&entpb.EntHallucinationRequest{}, &entpb.EntHallucinationResponse{})
 	if err != nil {
 		// Now: run the local rule-based scorer as a fallback so obvious patterns are caught
 		// even without the ML service. IsFallback=true signals the audit dashboard that the
@@ -139,7 +143,8 @@ func (e *EntClient) ValidateIntent(
 	}
 
 	var respBytes []byte
-	err = e.conn.Invoke(ctx, "/aocs.ent.EntService/ValidateIntent", reqBytes, &respBytes)
+	respBytes, err = security.InvokeProtoJSON(ctx, e.conn, "/aocs.ent.EntService/ValidateIntent", reqBytes,
+		&entpb.EntIntentRequest{}, &entpb.EntIntentResponse{})
 	if err != nil {
 		e.logger.Warn("ENT ValidateIntent RPC failed — fail-open (intent valid)",
 			"error", err, "addr", e.addr, "agent_id", agentID)
@@ -195,7 +200,8 @@ func (e *EntClient) ExtractIntents(
 	}
 
 	var respBytes []byte
-	err = e.conn.Invoke(ctx, "/aocs.ent.EntService/ExtractIntents", reqBytes, &respBytes)
+	respBytes, err = security.InvokeProtoJSON(ctx, e.conn, "/aocs.ent.EntService/ExtractIntents", reqBytes,
+		&entpb.EntExtractIntentsRequest{}, &entpb.EntExtractIntentsResponse{})
 	if err != nil {
 		e.logger.Warn("ENT ExtractIntents RPC failed — fail-open (empty extraction)",
 			"error", err, "addr", e.addr)

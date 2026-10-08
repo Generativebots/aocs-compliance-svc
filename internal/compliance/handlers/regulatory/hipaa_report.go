@@ -132,7 +132,12 @@ var defaultHIPAABaselineControls = []struct {
 func ensureHIPAAObligationsInDB(db database.DB, tenantID string) {
 	var existing []map[string]any
 	err := db.QueryRowsCompound(database.TblComplObligations, "control_id, name, control_ref", "tenant_id", tenantID, "framework", "HIPAA", &existing)
-	if err == nil && len(existing) >= len(defaultHIPAABaselineControls) {
+	if err != nil {
+		// Unknown existing state: seeding now could create duplicates.
+		slog.Error("HIPAA baseline read failed; skipping seed", "error", err, "tenant_id", tenantID)
+		return
+	}
+	if len(existing) >= len(defaultHIPAABaselineControls) {
 		return
 	}
 
@@ -192,11 +197,16 @@ func HandleGetHIPAAReview(db database.DB) http.HandlerFunc {
 		var obRows []map[string]any
 		if err := db.QueryRowsCompound(database.TblComplObligations, obCols, "tenant_id", tenantID, "framework", "HIPAA", &obRows); err != nil {
 			slog.Error("Failed to query compl_obligations for HIPAA", "error", err, "tenant_id", tenantID)
+			reportReadFailed(w, tenantID, err)
+			return
 		}
 
 		// 2. Query live evidence count from compl_evidence
 		var evidenceRows []map[string]any
-		_ = db.QueryRows(database.TblComplEvidence, "evidence_id, control_id, framework", "tenant_id", tenantID, &evidenceRows) //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+		if err := db.QueryRows(database.TblComplEvidence, "evidence_id, control_id, framework", "tenant_id", tenantID, &evidenceRows); err != nil {
+			reportReadFailed(w, tenantID, err)
+			return
+		}
 		evidenceCountByRef := make(map[string]int)
 		for _, ev := range evidenceRows {
 			fw, _ := ev["framework"].(string)
@@ -209,7 +219,10 @@ func HandleGetHIPAAReview(db database.DB) http.HandlerFunc {
 
 		// 3. Query live policy violations from compl_policy_violations to check for active breaches
 		var violations []map[string]any
-		_ = db.QueryRowsCompound(database.TblComplPolicyViolations, "violation_id, severity, status", "tenant_id", tenantID, "status", "OPEN", &violations) //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+		if err := db.QueryRowsCompound(database.TblComplPolicyViolations, "violation_id, severity, status", "tenant_id", tenantID, "status", "OPEN", &violations); err != nil {
+			reportReadFailed(w, tenantID, err)
+			return
+		}
 		hasCriticalViolations := false
 		for _, v := range violations {
 			sev, _ := v["severity"].(string)
@@ -347,7 +360,10 @@ func HandleSubmitHIPAAReport(db database.DB) http.HandlerFunc {
 
 		// 1. Query live controls from compl_obligations to calculate finalized score
 		var obRows []map[string]any
-		_ = db.QueryRowsCompound(database.TblComplObligations, "control_id, status", "tenant_id", tenantID, "framework", "HIPAA", &obRows) //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+		if err := db.QueryRowsCompound(database.TblComplObligations, "control_id, status", "tenant_id", tenantID, "framework", "HIPAA", &obRows); err != nil {
+			reportReadFailed(w, tenantID, err)
+			return
+		}
 		passed := 0
 		for _, ob := range obRows {
 			if st, _ := ob["status"].(string); st == "COMPLIANT" {
@@ -364,7 +380,10 @@ func HandleSubmitHIPAAReport(db database.DB) http.HandlerFunc {
 
 		// 2. Query evidence count
 		var evidenceRows []map[string]any
-		_ = db.QueryRows(database.TblComplEvidence, "evidence_id", "tenant_id", tenantID, &evidenceRows) //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+		if err := db.QueryRows(database.TblComplEvidence, "evidence_id", "tenant_id", tenantID, &evidenceRows); err != nil {
+			reportReadFailed(w, tenantID, err)
+			return
+		}
 
 		// 3. Compute hash
 		hashBytes := sha256.Sum256([]byte(reportID + ":" + tenantID + ":" + time.Now().UTC().Format(time.RFC3339)))

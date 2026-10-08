@@ -316,7 +316,7 @@ func HandleAddComplianceCaseComment(db database.DB) http.HandlerFunc {
 		}
 
 		// Atomic append to avoid TOCTOU read-modify-write race (GAP-CRUD-1)
-		if err := db.AppendJSONBArray(database.TblComplianceComplianceCases, "case_id", caseID, "case_comments", newComment); err != nil {
+		if err := db.AppendJSONBArray(database.TblComplianceComplianceCases, "case_id", caseID, tenantID, "case_comments", newComment); err != nil {
 			// Fallback for mock/test environments without pgxPool
 			var comments []map[string]any
 			if len(rows[0].CaseComments) > 0 {

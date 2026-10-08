@@ -41,10 +41,13 @@ func HandleGetComplianceDashboardSummary(db database.DB) http.HandlerFunc {
 		if err := db.QueryRowsCompound(database.TblComplReports,
 			"report_id, framework, status, compliance_score, total_controls, passed_controls, certifier_name, created_at, updated_at",
 			"tenant_id", tenantID, "status", "pending", &reports); err != nil {
-			// Fallback to all reports if no pending reports found
-			_ = db.QueryRows(database.TblComplReports, //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+			// Fallback to all reports if the pending query failed
+			if err := db.QueryRows(database.TblComplReports,
 				"report_id, framework, status, compliance_score, total_controls, passed_controls, certifier_name, created_at, updated_at",
-				"tenant_id", tenantID, &reports)
+				"tenant_id", tenantID, &reports); err != nil {
+				dashboardReadFailed(w, tenantID, err)
+				return
+			}
 		}
 		if reports == nil {
 			reports = []map[string]any{}
@@ -55,9 +58,12 @@ func HandleGetComplianceDashboardSummary(db database.DB) http.HandlerFunc {
 
 		// 2. Violations / Enforcement actions
 		var violations []map[string]any
-		_ = db.QueryRows(database.TblCoreEnforcementActions, //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+		if err := db.QueryRows(database.TblCoreEnforcementActions,
 			database.ColsEnforcementActions,
-			"tenant_id", tenantID, &violations)
+			"tenant_id", tenantID, &violations); err != nil {
+			dashboardReadFailed(w, tenantID, err)
+			return
+		}
 		if violations == nil {
 			violations = []map[string]any{}
 		}
@@ -120,9 +126,12 @@ func HandleGetComplianceDashboardSummary(db database.DB) http.HandlerFunc {
 
 		// 4. DLP Scan telemetry from evidence
 		var dlpEvidence []map[string]any
-		_ = db.QueryRowsCompound(database.TblComplEvidence, //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+		if err := db.QueryRowsCompound(database.TblComplEvidence,
 			"evidence_id, title, framework, created_at",
-			"tenant_id", tenantID, "evidence_type", "DLP_SCAN", &dlpEvidence)
+			"tenant_id", tenantID, "evidence_type", "DLP_SCAN", &dlpEvidence); err != nil {
+			dashboardReadFailed(w, tenantID, err)
+			return
+		}
 		dlpCount := len(dlpEvidence)
 
 		dlpStats := map[string]any{
@@ -135,9 +144,12 @@ func HandleGetComplianceDashboardSummary(db database.DB) http.HandlerFunc {
 		// 5. 7-Day History
 		var historyRows []map[string]any
 		sevenDaysAgo := now.AddDate(0, 0, -7).Format(time.RFC3339)
-		_ = db.QueryRowsCompound(database.TblComplReports, //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+		if err := db.QueryRowsCompound(database.TblComplReports,
 			"report_id, framework, compliance_score, created_at",
-			"tenant_id", tenantID, "status", "CERTIFIED", &historyRows)
+			"tenant_id", tenantID, "status", "CERTIFIED", &historyRows); err != nil {
+			dashboardReadFailed(w, tenantID, err)
+			return
+		}
 		var history7d []map[string]any
 		for _, h := range historyRows {
 			if cat, _ := h["created_at"].(string); cat >= sevenDaysAgo {
@@ -162,4 +174,12 @@ func HandleGetComplianceDashboardSummary(db database.DB) http.HandlerFunc {
 		slog.Debug("HandleGetComplianceDashboardSummary served", "tenant_id", tenantID, "frameworks", len(frameworks))
 		respond.JSON(w, http.StatusOK, resp)
 	}
+}
+
+// dashboardReadFailed answers 503 when a dashboard input could not be read,
+// instead of rendering zeros as if the tenant had no violations/evidence.
+func dashboardReadFailed(w http.ResponseWriter, tenantID string, err error) {
+	slog.Error("compliance dashboard: input read failed", "tenant_id", tenantID, "error", err)
+	respond.ErrorWithCode(w, http.StatusServiceUnavailable, respond.ErrCodeUnavailable,
+		"compliance data could not be read")
 }

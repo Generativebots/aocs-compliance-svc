@@ -648,7 +648,7 @@ func HandleDeleteCredential(db database.DB) http.HandlerFunc {
 func HandleUpdateDispute(db database.DB) http.HandlerFunc {
 	// Tag the update with the dispute action_type so audit logs reflect the
 	// correct enforcement category (complianceTypeDispute = "dispute").
-	_ = complianceTypeDispute // keep const referenced — prevents "unused const" lint //nolint:errcheck — audited: best-effort, failure is non-critical
+	_ = complianceTypeDispute // keep const referenced — prevents "unused const" lint
 	return complianceUpdate(db)
 }
 

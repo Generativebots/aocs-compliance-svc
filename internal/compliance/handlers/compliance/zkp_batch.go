@@ -10,6 +10,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"net/http"
+	"time"
+
 	"github.com/gorilla/mux"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
@@ -17,9 +21,6 @@ import (
 	"github.com/ocx/shared/infra/statemachine"
 	"github.com/ocx/shared/respond"
 	"github.com/ocx/shared/validate"
-	"log/slog"
-	"net/http"
-	"time"
 )
 
 // processPendingBatchJobs is a trusted server-side background goroutine.
@@ -255,7 +256,7 @@ func HandleUpdateComplianceSIEMConfig(db database.DB) http.HandlerFunc {
 		if body.SecretHeader != "" {
 			cfg["secret_header"] = body.SecretHeader
 		}
-		_, err := database.MergeTenantCredential(r.Context(), db, tenantID, database.CredTypeCustom, database.CredProviderSIEM, cfg, auth.GetUserID(r.Context()))
+		_, err := database.MergeTenantCredentialAndActivate(r.Context(), db, tenantID, database.CredTypeCustom, database.CredProviderSIEM, cfg, auth.GetUserID(r.Context()))
 		if err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "save SIEM config", err)
 			return

@@ -17,10 +17,11 @@ package compliance
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/ocx/shared/infra/concurrent"
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/ocx/shared/infra/concurrent"
 
 	"github.com/gorilla/mux"
 	"github.com/ocx/shared/infra/auth"
@@ -193,7 +194,7 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 						"case_id", caseID, "error", _rErr)
 					continue
 				}
-			} else if err := db.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "status", "PENDING",
+			} else if err := db.UpdateRowCompoundCtx(r.Context(), database.TblCoreHitl, "decision_id", caseID, "status", "PENDING",
 				map[string]any{
 					"department_id": targetDept,
 					"sla_deadline":  newDeadline,

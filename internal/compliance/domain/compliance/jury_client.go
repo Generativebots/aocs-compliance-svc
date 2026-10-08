@@ -73,9 +73,11 @@ func (jc *JuryClient) AuditIntent(
 		return nil, fmt.Errorf("failed to marshal audit request: %w", err)
 	}
 
-	// Call the unary RPC
+	// Call the unary RPC. The Jury serves AuditIntent as JSON over gRPC, so the
+	// payload must bypass the default proto codec (which rejects []byte).
 	var respBytes []byte
-	err = jc.conn.Invoke(ctx, "/ocx.jury.JuryAuditor/AuditIntent", reqBytes, &respBytes)
+	err = jc.conn.Invoke(ctx, "/ocx.jury.JuryAuditor/AuditIntent", reqBytes, &respBytes,
+		grpc.ForceCodec(security.JSONBytesCodec{}))
 	if err != nil {
 		jc.logger.Warn("Jury AuditIntent RPC failed — fail-closed with DENY",
 			"error", err, "addr", jc.addr, "tx_id", txID)

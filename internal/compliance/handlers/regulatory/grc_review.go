@@ -138,7 +138,12 @@ var defaultGRCBaselineControls = []struct {
 func ensureGRCObligationsInDB(db database.DB, tenantID string) {
 	var existing []map[string]any
 	err := db.QueryRows(database.TblComplObligations, "control_id, name, control_ref, framework", "tenant_id", tenantID, &existing)
-	if err == nil && len(existing) >= len(defaultGRCBaselineControls) {
+	if err != nil {
+		// Unknown existing state: seeding now could create duplicates.
+		slog.Error("GRC baseline read failed; skipping seed", "error", err, "tenant_id", tenantID)
+		return
+	}
+	if len(existing) >= len(defaultGRCBaselineControls) {
 		return
 	}
 
@@ -199,11 +204,16 @@ func HandleGetGRCAssessment(db database.DB) http.HandlerFunc {
 		var obRows []map[string]any
 		if err := db.QueryRows(database.TblComplObligations, obCols, "tenant_id", tenantID, &obRows); err != nil {
 			slog.Error("Failed to query compl_obligations for GRC", "error", err, "tenant_id", tenantID)
+			reportReadFailed(w, tenantID, err)
+			return
 		}
 
 		// 2. Query live evidence records from compl_evidence
 		var evidenceRows []map[string]any
-		_ = db.QueryRows(database.TblComplEvidence, "evidence_id, control_id, framework", "tenant_id", tenantID, &evidenceRows) //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+		if err := db.QueryRows(database.TblComplEvidence, "evidence_id, control_id, framework", "tenant_id", tenantID, &evidenceRows); err != nil {
+			reportReadFailed(w, tenantID, err)
+			return
+		}
 		evidenceCountByControl := make(map[string]int)
 		for _, ev := range evidenceRows {
 			cid, _ := ev["control_id"].(string)
@@ -214,7 +224,10 @@ func HandleGetGRCAssessment(db database.DB) http.HandlerFunc {
 
 		// 3. Query active violations from compl_policy_violations to detect real compliance gaps
 		var violations []map[string]any
-		_ = db.QueryRowsCompound(database.TblComplPolicyViolations, "violation_id, severity, status, policy_id", "tenant_id", tenantID, "status", "OPEN", &violations) //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+		if err := db.QueryRowsCompound(database.TblComplPolicyViolations, "violation_id, severity, status, policy_id", "tenant_id", tenantID, "status", "OPEN", &violations); err != nil {
+			reportReadFailed(w, tenantID, err)
+			return
+		}
 		activeGaps := len(violations)
 
 		// 4. Map DB records to GRC controls and compute live framework stats
@@ -410,11 +423,17 @@ func HandleSyncGRCExternal(db database.DB) http.HandlerFunc {
 
 		// 1. Query live controls from compl_obligations in DB
 		var obRows []map[string]any
-		_ = db.QueryRows(database.TblComplObligations, "control_id, name, status", "tenant_id", tenantID, &obRows) //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+		if err := db.QueryRows(database.TblComplObligations, "control_id, name, status", "tenant_id", tenantID, &obRows); err != nil {
+			reportReadFailed(w, tenantID, err)
+			return
+		}
 
 		// 2. Query evidence count from compl_evidence in DB
 		var evidenceRows []map[string]any
-		_ = db.QueryRows(database.TblComplEvidence, "evidence_id", "tenant_id", tenantID, &evidenceRows) //nolint:errcheck — audited: best-effort read, degrades gracefully on DB error
+		if err := db.QueryRows(database.TblComplEvidence, "evidence_id", "tenant_id", tenantID, &evidenceRows); err != nil {
+			reportReadFailed(w, tenantID, err)
+			return
+		}
 
 		now := time.Now().UTC()
 		syncID := fmt.Sprintf("sync-%s-%s", req.Platform, uuid.NewString()[:8])
