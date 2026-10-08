@@ -56,25 +56,35 @@ func (s *DLPStore) LoadFromDB() {
 	var rows []struct {
 		Metadata json.RawMessage `json:"metadata"`
 	}
-	// Fetch via ocx-core-svc internal API (boundary enforcement: no direct core_enforcement_actions access)
-	if s.coreClient != nil {
-		actions, err := s.coreClient.ListEnforcementActionsByType(context.Background(), "dlp_pid_monitor")
-		if err != nil {
-			// Non-fatal: PID map starts empty; registered PIDs will be added on next POST
-			slog.Warn("DLP PID hydration failed — monitored PID map starts empty", "error", err)
-			return
+	// D3: hydrate per live tenant — every read carries tenant_id.
+	// Preferred: ocx-core-svc internal API (boundary enforcement); fallback:
+	// direct DB read only when coreClient is unavailable (e.g. test mode).
+	ctx := context.Background()
+	if err := database.ForEachTenant(ctx, s.db, "dlp_pid_hydration", func(ctx context.Context, tenantID string) error {
+		if s.coreClient != nil {
+			actions, err := s.coreClient.ListEnforcementActionsByType(ctx, tenantID, "dlp_pid_monitor")
+			if err != nil {
+				return err
+			}
+			for _, a := range actions {
+				rows = append(rows, struct {
+					Metadata json.RawMessage `json:"metadata"`
+				}{Metadata: a.Metadata})
+			}
+			return nil
 		}
-		for _, a := range actions {
-			rows = append(rows, struct {
-				Metadata json.RawMessage `json:"metadata"`
-			}{Metadata: a.Metadata})
+		var tRows []struct {
+			Metadata json.RawMessage `json:"metadata"`
 		}
-	} else {
-		// Fallback: direct DB access only when coreClient is unavailable (e.g. test mode)
-		// nolint:tenant_filter — startup hydration: load ALL tenant PID monitors
-		if err := s.db.QueryRowsCtx(context.Background(), database.TblCoreEnforcementActions, "metadata", "action_type", "dlp_pid_monitor", &rows); err != nil {
-			return
+		if err := s.db.QueryRowsCompoundCtx(ctx, database.TblCoreEnforcementActions, "metadata",
+			"tenant_id", tenantID, "action_type", "dlp_pid_monitor", &tRows); err != nil {
+			return err
 		}
+		rows = append(rows, tRows...)
+		return nil
+	}); err != nil {
+		// Non-fatal: PID map starts partially/empty; registered PIDs will be added on next POST
+		slog.Warn("DLP PID hydration incomplete — monitored PID map may be partial", "error", err)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -75,23 +75,22 @@ func HandleListAllAuditLog(db database.DB) http.HandlerFunc {
 		// read from the JWT app_metadata claim — no DB roundtrip.
 		// Non-superadmin callers are ALWAYS scoped to their JWT tenant_id
 		// regardless of any ?tenant_id= param they supply.
-		jwtTenantID, ok := auth.MustGetTenantID(w, r)
-		if !ok {
-			return // MustGetTenantID already wrote 401
-		}
-		isSuperAdmin := auth.IsSuperAdmin(r.Context())
-
-		tenantFilter := r.URL.Query().Get("tenant_id")
-		if !isSuperAdmin {
-			// Normal tenant user: ALWAYS scope to JWT tenant_id — override any param.
-			if tenantFilter != "" && tenantFilter != jwtTenantID {
-				slog.Warn("SECURITY: HandleListAllAuditLog tenant_id param override — scoped to JWT tenant",
-					"jwt_tenant", jwtTenantID, "param_tenant", tenantFilter,
-					"remote_addr", r.RemoteAddr)
+		// D2: session tenant; a named tenant only with an audited platform
+		// grant (TargetTenant); a cross-tenant scan only with ?scope=all and
+		// the audited audit:read platform grant (AllTenantsScope).
+		tenantFilter := ""
+		if r.URL.Query().Get("scope") == "all" {
+			var ok bool
+			if r, ok = auth.AllTenantsScope(w, r, "audit"); !ok {
+				return
 			}
-			tenantFilter = jwtTenantID
+		} else {
+			tid, r2, ok := auth.TargetTenant(w, r)
+			if !ok {
+				return
+			}
+			r, tenantFilter = r2, tid
 		}
-		// SuperAdmin: honour optional ?tenant_id= or do cross-tenant scan.
 
 		eventType := r.URL.Query().Get("event_type")
 		entityType := r.URL.Query().Get("entity_type")
@@ -111,9 +110,9 @@ func HandleListAllAuditLog(db database.DB) http.HandlerFunc {
 		case tenantFilter != "":
 			err = db.QueryRowsWithin90Days(database.TblCoreEvents, database.ColsPlatformEvent,
 				tenantFilter, &result)
-		case isSuperAdmin:
+		case r.URL.Query().Get("scope") == "all": // AllTenantsScope granted above
 			// SuperAdmin full scan — 90-day window.
-			err = db.QueryRowsGlobalWithin90Days(database.TblCoreEvents, database.ColsPlatformEvent, &result)
+			err = db.QueryRowsGlobalWithin90Days(r.Context(), database.TblCoreEvents, database.ColsPlatformEvent, &result)
 		default:
 			// Should never reach here — tenantFilter is always set for non-superadmins above.
 			respond.ErrorWithCode(w, http.StatusForbidden, respond.ErrCodeForbidden,
@@ -194,7 +193,7 @@ func HandleListGRARegulatoryFrameworks(db database.DB, coreClient *serviceclient
 
 		// 2. Fetch all active platform frameworks
 		// ListGRAFrameworks routes through typed DB interface (pgx-first).
-		allRows, err := db.ListGRAFrameworks(r.Context(), database.ColsGraFrameworks)
+		allRows, err := db.ListGRAFrameworks(r.Context(), tenantID, database.ColsGraFrameworks)
 		if err != nil {
 			slog.Error("ListGRARegulatoryFrameworks query failed", "error", err)
 			allRows = []map[string]any{}
@@ -270,7 +269,7 @@ func HandleListGRAComplianceObligations(db database.DB, coreClient *serviceclien
 		// 2. Fetch all active frameworks
 		// Use ColsGRAFramework — the actual DB columns are: framework_id, tenant_id, name, version,
 		// jurisdiction, region_code, description, status, etc. There is NO id/enforcement_level/category/templates column.
-		frameworks, err := db.ListGRAFrameworks(r.Context(), database.ColsGRAFramework)
+		frameworks, err := db.ListGRAFrameworks(r.Context(), tenantID, database.ColsGRAFramework)
 		if err != nil {
 			slog.Error("ListGRAComplianceObligations: frameworks query failed", "error", err)
 			respond.OK(w, []interface{}{})

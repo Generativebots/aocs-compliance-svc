@@ -103,17 +103,12 @@ func generateDailyReports(ctx context.Context, db database.DB, coreClient *servi
 		}
 	} else {
 		// Fallback: direct DB only when coreClient is unavailable (e.g. test/offline mode).
-		var tenants []struct {
-			TenantID string `json:"tenant_id"`
-		}
-		if err := db.QueryRowsLimited(database.TblSystTenants, "tenant_id", "status", "ACTIVE",
-			database.PageParams{Limit: 200, Offset: 0}, &tenants); err != nil {
+		ids, err := database.ListLiveTenantIDs(ctx, db, "compliance.report_worker")
+		if err != nil {
 			slog.Error("failed to load tenants (fallback)", "error", err)
 			return
 		}
-		for _, t := range tenants {
-			tenantIDs = append(tenantIDs, t.TenantID)
-		}
+		tenantIDs = ids
 	}
 
 	generated := 0

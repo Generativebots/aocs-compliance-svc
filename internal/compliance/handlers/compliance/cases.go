@@ -525,7 +525,7 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 			// Standard departments (Engineering, Compliance, Finance, Legal…) are shared
 			// across ALL tenants — same model as global roles/permissions.
 			// Only member association (syst_user_roles) is tenant-scoped.
-			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblSystDepartments, "slug,enabled_features", "", "", &knownDepts); _dbErr != nil {
+			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblSystDepartments, "slug,enabled_features", "tenant_id", tenantID, &knownDepts); _dbErr != nil {
 				slog.Error("db.QueryRows failed (best-effort)", "error", _dbErr)
 			}
 			deptMap := make(map[string]map[string]any, len(knownDepts))
@@ -582,8 +582,7 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 			}
 			for _, dept := range deptIDs {
 				var pendingRows []map[string]any
-				if _dbErr := db.QueryRowsCompound(database.TblCoreHitl, "decision_id",
-					"department_id", dept, "status", "PENDING", &pendingRows); _dbErr != nil {
+				if _dbErr := database.QueryTenantRows(r.Context(), db, database.TblCoreHitl, "decision_id", tenantID, []database.Eq{{Col: "department_id", Val: dept}, {Col: "status", Val: "PENDING"}}, &pendingRows); _dbErr != nil {
 					slog.Error("db.QueryRowsCompound failed (best-effort)", "error", _dbErr)
 				}
 				if len(pendingRows) >= maxCases {

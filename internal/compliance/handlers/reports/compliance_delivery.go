@@ -225,9 +225,7 @@ func HandleDeliverComplianceReport(db database.DB) http.HandlerFunc {
 			Status         string  `json:"status"`
 		}
 		var reports []complianceReportRow
-		if err := db.QueryRows(database.TblSharComplianceReports,
-			"compliance_report_id,report_type,standard,period,schedule_config,status",
-			"compliance_report_id", reportID, &reports); err != nil || len(reports) == 0 {
+		if err := db.QueryRowsCompoundCtx(r.Context(), database.TblSharComplianceReports, "compliance_report_id,report_type,standard,period,schedule_config,status", "tenant_id", tenantID, "compliance_report_id", reportID, &reports); err != nil || len(reports) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "compliance report not found")
 			return
 		}

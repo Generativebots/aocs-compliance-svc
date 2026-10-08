@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/respond"
 )
 
@@ -38,14 +39,13 @@ func HandleActivateComplianceSync() http.HandlerFunc {
 			}
 		}
 
-		if req.TenantID == "" {
-			req.TenantID = r.Header.Get("X-Tenant-ID")
-		}
-
-		if req.TenantID == "" {
-			respond.ErrorWithCode(w, http.StatusBadRequest, "missing_tenant", "tenant_id is required")
+		// D2: tenant from the verified session; a body tenant_id for another
+		// tenant needs an audited platform grant.
+		tid, r2, ok := auth.TargetTenantNamed(w, r, req.TenantID)
+		if !ok {
 			return
 		}
+		r, req.TenantID = r2, tid
 
 		if req.Mode == "" {
 			req.Mode = "forward_only"

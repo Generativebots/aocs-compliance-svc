@@ -124,28 +124,39 @@ func HandleGetAccessClaims(db database.DB) http.HandlerFunc {
 		if respond.RequireDB(w, db) {
 			return
 		}
-		// Permissions, roles and departments are platform-global —
-		// return ALL rows without tenant filter so the RBAC matrix
-		// always shows the full picture for the superadmin.
+		// Roles/permissions: platform templates (tenant_id IS NULL) plus the
+		// caller's own tenant rows. Departments are tenant-owned.
+		tenantID, ok := auth.MustGetTenantID(w, r)
+		if !ok {
+			return
+		}
 		var permissions []map[string]any
 		var roles []map[string]any
 		var departments []map[string]any
 
 		runConcurrent(r.Context(), []dbQuery{
-			// nolint:tenant_filter — SuperAdmin RBAC view: cross-tenant permission data
 			{fn: func() error {
-				// syst_role_perms is dropped — expand syst_roles.permissions (platform roles).
-				rows, err := database.ListRolePerms(r.Context(), db, "", "")
+				// syst_role_perms is dropped — expand syst_roles.permissions
+				// (platform templates + this tenant's roles).
+				rows, err := database.ListRolePerms(r.Context(), db, tenantID, "")
 				permissions = rows
 				return err
 			}},
-			// nolint:tenant_filter — SuperAdmin RBAC view: cross-tenant roles
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblSystRoles, database.ColsAocsPlatformRoles, "", "", &roles)
+				// syst_roles is a global catalog (D5); keep templates + own tenant.
+				var all []map[string]any
+				if err := db.QueryRowsCtx(r.Context(), database.TblSystRoles, database.ColsAocsPlatformRoles, "", "", &all); err != nil {
+					return err
+				}
+				for _, row := range all {
+					if t, _ := row["tenant_id"].(string); t == "" || t == tenantID {
+						roles = append(roles, row)
+					}
+				}
+				return nil
 			}},
-			// nolint:tenant_filter — SuperAdmin RBAC view: cross-tenant departments
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblSystDepartments, database.ColsAocsPlatformDepartments, "", "", &departments)
+				return db.QueryRowsCtx(r.Context(), database.TblSystDepartments, database.ColsAocsPlatformDepartments, "tenant_id", tenantID, &departments)
 			}},
 		})
 

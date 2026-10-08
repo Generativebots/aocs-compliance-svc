@@ -102,8 +102,7 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 				return
 			}
 			pendingRows = hitlRows
-		} else if _dbErr := db.QueryRowsCompound(database.TblCoreHitl, "decision_id,created_at",
-			"department_id", slug, "status", "PENDING", &pendingRows); _dbErr != nil {
+		} else if _dbErr := database.QueryTenantRows(r.Context(), db, database.TblCoreHitl, "decision_id,created_at", tenantID, []database.Eq{{Col: "department_id", Val: slug}, {Col: "status", Val: "PENDING"}}, &pendingRows); _dbErr != nil {
 			slog.Error("db.QueryRowsCompound failed", "error", _dbErr)
 			respond.InternalError(w, http.StatusInternalServerError, "overflow_check_query_failed", _dbErr)
 			return
@@ -194,13 +193,12 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 						"case_id", caseID, "error", _rErr)
 					continue
 				}
-			} else if err := db.UpdateRowCompoundCtx(r.Context(), database.TblCoreHitl, "decision_id", caseID, "status", "PENDING",
-				map[string]any{
-					"department_id": targetDept,
-					"sla_deadline":  newDeadline,
-					"context_data":  string(ctxUpdate),
-					"updated_at":    now,
-				}); err != nil {
+			} else if err := db.UpdateRowCompoundCtx(database.WithMutationTenant(r.Context(), tenantID), database.TblCoreHitl, "decision_id", caseID, "status", "PENDING", map[string]any{
+				"department_id": targetDept,
+				"sla_deadline":  newDeadline,
+				"context_data":  string(ctxUpdate),
+				"updated_at":    now,
+			}); err != nil {
 				slog.Error("failed to move case",
 					"case_id", caseID, "error", err)
 				continue
@@ -291,8 +289,7 @@ func HandleGuardDeptDeletion(db database.DB, coreClients ...*serviceclient.Clien
 				return
 			}
 			pendingRows = hitlRows
-		} else if _dbErr := db.QueryRowsCompound(database.TblCoreHitl, "decision_id",
-			"department_id", slug, "status", "PENDING", &pendingRows); _dbErr != nil {
+		} else if _dbErr := database.QueryTenantRows(r.Context(), db, database.TblCoreHitl, "decision_id", tenantID, []database.Eq{{Col: "department_id", Val: slug}, {Col: "status", Val: "PENDING"}}, &pendingRows); _dbErr != nil {
 			slog.Error("db.QueryRowsCompound failed", "error", _dbErr)
 			respond.InternalError(w, http.StatusInternalServerError, "overflow_check_query_failed", _dbErr)
 			return

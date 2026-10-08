@@ -176,7 +176,7 @@ func (v *ZKPVerifier) GenerateChallenge(tenantID string, proofType ProofType, pa
 	// Persist to Redis for multi-pod consistency; fallback to in-memory.
 	if v.redis != nil {
 		if b, err := json.Marshal(challenge); err == nil {
-			redisKey := "zkp:challenge:" + challenge.ChallengeID
+			redisKey := zkpChallengeKey(challenge.TenantID, challenge.ChallengeID)
 			if err := v.redis.Set(v.svcCtx, redisKey, b, v.defaultChallengeTTL); err != nil {
 				v.logger.Warn("ZKP: Redis Set failed, falling back to in-memory", "error", err)
 				v.challenges[challenge.ChallengeID] = challenge
@@ -205,7 +205,7 @@ func (v *ZKPVerifier) VerifyProof(proof *ZKPProof) (*ZKPVerificationResult, erro
 	var challenge *ZKPChallenge
 	var ok bool
 	if v.redis != nil {
-		redisKey := "zkp:challenge:" + proof.ChallengeID
+		redisKey := zkpChallengeKey(proof.TenantID, proof.ChallengeID)
 		if b, err := v.redis.Get(v.svcCtx, redisKey); err == nil {
 			var c ZKPChallenge
 			if json.Unmarshal(b, &c) == nil {
@@ -216,6 +216,13 @@ func (v *ZKPVerifier) VerifyProof(proof *ZKPProof) (*ZKPVerificationResult, erro
 	}
 	if !ok {
 		challenge, ok = v.challenges[proof.ChallengeID]
+	}
+	// Tenant isolation: a challenge is only usable by the tenant it was issued
+	// to. A foreign tenant's challenge is reported as not found and is NOT
+	// consumed (so another tenant cannot burn it).
+	if ok && (proof.TenantID == "" || challenge.TenantID != proof.TenantID) {
+		ok = false
+		challenge = nil
 	}
 	if !ok {
 		return &ZKPVerificationResult{
@@ -231,7 +238,7 @@ func (v *ZKPVerifier) VerifyProof(proof *ZKPProof) (*ZKPVerificationResult, erro
 	if time.Now().UTC().After(challenge.ExpiresAt) {
 		delete(v.challenges, proof.ChallengeID)
 		if v.redis != nil {
-			_ = v.redis.Del(v.svcCtx, "zkp:challenge:"+proof.ChallengeID)
+			_ = v.redis.Del(v.svcCtx, zkpChallengeKey(proof.TenantID, proof.ChallengeID))
 		}
 		return &ZKPVerificationResult{
 			ChallengeID: proof.ChallengeID,
@@ -264,7 +271,7 @@ func (v *ZKPVerifier) VerifyProof(proof *ZKPProof) (*ZKPVerificationResult, erro
 	// Consume the challenge (single-use) — delete from both stores.
 	delete(v.challenges, proof.ChallengeID)
 	if v.redis != nil {
-		_ = v.redis.Del(v.svcCtx, "zkp:challenge:"+proof.ChallengeID)
+		_ = v.redis.Del(v.svcCtx, zkpChallengeKey(proof.TenantID, proof.ChallengeID))
 	}
 
 	result := &ZKPVerificationResult{
@@ -466,4 +473,9 @@ func getFloat(m map[string]any, key string) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// zkpChallengeKey is the tenant-scoped Redis key for a ZKP challenge.
+func zkpChallengeKey(tenantID, challengeID string) string {
+	return "zkp:challenge:" + tenantID + ":" + challengeID
 }

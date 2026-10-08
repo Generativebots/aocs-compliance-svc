@@ -146,8 +146,7 @@ func HandleVerifyProofInclusion(db database.DB) http.HandlerFunc {
 				return
 			}
 			var rows []map[string]any
-			if _dbErr := db.QueryRowsCompound(database.TblZKPChainRoots, "chain_root,tree_algorithm,tenant_id",
-				"agent_id", body.AgentID, "period", body.Period, &rows); _dbErr != nil {
+			if _dbErr := database.QueryTenantRows(r.Context(), db, database.TblZKPChainRoots, "chain_root,tree_algorithm,tenant_id", tenantID, []database.Eq{{Col: "agent_id", Val: body.AgentID}, {Col: "period", Val: body.Period}}, &rows); _dbErr != nil {
 				slog.Error("db.QueryRowsCompound failed (best-effort)", "error", _dbErr)
 			}
 			// Enforce tenant isolation on ZKP proof chain root.
@@ -212,8 +211,7 @@ func HandleGetProofChain(db database.DB) http.HandlerFunc {
 		// Enforce tenant scope: only return ZKP chain roots that belong to this tenant.
 		// QueryRowsCompound only supports two-column compound filters — use raw ctx query
 		// with tenant_id as the primary filter, then filter by agent_id+period in-memory.
-		if err := db.QueryRowsCompound(database.TblZKPChainRoots, database.ColsZkpChainRoots,
-			"agent_id", agentID, "period", period, &rows); err != nil {
+		if err := database.QueryTenantRows(r.Context(), db, database.TblZKPChainRoots, database.ColsZkpChainRoots, tenantID, []database.Eq{{Col: "agent_id", Val: agentID}, {Col: "period", Val: period}}, &rows); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "fetch chain root", err)
 			return
 		}

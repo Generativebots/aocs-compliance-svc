@@ -26,19 +26,27 @@ import (
 // processPendingBatchJobs is a trusted server-side background goroutine.
 //   - This runs inside the aocs-platform process, not reachable from the network.
 //   - Each job row was created by HandleCreateZKPBatchJob with an explicit tenant_id.
-//   - All UpdateRow calls scope by job_id (UUID) — no cross-tenant mutation.
+//   - All UpdateRow calls scope by (job_id, tenant_id) — no cross-tenant mutation.
 //   - Jobs are isolated: results per-job reference only the agent_ids encoded in that job.
-//
-// If multi-tenant job isolation is needed in future, add a tenant iteration loop.
+//   - D3: pending jobs are read one tenant at a time (WHERE tenant_id = $1).
 func processPendingBatchJobs(ctx context.Context, db database.DB) {
-	var jobs []struct {
+	type batchJob struct {
 		JobID    string   `json:"job_id"`
 		TenantID string   `json:"tenant_id"`
 		AgentIDs []string `json:"agent_ids"`
 		Period   string   `json:"period"`
 	}
-	if err := db.QueryRowsCursor(database.TblZKPBatchJobs, "job_id, tenant_id, agent_ids, period", "status", "PENDING", database.CursorPage{Limit: 200}, &jobs); err != nil {
-		return
+	var jobs []batchJob
+	if err := database.ForEachTenant(ctx, db, "compliance.zkp_batch", func(ctx context.Context, tenantID string) error {
+		var part []batchJob
+		if err := db.QueryRowsCompoundCtx(ctx, database.TblZKPBatchJobs, "job_id,tenant_id,agent_ids,period",
+			"tenant_id", tenantID, "status", "PENDING", &part); err != nil {
+			return err
+		}
+		jobs = append(jobs, part...)
+		return nil
+	}); err != nil {
+		slog.Warn("processPendingBatchJobs: tenant loop incomplete", "error", err)
 	}
 	for _, job := range jobs {
 		if ctx.Err() != nil {
