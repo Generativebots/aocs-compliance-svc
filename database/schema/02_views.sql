@@ -148,3 +148,16 @@ CREATE OR REPLACE VIEW public.lv_core_gdpr_requests WITH (security_invoker = tru
     lv_ts(metadata ->> 'erased_at'::text) AS erased_at
    FROM compl_cases h
   WHERE case_type = 'GDPR_REQUEST'::text;
+
+CREATE OR REPLACE VIEW public.vw_compliance_posture WITH (security_invoker=true) AS
+ SELECT tenant_id,
+    framework,
+    count(*) AS total_controls,
+    count(*) FILTER (WHERE upper(status) = 'COMPLIANT'::text) AS compliant_controls,
+    count(*) FILTER (WHERE upper(status) = ANY (ARRAY['NON_COMPLIANT'::text, 'FAILED'::text, 'GAP'::text])) AS non_compliant_controls,
+    round(100.0 * count(*) FILTER (WHERE upper(status) = 'COMPLIANT'::text)::numeric / NULLIF(count(*), 0)::numeric, 1) AS compliance_pct,
+    COALESCE(sum(evidence_count), 0::bigint) AS evidence_count,
+    max(last_assessed_at) AS last_assessed_at,
+    min(next_review_at) AS next_review_at
+   FROM compl_obligations o
+  GROUP BY tenant_id, framework;

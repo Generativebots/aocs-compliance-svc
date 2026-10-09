@@ -69,6 +69,9 @@ func main() {
 	if coreURL == "" {
 		// Core client targets ocx-core-svc (DLP integrations, enforcement actions, events).
 		// Set INTERNAL_API_URL to the internal VPC URL of ocx-core-svc in production.
+		if cfg.IsProduction() || cfg.IsStaging() {
+			slog.Error("INTERNAL_API_URL is not set — core-backed reports, DLP and ZKP reads will fail; set it in the deployment")
+		}
 		coreURL = "http://aocs-system:8082"
 	}
 	coreClient := serviceclient.New(

@@ -102,6 +102,38 @@ spec:
               name: aocs-compliance-secrets
               key: SUPABASE_JWT_ISSUER
 
+        # ── Internal service calls (required) ─────────────────────────────
+        # INTERNAL_API_URL      → ocx-core-svc hub (DLP, enforcement, events)
+        # CORE_INTERNAL_API_URL → ocx-core-svc gate (tenant telemetry, EU AI Act card)
+        # Per environment: the target's Cloud Run URL / internal VPC URL.
+        - name: INTERNAL_API_URL
+          valueFrom:
+            secretKeyRef:
+              name: aocs-compliance-secrets
+              key: INTERNAL_API_URL
+        - name: CORE_INTERNAL_API_URL
+          valueFrom:
+            secretKeyRef:
+              name: aocs-compliance-secrets
+              key: CORE_INTERNAL_API_URL
+        # Service JWT: HS256 secret (Docker/GKE) + this service's own audiences
+        # (its Cloud Run URL) + SA→service map for Google ID tokens.
+        - name: SERVICE_JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: aocs-compliance-secrets
+              key: SERVICE_JWT_SECRET
+        - name: SERVICE_JWT_AUDIENCE
+          valueFrom:
+            secretKeyRef:
+              name: aocs-compliance-secrets
+              key: SERVICE_JWT_AUDIENCE
+        - name: SERVICE_ACCOUNT_SERVICES
+          valueFrom:
+            secretKeyRef:
+              name: aocs-compliance-secrets
+              key: SERVICE_ACCOUNT_SERVICES
+
         # ── S2 Fix: Persistent Ed25519 signing key ────────────────────────
         # REQUIRED — service fails-fast at startup if absent (no ephemeral fallback).
         # Create: gcloud secrets create PLATFORM_MASTER_KEY --data-file=<(openssl rand -hex 32)

@@ -74,28 +74,30 @@ END $$;
 -- Keeps compl_records.evidence_count accurate when evidence items are filed,
 -- deleted, or re-filed to a different control.
 CREATE OR REPLACE FUNCTION public.fn_compl_sync_evidence_count()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
 BEGIN
-  -- SCHEMA FIX: counter lives on compl_obligations (control_id PK), not compl_records.
+  -- Counter lives on compl_obligations (control_id), same tenant as the evidence row.
   IF TG_OP = 'INSERT' AND NEW.control_id IS NOT NULL THEN
     UPDATE compl_obligations SET evidence_count = COALESCE(evidence_count, 0) + 1
-     WHERE control_id = NEW.control_id;
+     WHERE tenant_id = NEW.tenant_id AND control_id = NEW.control_id;
   ELSIF TG_OP = 'DELETE' AND OLD.control_id IS NOT NULL THEN
     UPDATE compl_obligations SET evidence_count = GREATEST(0, COALESCE(evidence_count, 0) - 1)
-     WHERE control_id = OLD.control_id;
+     WHERE tenant_id = OLD.tenant_id AND control_id = OLD.control_id;
   ELSIF TG_OP = 'UPDATE' AND OLD.control_id IS DISTINCT FROM NEW.control_id THEN
     IF OLD.control_id IS NOT NULL THEN
       UPDATE compl_obligations SET evidence_count = GREATEST(0, COALESCE(evidence_count, 0) - 1)
-       WHERE control_id = OLD.control_id;
+       WHERE tenant_id = OLD.tenant_id AND control_id = OLD.control_id;
     END IF;
     IF NEW.control_id IS NOT NULL THEN
       UPDATE compl_obligations SET evidence_count = COALESCE(evidence_count, 0) + 1
-       WHERE control_id = NEW.control_id;
+       WHERE tenant_id = NEW.tenant_id AND control_id = NEW.control_id;
     END IF;
   END IF;
   RETURN COALESCE(NEW, OLD);
 END;
-$$;
+$function$;
 
 COMMENT ON FUNCTION public.fn_compl_sync_evidence_count() IS
     'Keeps compl_records.evidence_count in sync with compl_evidence row changes. '

@@ -167,12 +167,10 @@ CREATE TABLE IF NOT EXISTS compl_reports (
     report_id           TEXT        PRIMARY KEY DEFAULT public.gen_id(''),
     tenant_id           TEXT        NOT NULL
                             REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
-    report_type         TEXT        NOT NULL
-                            CHECK (report_type IN ('SOC2','EU_AI_ACT','ISO27001','GDPR','HIPAA','GRC_SUMMARY','DAILY','WEEKLY','MONTHLY')),
+    report_type         TEXT        NOT NULL,
     period_start        TIMESTAMPTZ NOT NULL,
     period_end          TIMESTAMPTZ NOT NULL,
-    status              TEXT        NOT NULL DEFAULT 'DRAFT'
-                            CHECK (status IN ('DRAFT','GENERATED','DELIVERED','ARCHIVED')),
+    status              TEXT        NOT NULL DEFAULT 'DRAFT',
     report_url          TEXT,
     summary             JSONB       NOT NULL DEFAULT '{}',
     case_count          INTEGER     NOT NULL DEFAULT 0,
@@ -188,7 +186,9 @@ CREATE TABLE IF NOT EXISTS compl_reports (
     data jsonb,
     framework text,
     passed_controls integer,
-    total_controls integer
+    total_controls integer,
+    CONSTRAINT compl_reports_report_type_check CHECK ((report_type = ANY (ARRAY['SOC2'::text, 'EU_AI_ACT'::text, 'ISO27001'::text, 'GDPR'::text, 'HIPAA'::text, 'GRC_SUMMARY'::text, 'DAILY'::text, 'WEEKLY'::text, 'MONTHLY'::text, 'ISO-42001'::text, 'ISO42001'::text, 'NIST-AI-RMF'::text, 'NIST_AI_RMF'::text]))),
+    CONSTRAINT compl_reports_status_check CHECK ((status = ANY (ARRAY['DRAFT'::text, 'GENERATED'::text, 'DELIVERED'::text, 'ARCHIVED'::text, 'CERTIFIED'::text])))
 );
 
 -- ── compl_case_comments ────────────────────────────────────────────
@@ -306,7 +306,9 @@ CREATE TABLE IF NOT EXISTS compl_policy_exceptions (
     expires_at          TIMESTAMPTZ,
     status              TEXT NOT NULL DEFAULT 'PENDING' CHECK (status = ANY (ARRAY['PENDING','APPROVED','REJECTED','EXPIRED'])),
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by text,
+    department_id text
 );
 
 CREATE TABLE IF NOT EXISTS compl_risk_assessments (
@@ -324,7 +326,9 @@ CREATE TABLE IF NOT EXISTS compl_risk_assessments (
     reviewer            TEXT,
     status              TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status = ANY (ARRAY['DRAFT','UNDER_REVIEW','APPROVED','CLOSED'])),
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by text,
+    department_id text
 );
 
 -- ── compl_cases ──────────────────────────────────────────────
@@ -382,7 +386,8 @@ CREATE TABLE IF NOT EXISTS compl_cases (
     control_ref text,
     framework text,
     resolved_at timestamp with time zone,
-    CONSTRAINT lv_nn_title CHECK (((title IS NOT NULL) OR (case_type = ANY ('{DISPUTE,GDPR_REQUEST}'::text[]))))
+    CONSTRAINT lv_nn_title CHECK (((title IS NOT NULL) OR (case_type = ANY ('{DISPUTE,GDPR_REQUEST}'::text[])))),
+    department_id text
 );
 
 COMMENT ON TABLE compl_cases IS

@@ -42,22 +42,16 @@ ALTER TABLE compl_idempotency_log              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE compl_idempotency_log              FORCE  ROW LEVEL SECURITY;
 
 -- ── Tenant isolation + superadmin bypass (all tenant-scoped compl_* tables) ──
--- On Supabase the identity comes from the JWT (auth.jwt()); on plain Postgres
--- (local / on-prem) auth.jwt() does not exist, so fall back to the same app.*
--- GUCs that ocx-core-svc policies use. Without this the loop aborted and the
--- FORCE RLS tables above were left with no policies at all.
+-- Same app.* settings on every install (Supabase or plain Postgres): the Go
+-- services set app.current_tenant_id and, for superadmin scope,
+-- app.is_super_admin (ocx-shared-go/infra/middleware/superadmin.go). The old
+-- auth.jwt() variant only served PostgREST user roles, which no longer have
+-- table access (app_apply_privileges).
 DO $$ DECLARE
   t TEXT;
-  admin_expr  TEXT;
-  tenant_expr TEXT;
+  admin_expr  TEXT := 'current_setting(''app.is_super_admin'', true) = ''true''';
+  tenant_expr TEXT := 'tenant_id = current_setting(''app.current_tenant_id'', true)';
 BEGIN
-  IF to_regprocedure('auth.jwt()') IS NOT NULL THEN
-    admin_expr  := '(auth.jwt()->''app_metadata''->>''is_super_admin'')::boolean = true';
-    tenant_expr := 'tenant_id = (auth.jwt()->''app_metadata''->>''tenant_id'')';
-  ELSE
-    admin_expr  := 'current_setting(''app.is_super_admin'', true) = ''true''';
-    tenant_expr := 'tenant_id = current_setting(''app.current_tenant_id'', true)';
-  END IF;
   FOREACH t IN ARRAY ARRAY[
     'compl_records',
     'compl_obligations',
@@ -115,14 +109,14 @@ GRANT SELECT ON
 
 -- Logical views (lv_*): same grants as their host table.
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.lv_core_disputes TO aocs_app;
-GRANT SELECT ON public.lv_core_disputes TO authenticated;
+GRANT SELECT ON public.lv_core_disputes TO service_role;
 GRANT DELETE, INSERT, SELECT, UPDATE ON public.lv_core_disputes TO service_role;
 GRANT DELETE, INSERT, SELECT, UPDATE ON public.lv_core_disputes TO svc_compliance;
 GRANT DELETE, INSERT, SELECT, UPDATE ON public.lv_core_disputes TO svc_core;
 GRANT SELECT ON public.lv_core_disputes TO svc_platform;
 GRANT DELETE, INSERT, SELECT, UPDATE ON public.lv_core_disputes TO svc_system;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.lv_core_gdpr_requests TO aocs_app;
-GRANT SELECT ON public.lv_core_gdpr_requests TO authenticated;
+GRANT SELECT ON public.lv_core_gdpr_requests TO service_role;
 GRANT DELETE, INSERT, SELECT, UPDATE ON public.lv_core_gdpr_requests TO service_role;
 GRANT DELETE, INSERT, SELECT, UPDATE ON public.lv_core_gdpr_requests TO svc_compliance;
 GRANT DELETE, INSERT, SELECT, UPDATE ON public.lv_core_gdpr_requests TO svc_core;
