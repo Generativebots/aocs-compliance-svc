@@ -77,6 +77,10 @@ spec:
           value: "8080"
         - name: OCX_ENV
           value: "production"
+        # GX-02: demo tenants keep their seeded obligation posture; every other
+        # tenant's seeded obligations are derived from linked evidence.
+        - name: COMPLIANCE_DEMO_TENANTS
+          value: "609a2d1b-8892-41ec-842e-53c520dec361"
         - name: AOCS_EGRESS_MODE
           value: "block"
 

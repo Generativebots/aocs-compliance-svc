@@ -218,7 +218,7 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 					"tenant_id":   tenantID, // REQUIRED: all platform_events rows must be tenant-scoped
 					"payload": map[string]any{
 						"action":    "overflow_route",
-						"severity":  "WARN",
+						"severity":  "WARNING",
 						"metadata":  auditMeta,
 						"from_dept": slug,
 						"to_dept":   targetDept,

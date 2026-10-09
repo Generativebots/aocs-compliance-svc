@@ -153,24 +153,8 @@ func ensureHIPAAObligationsInDB(db database.DB, tenantID string) {
 		if existingRefs[base.ControlRef] {
 			continue
 		}
-		newRow := map[string]any{
-			"control_id":       "ctl-" + uuid.NewString()[:8],
-			"tenant_id":        tenantID,
-			"framework":        "HIPAA",
-			"control_ref":      base.ControlRef,
-			"name":             base.Name,
-			"description":      base.Description,
-			"status":           "COMPLIANT",
-			"evidence_count":   1,
-			"last_assessed_at": now.Format(time.RFC3339),
-			"metadata": map[string]any{
-				"safeguard":    base.Safeguard,
-				"evidence_ref": base.EvidenceRef,
-				"seeded":       true,
-			},
-			"created_at": now.Format(time.RFC3339),
-			"updated_at": now.Format(time.RFC3339),
-		}
+		newRow := seededObligation("ctl-", tenantID, "HIPAA", base.ControlRef, base.Name, base.Description,
+			map[string]any{"safeguard": base.Safeguard, "evidence_ref": base.EvidenceRef}, now)
 		if insertErr := db.InsertRow(database.TblComplObligations, newRow); insertErr != nil {
 			slog.Warn("Failed to seed HIPAA obligation into DB", "error", insertErr, "ref", base.ControlRef, "tenant_id", tenantID)
 		}
@@ -241,13 +225,10 @@ func HandleGetHIPAAReview(db database.DB) http.HandlerFunc {
 			cref, _ := row["control_ref"].(string)
 			name, _ := row["name"].(string)
 			desc, _ := row["description"].(string)
-			status, _ := row["status"].(string)
-			if status == "" {
-				status = "COMPLIANT"
-			}
+			status := storedStatus(row)
 
 			// If critical violations exist in DB and affect this safeguard, reflect state dynamically
-			if hasCriticalViolations && (cref == "164.312(a)(1)" || cref == "164.514(b)") {
+			if hasCriticalViolations && status == statusCompliant && (cref == "164.312(a)(1)" || cref == "164.514(b)") {
 				status = "IN_PROGRESS"
 			}
 
@@ -262,10 +243,7 @@ func HandleGetHIPAAReview(db database.DB) http.HandlerFunc {
 				}
 			}
 
-			cnt := evidenceCountByRef[cid]
-			if cnt == 0 {
-				cnt = evidenceCountByRef["global"] + 1
-			}
+			cnt := evidenceCountByRef[cid] // no tenant-wide fallback
 
 			item := HIPAACheckItem{
 				ControlID:     cid,
@@ -287,10 +265,7 @@ func HandleGetHIPAAReview(db database.DB) http.HandlerFunc {
 		}
 
 		total := len(checks)
-		if total == 0 {
-			total = 1
-		}
-		score := (float64(passedCount) / float64(total)) * 100.0
+		score := passScore(passedCount, total)
 
 		// 5. Query latest certified report from compl_reports to verify attestation status
 		var reportRows []map[string]any

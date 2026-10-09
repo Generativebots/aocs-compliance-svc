@@ -260,7 +260,8 @@ CREATE TABLE IF NOT EXISTS compl_anomaly (
 CREATE TABLE IF NOT EXISTS compl_policy_violations (
     violation_id        TEXT PRIMARY KEY DEFAULT public.gen_id(''),
     tenant_id           TEXT NOT NULL REFERENCES syst_tenants(tenant_id) ON DELETE CASCADE,
-    policy_id           TEXT NOT NULL,
+    -- NULL for gate refusals that matched no policy (trust floor, unknown tool, guardian, ...).
+    policy_id           TEXT,
     agent_id            TEXT,
     execution_id        TEXT,
     violation_type      TEXT NOT NULL,
@@ -274,7 +275,11 @@ CREATE TABLE IF NOT EXISTS compl_policy_violations (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     details jsonb,
-    policy_name text
+    policy_name text,
+    -- GX-15: gate decision (core_gate_decisions.tx_id) this violation was harvested from.
+    source_tx_id        TEXT,
+    -- GX-15: compliance case the violation belongs to.
+    case_id             TEXT
 );
 
 CREATE TABLE IF NOT EXISTS compl_regulatory (

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 
@@ -91,20 +92,103 @@ func evaluateContinuousCompliance(ctx context.Context, db continuousComplianceSt
 		slog.Error("ContinuousComplianceWorker: list tenants failed", "error", err)
 		return
 	}
+	demo := demoTenantSet()
 	for _, t := range tenants {
 		if ctx.Err() != nil {
 			return
 		}
 		if t.TenantID != "" {
-			reconcileTenantObligations(ctx, db, t.TenantID, time.Now().UTC())
+			isDemo := demo[strings.ToLower(t.TenantID)] || (t.TenantName != "" && demo[strings.ToLower(t.TenantName)])
+			reconcileTenant(ctx, db, t.TenantID, time.Now().UTC(), !isDemo)
 		}
 	}
 }
 
+// demoTenantSet reads COMPLIANCE_DEMO_TENANTS (comma-separated tenant ids or
+// names, case-insensitive). Demo tenants keep their seeded posture (GX-02
+// decision 2026-10-09: reset real tenants only).
+func demoTenantSet() map[string]bool {
+	set := map[string]bool{}
+	for _, s := range strings.Split(os.Getenv("COMPLIANCE_DEMO_TENANTS"), ",") {
+		if s = strings.ToLower(strings.TrimSpace(s)); s != "" {
+			set[s] = true
+		}
+	}
+	return set
+}
+
+// evidenceRow is a compl_evidence row as needed for status derivation.
+type evidenceRow struct {
+	ControlID   string   `json:"control_id"`
+	ControlRefs []string `json:"control_refs"`
+	Status      string   `json:"status"`
+	ExpiresAt   string   `json:"expires_at"`
+}
+
+// invalidEvidenceStatus are evidence states that do not count as a passing test.
+var invalidEvidenceStatus = map[string]bool{
+	"REVOKED": true, "REJECTED": true, "INVALID": true, "FAILED": true, "EXPIRED": true, "SUPERSEDED": true,
+}
+
+// isDerivedObligation reports whether the worker owns the obligation's status:
+// baseline seeds and obligations explicitly marked status_source=derived.
+// Obligations a human manages (no marker) and WAIVED ones are never derived.
+func isDerivedObligation(ob obligationRow, meta map[string]any) bool {
+	if strings.EqualFold(ob.Status, "WAIVED") {
+		return false
+	}
+	if src, _ := meta["status_source"].(string); src != "" {
+		return strings.EqualFold(src, "derived")
+	}
+	seeded, _ := meta["seeded"].(bool)
+	return seeded
+}
+
+// derivedStatus is COMPLIANT when at least one valid, unexpired evidence row
+// is linked to the control (by control_id or control_refs), else NOT_STARTED.
+// Open violations are applied afterwards by the flagging logic.
+func derivedStatus(ob obligationRow, evidence []evidenceRow, now time.Time) (string, int) {
+	n := 0
+	for _, ev := range evidence {
+		if invalidEvidenceStatus[strings.ToUpper(ev.Status)] {
+			continue
+		}
+		if ev.ExpiresAt != "" {
+			if exp, err := time.Parse(time.RFC3339Nano, ev.ExpiresAt); err == nil && !exp.After(now) {
+				continue
+			}
+		}
+		if evidenceLinked(ob, ev) {
+			n++
+		}
+	}
+	if n > 0 {
+		return "COMPLIANT", n
+	}
+	return "NOT_STARTED", 0
+}
+
+func evidenceLinked(ob obligationRow, ev evidenceRow) bool {
+	if ev.ControlID != "" && ev.ControlID == ob.ControlID {
+		return true
+	}
+	for _, ref := range ev.ControlRefs {
+		if ref != "" && (ref == ob.ControlID || (ob.ControlRef != "" && ref == ob.ControlRef)) {
+			return true
+		}
+	}
+	return false
+}
+
 // reconcileTenantObligations flags COMPLIANT obligations linked to an open
 // violation and restores obligations the worker flagged once no linked
-// violation remains open. It returns the number of obligations changed.
+// violation remains open. Seeded / derived obligations get their status from
+// linked evidence first (GX-02). It returns the number of obligations changed.
 func reconcileTenantObligations(ctx context.Context, db continuousComplianceStore, tenantID string, now time.Time) int {
+	return reconcileTenant(ctx, db, tenantID, now, true)
+}
+
+func reconcileTenant(ctx context.Context, db continuousComplianceStore, tenantID string, now time.Time, derive bool) int {
 	var violations []openViolation
 	if err := db.QueryRowsCompoundCtx(ctx, database.TblComplPolicyViolations, "violation_id,violation_type,details",
 		"tenant_id", tenantID, "status", "OPEN", &violations); err != nil {
@@ -128,6 +212,23 @@ func reconcileTenantObligations(ctx context.Context, db continuousComplianceStor
 		unlinked[v.ViolationID] = true
 	}
 
+	// Evidence is read lazily: only when some obligation's status is derived.
+	var evidence []evidenceRow
+	evidenceLoaded, evidenceOK := false, false
+	loadEvidence := func() bool {
+		if !evidenceLoaded {
+			evidenceLoaded = true
+			if err := db.QueryRowsCtx(ctx, database.TblComplEvidence, "control_id,control_refs,status,expires_at",
+				"tenant_id", tenantID, &evidence); err != nil {
+				// Unknown evidence → leave statuses as they are (never guess COMPLIANT or reset).
+				slog.Error("ContinuousComplianceWorker: evidence query failed — derivation skipped", "tenant_id", tenantID, "error", err)
+			} else {
+				evidenceOK = true
+			}
+		}
+		return evidenceOK
+	}
+
 	for _, ob := range obligations {
 		meta := map[string]any{}
 		if len(ob.Metadata) > 0 && string(ob.Metadata) != "null" {
@@ -141,6 +242,16 @@ func reconcileTenantObligations(ctx context.Context, db continuousComplianceStor
 			}
 		}
 		flag, flagged := meta[autoFlagKey].(map[string]any)
+
+		derived := derive && isDerivedObligation(ob, meta)
+		derivedDirty := false
+		if derived && !flagged && loadEvidence() {
+			if target, n := derivedStatus(ob, evidence, now); !strings.EqualFold(target, ob.Status) {
+				meta["status_reason"] = map[string]any{"linked_evidence": n, "derived_at": nowStr}
+				ob.Status = target
+				derivedDirty = true
+			}
+		}
 
 		switch {
 		case len(linked) > 0 && strings.EqualFold(ob.Status, "COMPLIANT"):
@@ -172,11 +283,22 @@ func reconcileTenantObligations(ctx context.Context, db continuousComplianceStor
 			if prior == "" {
 				prior = "COMPLIANT"
 			}
+			// Derived obligations return to what the evidence says now, not
+			// to a status recorded before the violation.
+			if derived && loadEvidence() {
+				prior, _ = derivedStatus(ob, evidence, now)
+			}
 			delete(meta, autoFlagKey)
 			if updateObligation(db, tenantID, ob.ControlID, prior, meta, nowStr) {
 				changed++
 				slog.Info("ContinuousComplianceWorker: obligation restored — linked violations closed",
 					"tenant_id", tenantID, "control_id", ob.ControlID, "status", prior)
+			}
+		case derivedDirty:
+			if updateObligation(db, tenantID, ob.ControlID, ob.Status, meta, nowStr) {
+				changed++
+				slog.Info("ContinuousComplianceWorker: obligation status derived from evidence",
+					"tenant_id", tenantID, "control_id", ob.ControlID, "status", ob.Status)
 			}
 		}
 	}

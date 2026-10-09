@@ -129,23 +129,8 @@ func ensureISO42001BaselineObligations(db database.DB, tenantID string) {
 		if existingRefs[bc.Clause] {
 			continue
 		}
-		newRow := map[string]any{
-			"control_id":       "ctl-iso-" + uuid.NewString()[:8],
-			"tenant_id":        tenantID,
-			"framework":        "ISO-42001",
-			"control_ref":      bc.Clause,
-			"name":             bc.Name,
-			"description":      bc.Description,
-			"status":           "COMPLIANT",
-			"evidence_count":   1,
-			"last_assessed_at": now.Format(time.RFC3339),
-			"metadata": map[string]any{
-				"domain": bc.Domain,
-				"seeded": true,
-			},
-			"created_at": now.Format(time.RFC3339),
-			"updated_at": now.Format(time.RFC3339),
-		}
+		newRow := seededObligation("ctl-iso-", tenantID, "ISO-42001", bc.Clause, bc.Name, bc.Description,
+			map[string]any{"domain": bc.Domain}, now)
 		if insertErr := db.InsertRow(database.TblComplObligations, newRow); insertErr != nil {
 			slog.Warn("Failed to seed ISO 42001 obligation into DB", "error", insertErr, "clause", bc.Clause, "tenant_id", tenantID)
 		}
@@ -174,13 +159,6 @@ func HandleGetISO42001Report(db database.DB) http.HandlerFunc {
 			return
 		}
 
-		var evidenceRows []map[string]any
-		if err := db.QueryRows(database.TblComplEvidence, "evidence_id", "tenant_id", tenantID, &evidenceRows); err != nil {
-			reportReadFailed(w, tenantID, err)
-			return
-		}
-		evidenceCount := len(evidenceRows)
-
 		var violationsRows []map[string]any
 		if err := db.QueryRowsCompound(database.TblComplPolicyViolations, "violation_id", "tenant_id", tenantID, "status", "OPEN", &violationsRows); err != nil {
 			reportReadFailed(w, tenantID, err)
@@ -197,16 +175,20 @@ func HandleGetISO42001Report(db database.DB) http.HandlerFunc {
 			name, _ := row["name"].(string)
 			desc, _ := row["description"].(string)
 
-			chkStatus := "COMPLIANT"
+			chkStatus := storedStatus(row)
 			details := desc
 			remediation := ""
 
-			if violationsCount > 0 && (ref == "A.6" || ref == "A.10") {
+			if violationsCount > 0 && chkStatus == statusCompliant && (ref == "A.6" || ref == "A.10") {
 				chkStatus = "IN_PROGRESS"
 				details += " (Active DLP/policy alerts detected under review)"
 				remediation = "Remediate open policy violations via /api/v1/compliance/violations"
-			} else {
+			}
+			switch chkStatus {
+			case statusCompliant:
 				passed++
+			case statusNotStarted:
+				remediation = "Not yet assessed — link evidence (compl_evidence.control_id / control_refs) to this control"
 			}
 
 			checks = append(checks, ISO42001CheckItem{
@@ -215,17 +197,14 @@ func HandleGetISO42001Report(db database.DB) http.HandlerFunc {
 				Title:         name,
 				Domain:        "AIMS",
 				Status:        chkStatus,
-				EvidenceCount: evidenceCount,
+				EvidenceCount: storedEvidenceCount(row),
 				Details:       details,
 				Remediation:   remediation,
 			})
 		}
 
 		total := len(checks)
-		score := 100.0
-		if total > 0 {
-			score = (float64(passed) / float64(total)) * 100.0
-		}
+		score := passScore(passed, total)
 
 		reportData, _ := json.Marshal(checks)
 		hash := sha256.Sum256(reportData)

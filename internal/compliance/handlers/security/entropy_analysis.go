@@ -194,7 +194,7 @@ func HandleCreateEntropyEvent(db database.DB, coreClients ...*serviceclient.Clie
 			"entropy_score": req.VarianceScore,
 			"analysis_type": "SIGNAL",
 			"action":        "entropy_recorded",
-			"severity":      "WARN",
+			"severity":      "WARNING",
 		}
 
 		if coreClient != nil {
@@ -221,7 +221,7 @@ func HandleCreateEntropyEvent(db database.DB, coreClients ...*serviceclient.Clie
 			EntropyScore: req.VarianceScore,
 			AnalysisType: "SIGNAL",
 			Action:       "entropy_recorded",
-			Severity:     "WARN",
+			Severity:     "WARNING",
 		}
 		if err := db.InsertRow(database.TblCoreEvents, evt); err != nil {
 			slog.Error("CreateEntropyEvent failed", "tenant", tenantID, "error", err)

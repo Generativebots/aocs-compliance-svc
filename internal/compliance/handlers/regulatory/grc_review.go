@@ -159,25 +159,8 @@ func ensureGRCObligationsInDB(db database.DB, tenantID string) {
 		if existingNames[base.Name] {
 			continue
 		}
-		newRow := map[string]any{
-			"control_id":       "ctl-grc-" + uuid.NewString()[:8],
-			"tenant_id":        tenantID,
-			"framework":        base.Framework,
-			"control_ref":      base.ControlRef,
-			"name":             base.Name,
-			"description":      base.Description,
-			"status":           "COMPLIANT",
-			"evidence_count":   1,
-			"last_assessed_at": now.Format(time.RFC3339),
-			"metadata": map[string]any{
-				"domain":     base.Domain,
-				"test_ref":   base.TestRef,
-				"frameworks": base.Frameworks,
-				"seeded":     true,
-			},
-			"created_at": now.Format(time.RFC3339),
-			"updated_at": now.Format(time.RFC3339),
-		}
+		newRow := seededObligation("ctl-grc-", tenantID, base.Framework, base.ControlRef, base.Name, base.Description,
+			map[string]any{"domain": base.Domain, "test_ref": base.TestRef, "frameworks": base.Frameworks}, now)
 		if insertErr := db.InsertRow(database.TblComplObligations, newRow); insertErr != nil {
 			slog.Warn("Failed to seed GRC obligation into DB", "error", insertErr, "name", base.Name, "tenant_id", tenantID)
 		}
@@ -244,14 +227,9 @@ func HandleGetGRCAssessment(db database.DB) http.HandlerFunc {
 			cid, _ := row["control_id"].(string)
 			name, _ := row["name"].(string)
 			desc, _ := row["description"].(string)
-			status, _ := row["status"].(string)
-			if status == "" {
-				status = "COMPLIANT"
-			}
+			status := storedStatus(row)
+			// Never assessed stays empty — it used to be reported as "now".
 			lastAssessed, _ := row["last_assessed_at"].(string)
-			if lastAssessed == "" {
-				lastAssessed = nowStr
-			}
 
 			domain := "Governance"
 			testRef := "test_policy_compliance"
@@ -301,10 +279,7 @@ func HandleGetGRCAssessment(db database.DB) http.HandlerFunc {
 				}
 			}
 
-			cnt := evidenceCountByControl[cid]
-			if cnt == 0 {
-				cnt = len(evidenceRows) + 1
-			}
+			cnt := evidenceCountByControl[cid] // no tenant-wide fallback
 
 			ctrl := GRCControl{
 				ControlID:        cid,

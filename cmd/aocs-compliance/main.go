@@ -104,6 +104,9 @@ func main() {
 	hcompliance.StartContinuousComplianceWorker(svc.BgCtx, db)
 	slog.Info("ContinuousComplianceWorker started — 5m violation/posture sync")
 
+	// GX-15: gate BLOCK/ESC decisions → compl_policy_violations → cases.
+	hcompliance.StartGateViolationHarvester(svc.BgCtx, db)
+
 	// Start resilient evidence outbox retry worker (GAP-BE3)
 	hevidence.StartEvidenceOutboxWorker(svc.BgCtx, db)
 	slog.Info("EvidenceOutboxWorker started — 15s retry queue for failed evidence writes")

@@ -112,6 +112,17 @@ CREATE INDEX IF NOT EXISTS idx_compl_cases_case_type ON compl_cases (tenant_id, 
 -- 2026-10-04 schema hardening: PKs, FK indexes, tenant RLS
 CREATE INDEX IF NOT EXISTS idx_compl_signing_keys_superseded_by ON public.compl_signing_keys (superseded_by);
 CREATE INDEX IF NOT EXISTS idx_compl_policy_violations_tenant_id ON public.compl_policy_violations (tenant_id);
+-- GX-15: harvested gate violations (idempotency key), case link, open list,
+-- and the open-case lookup per violation group.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_compl_policy_violations_source_tx
+    ON public.compl_policy_violations (tenant_id, source_tx_id) WHERE source_tx_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_compl_policy_violations_case
+    ON public.compl_policy_violations (tenant_id, case_id) WHERE case_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_compl_policy_violations_open
+    ON public.compl_policy_violations (tenant_id, detected_at DESC) WHERE status = 'OPEN';
+CREATE INDEX IF NOT EXISTS idx_compl_cases_gate_group
+    ON public.compl_cases (tenant_id, (metadata->>'gate_group'))
+    WHERE metadata ? 'gate_group' AND status IN ('OPEN', 'INVESTIGATING');
 CREATE INDEX IF NOT EXISTS idx_compl_regulatory_tenant_id ON public.compl_regulatory (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_compl_policy_exceptions_tenant_id ON public.compl_policy_exceptions (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_compl_risk_assessments_tenant_id ON public.compl_risk_assessments (tenant_id);

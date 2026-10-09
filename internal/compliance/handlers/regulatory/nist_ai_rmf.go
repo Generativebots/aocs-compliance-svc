@@ -128,23 +128,8 @@ func ensureNISTBaselineObligations(db database.DB, tenantID string) {
 		if existingRefs[bc.Category] {
 			continue
 		}
-		newRow := map[string]any{
-			"control_id":       "ctl-nist-" + uuid.NewString()[:8],
-			"tenant_id":        tenantID,
-			"framework":        "NIST-AI-RMF",
-			"control_ref":      bc.Category,
-			"name":             bc.Name,
-			"description":      bc.Description,
-			"status":           "COMPLIANT",
-			"evidence_count":   1,
-			"last_assessed_at": now.Format(time.RFC3339),
-			"metadata": map[string]any{
-				"function": bc.Function,
-				"seeded":   true,
-			},
-			"created_at": now.Format(time.RFC3339),
-			"updated_at": now.Format(time.RFC3339),
-		}
+		newRow := seededObligation("ctl-nist-", tenantID, "NIST-AI-RMF", bc.Category, bc.Name, bc.Description,
+			map[string]any{"function": bc.Function}, now)
 		if insertErr := db.InsertRow(database.TblComplObligations, newRow); insertErr != nil {
 			slog.Warn("Failed to seed NIST AI RMF obligation into DB", "error", insertErr, "category", bc.Category, "tenant_id", tenantID)
 		}
@@ -172,13 +157,6 @@ func HandleGetNISTReport(db database.DB) http.HandlerFunc {
 			reportReadFailed(w, tenantID, err)
 			return
 		}
-
-		var evidenceRows []map[string]any
-		if err := db.QueryRows(database.TblComplEvidence, "evidence_id", "tenant_id", tenantID, &evidenceRows); err != nil {
-			reportReadFailed(w, tenantID, err)
-			return
-		}
-		evidenceCount := len(evidenceRows)
 
 		var violationsRows []map[string]any
 		if err := db.QueryRowsCompound(database.TblComplPolicyViolations, "violation_id", "tenant_id", tenantID, "status", "OPEN", &violationsRows); err != nil {
@@ -208,16 +186,20 @@ func HandleGetNISTReport(db database.DB) http.HandlerFunc {
 				}
 			}
 
-			chkStatus := "COMPLIANT"
+			chkStatus := storedStatus(row)
 			details := desc
 			remediation := ""
 
-			if violationsCount > 0 && (fn == "MEASURE" || fn == "MANAGE") {
+			if violationsCount > 0 && chkStatus == statusCompliant && (fn == "MEASURE" || fn == "MANAGE") {
 				chkStatus = "IN_PROGRESS"
 				details += " (Active policy alerts flagged under mitigation)"
 				remediation = "Resolve open policy violations via /api/v1/compliance/violations"
-			} else {
+			}
+			switch chkStatus {
+			case statusCompliant:
 				passed++
+			case statusNotStarted:
+				remediation = "Not yet assessed — link evidence (compl_evidence.control_id / control_refs) to this control"
 			}
 
 			checks = append(checks, NISTCheckItem{
@@ -226,17 +208,14 @@ func HandleGetNISTReport(db database.DB) http.HandlerFunc {
 				Category:      ref,
 				Title:         name,
 				Status:        chkStatus,
-				EvidenceCount: evidenceCount,
+				EvidenceCount: storedEvidenceCount(row),
 				Details:       details,
 				Remediation:   remediation,
 			})
 		}
 
 		total := len(checks)
-		score := 100.0
-		if total > 0 {
-			score = (float64(passed) / float64(total)) * 100.0
-		}
+		score := passScore(passed, total)
 
 		reportData, _ := json.Marshal(checks)
 		hash := sha256.Sum256(reportData)

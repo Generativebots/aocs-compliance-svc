@@ -27,7 +27,7 @@ SELECT t.tenant_id,
 FROM public.syst_tenants t
 LEFT JOIN LATERAL (
     SELECT count(*)                                                          AS violation_count,
-           count(*) FILTER (WHERE upper(pv.status) NOT IN ('RESOLVED', 'CLOSED', 'DISMISSED'))
+           count(*) FILTER (WHERE upper(pv.status) NOT IN ('REMEDIATED', 'WAIVED', 'CLOSED'))
                                                                              AS open_violations,
            count(*) FILTER (WHERE pv.detected_at >= now() - interval '30 days') AS violations_30d,
            count(*) FILTER (WHERE pv.resolved_at >= now() - interval '30 days') AS resolved_30d
