@@ -156,7 +156,7 @@ type CasesSubmitJuryVoteRequest struct {
 type UpdateSIEMConfigRequest struct {
 	WebhookURL   string `json:"webhook_url"`
 	Format       string `json:"format"`
-	Enabled      bool   `json:"enabled"`
+	Enabled      *bool  `json:"enabled,omitempty"`
 	SecretHeader string `json:"secret_header,omitempty"`
 }
 

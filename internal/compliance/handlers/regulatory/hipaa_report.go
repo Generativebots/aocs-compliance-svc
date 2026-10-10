@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -48,18 +49,92 @@ type HIPAACheckItem struct {
 
 // HIPAAReviewReport is the formal HIPAA attestation artifact backed by DB records.
 type HIPAAReviewReport struct {
-	ReportID       string           `json:"report_id"`
-	TenantID       string           `json:"tenant_id"`
-	Framework      string           `json:"framework"` // HIPAA_45CFR164
-	GeneratedAt    string           `json:"generated_at"`
-	Status         string           `json:"status"` // DRAFT | CERTIFIED
-	OverallScore   float64          `json:"overall_score_pct"`
-	PassedControls int              `json:"passed_controls"`
-	TotalControls  int              `json:"total_controls"`
-	ContentHash    string           `json:"content_hash"`
-	BAAStatus      string           `json:"baa_status"`
+	ReportID       string  `json:"report_id"`
+	TenantID       string  `json:"tenant_id"`
+	Framework      string  `json:"framework"` // HIPAA_45CFR164
+	GeneratedAt    string  `json:"generated_at"`
+	Status         string  `json:"status"` // DRAFT | CERTIFIED
+	OverallScore   float64 `json:"overall_score_pct"`
+	PassedControls int     `json:"passed_controls"`
+	TotalControls  int     `json:"total_controls"`
+	ContentHash    string  `json:"content_hash"`
+	// BAAStatus is derived from the 164.308(b)(1) obligation and its evidence:
+	// EVIDENCED (compliant + evidence) | UNVERIFIED (marked compliant, no
+	// evidence) | the obligation's status (NOT_STARTED, NON_COMPLIANT, ...) |
+	// NOT_ASSESSED (no BAA obligation). It used to be hard-coded EXECUTED_VALID.
+	BAAStatus string `json:"baa_status"`
+	// DLPActive: the tenant has at least one active DLP policy (was hard-coded true).
 	DLPActive      bool             `json:"dlp_active"`
+	DLPPolicyCount int              `json:"dlp_active_policy_count"`
 	Controls       []HIPAACheckItem `json:"controls"`
+}
+
+const baaControlRef = "164.308(b)(1)"
+
+// baaStatusFrom derives the BAA attestation state from the BAA obligation row
+// and its per-control evidence count.
+func baaStatusFrom(obRows []map[string]any, evidenceByControl map[string]int) string {
+	for _, row := range obRows {
+		if ref, _ := row["control_ref"].(string); ref != baaControlRef {
+			continue
+		}
+		st := storedStatus(row)
+		if st != statusCompliant {
+			return st
+		}
+		cid, _ := row["control_id"].(string)
+		if evidenceByControl[cid] > 0 {
+			return "EVIDENCED"
+		}
+		return "UNVERIFIED"
+	}
+	return "NOT_ASSESSED"
+}
+
+// dlpActivePolicies counts the tenant's active DLP policies (same store and
+// provider as /dlp/policies).
+func dlpActivePolicies(db database.DB, tenantID string) (int, error) {
+	var rows []map[string]any
+	if err := db.QueryRowsCompound(database.TblDLPPolicies, "id, is_active", "tenant_id", tenantID, "provider", "INTERNAL", &rows); err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, r := range rows {
+		if active, _ := r["is_active"].(bool); active {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// latestReport returns the newest row by generated_at (RFC 3339 strings and
+// time values both sort correctly once formatted).
+func latestReport(rows []map[string]any) map[string]any {
+	var best map[string]any
+	bestTS := ""
+	for _, r := range rows {
+		ts := fmt.Sprint(r["generated_at"])
+		if t, ok := r["generated_at"].(time.Time); ok {
+			ts = t.UTC().Format(time.RFC3339Nano)
+		}
+		if best == nil || ts > bestTS {
+			best, bestTS = r, ts
+		}
+	}
+	return best
+}
+
+// controlStateHash is SHA-256 over the sorted "control_id=status" lines: the
+// certified content, reproducible from compl_obligations.
+func controlStateHash(obRows []map[string]any) string {
+	lines := make([]string, 0, len(obRows))
+	for _, ob := range obRows {
+		cid, _ := ob["control_id"].(string)
+		lines = append(lines, cid+"="+storedStatus(ob))
+	}
+	sort.Strings(lines)
+	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
+	return hex.EncodeToString(sum[:])
 }
 
 // defaultHIPAABaselineControls defines the required standard obligations to seed into compl_obligations.
@@ -267,17 +342,25 @@ func HandleGetHIPAAReview(db database.DB) http.HandlerFunc {
 		total := len(checks)
 		score := passScore(passedCount, total)
 
-		// 5. Query latest certified report from compl_reports to verify attestation status
+		// 5. Latest report from compl_reports (newest by generated_at)
 		var reportRows []map[string]any
 		reportStatus := "DRAFT"
 		latestReportID := "hipaa-" + uuid.NewString()[:8]
-		if err := db.QueryRowsCompound(database.TblComplReports, "report_id, status, generated_at", "tenant_id", tenantID, "report_type", "HIPAA", &reportRows); err == nil && len(reportRows) > 0 {
-			if st, ok := reportRows[0]["status"].(string); ok && st != "" {
-				reportStatus = st
+		if err := db.QueryRowsCompound(database.TblComplReports, "report_id, status, generated_at", "tenant_id", tenantID, "report_type", "HIPAA", &reportRows); err == nil {
+			if latest := latestReport(reportRows); latest != nil {
+				if st, ok := latest["status"].(string); ok && st != "" {
+					reportStatus = st
+				}
+				if rid, ok := latest["report_id"].(string); ok && rid != "" {
+					latestReportID = rid
+				}
 			}
-			if rid, ok := reportRows[0]["report_id"].(string); ok && rid != "" {
-				latestReportID = rid
-			}
+		}
+
+		dlpCount, err := dlpActivePolicies(db, tenantID)
+		if err != nil {
+			reportReadFailed(w, tenantID, err)
+			return
 		}
 
 		report := HIPAAReviewReport{
@@ -289,8 +372,9 @@ func HandleGetHIPAAReview(db database.DB) http.HandlerFunc {
 			OverallScore:   score,
 			PassedControls: passedCount,
 			TotalControls:  len(checks),
-			BAAStatus:      "EXECUTED_VALID",
-			DLPActive:      true,
+			BAAStatus:      baaStatusFrom(obRows, evidenceCountByRef),
+			DLPActive:      dlpCount > 0,
+			DLPPolicyCount: dlpCount,
 			Controls:       checks,
 		}
 
@@ -335,34 +419,35 @@ func HandleSubmitHIPAAReport(db database.DB) http.HandlerFunc {
 
 		// 1. Query live controls from compl_obligations to calculate finalized score
 		var obRows []map[string]any
-		if err := db.QueryRowsCompound(database.TblComplObligations, "control_id, status", "tenant_id", tenantID, "framework", "HIPAA", &obRows); err != nil {
+		if err := db.QueryRowsCompound(database.TblComplObligations, "control_id, control_ref, status", "tenant_id", tenantID, "framework", "HIPAA", &obRows); err != nil {
 			reportReadFailed(w, tenantID, err)
 			return
 		}
 		passed := 0
 		for _, ob := range obRows {
-			if st, _ := ob["status"].(string); st == "COMPLIANT" {
+			if storedStatus(ob) == statusCompliant {
 				passed++
 			}
 		}
 		total := len(obRows)
-		var score float64
-		if total > 0 {
-			score = (float64(passed) / float64(total)) * 100.0
-		} else {
-			score = 0.0
-		}
+		score := passScore(passed, total)
 
-		// 2. Query evidence count
+		// 2. Query evidence (per control, for the BAA state)
 		var evidenceRows []map[string]any
-		if err := db.QueryRows(database.TblComplEvidence, "evidence_id", "tenant_id", tenantID, &evidenceRows); err != nil {
+		if err := db.QueryRows(database.TblComplEvidence, "evidence_id, control_id", "tenant_id", tenantID, &evidenceRows); err != nil {
 			reportReadFailed(w, tenantID, err)
 			return
 		}
+		evidenceByControl := make(map[string]int)
+		for _, ev := range evidenceRows {
+			if cid, _ := ev["control_id"].(string); cid != "" {
+				evidenceByControl[cid]++
+			}
+		}
+		baaStatus := baaStatusFrom(obRows, evidenceByControl)
 
-		// 3. Compute hash
-		hashBytes := sha256.Sum256([]byte(reportID + ":" + tenantID + ":" + time.Now().UTC().Format(time.RFC3339)))
-		contentHash := hex.EncodeToString(hashBytes[:])
+		// 3. Hash the certified content (control states), not the report id + clock
+		contentHash := controlStateHash(obRows)
 
 		now := time.Now().UTC()
 		// Derive certifier identity securely from JWT claims
@@ -389,7 +474,7 @@ func HandleSubmitHIPAAReport(db database.DB) http.HandlerFunc {
 			"report_type":      "HIPAA",
 			"period_start":     now.Add(-30 * 24 * time.Hour).Format(time.RFC3339),
 			"period_end":       now.Format(time.RFC3339),
-			"status":           "GENERATED",
+			"status":           "CERTIFIED",
 			"case_count":       0,
 			"evidence_count":   len(evidenceRows),
 			"control_count":    total,
@@ -401,7 +486,7 @@ func HandleSubmitHIPAAReport(db database.DB) http.HandlerFunc {
 				"certifier_id":   certifierID,
 				"certifier_role": req.ComplianceRole,
 				"content_hash":   contentHash,
-				"baa_status":     "EXECUTED_VALID",
+				"baa_status":     baaStatus,
 				"framework":      "HIPAA_45CFR164",
 			},
 			"summary": map[string]any{
@@ -417,13 +502,21 @@ func HandleSubmitHIPAAReport(db database.DB) http.HandlerFunc {
 		if err := db.InsertRow(database.TblComplReports, reportRow); err != nil {
 			slog.Warn("Failed to persist report into compl_reports DB (attempting update)", "error", err, "report_id", reportID)
 			if upErr := db.UpdateRowCompound(database.TblComplReports, "tenant_id", tenantID, "report_id", reportID, map[string]any{
-				"status":       "GENERATED",
-				"generated_at": now.Format(time.RFC3339),
-				"generated_by": certifierName,
-				"metadata":     reportRow["metadata"],
+				"status":           "CERTIFIED",
+				"generated_at":     now.Format(time.RFC3339),
+				"generated_by":     generatedBy,
+				"compliance_score": score,
+				"control_count":    total,
+				"evidence_count":   len(evidenceRows),
+				"metadata":         reportRow["metadata"],
+				"summary":          reportRow["summary"],
 			}); upErr != nil {
 				slog.Error("hipaa_report: both insert and update failed — report not persisted",
 					"insert_err", err, "update_err", upErr, "report_id", reportID, "tenant_id", tenantID)
+				// Never answer CERTIFIED for a report that does not exist.
+				respond.ErrorWithCode(w, http.StatusServiceUnavailable, respond.ErrCodeUnavailable,
+					"HIPAA report could not be saved; nothing was certified")
+				return
 			}
 		}
 
@@ -441,6 +534,7 @@ func HandleSubmitHIPAAReport(db database.DB) http.HandlerFunc {
 			"framework":    "HIPAA_45CFR164",
 			"content_hash": contentHash,
 			"score_pct":    score,
+			"baa_status":   baaStatus,
 			"database_row": database.TblComplReports,
 			"message":      "HIPAA Continuous Attestation certified and persisted to compl_reports with cryptographic integrity.",
 		})

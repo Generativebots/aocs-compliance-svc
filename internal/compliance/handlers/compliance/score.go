@@ -393,6 +393,11 @@ func complianceAddComment(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "comment or body field required")
 			return
 		}
+		// B1: a comment on an unknown record used to return 201 and leave an
+		// orphan row in compl_case_comments. Verify the record first.
+		if !complianceExists(w, db, tenantID, id) {
+			return
+		}
 		// Resolve author_id securely from caller JWT context
 		authorID := ""
 		if au, auErr := auth.GetAuthUser(r.Context()); auErr == nil && au != nil && au.UserID != "" {

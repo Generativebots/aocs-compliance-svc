@@ -52,9 +52,19 @@ const (
 	// gateHarvestCatchUp bounds how far back a tenant with no harvested
 	// violation yet (first run, or only excluded decisions) is read.
 	gateHarvestCatchUp = 7 * 24 * time.Hour
-	// gateHarvestBatch caps the violations recorded per tenant per run; the
-	// watermark advances, so a backlog drains over successive runs.
-	gateHarvestBatch = 1000
+	// gateHarvestBatch caps the violations recorded per tenant transaction;
+	// the watermark advances, so a backlog drains over successive batches.
+	// Kept small: each new HIGH/CRITICAL group costs ~3 round trips (find /
+	// open-or-extend / link). With 1000 the first live run (93 decisions,
+	// remote DB) overran the 15 s default tx timeout, rolled back, and
+	// retried the same batch every minute without ever committing.
+	gateHarvestBatch = 50
+	// gateHarvestTxBudget is each tenant transaction's own deadline (the
+	// shared default is PGX_TX_TIMEOUT_MS = 15 s).
+	gateHarvestTxBudget = 40 * time.Second
+	// gateHarvestRunBudget bounds one run (all tenants, all batches) so it
+	// ends before the next tick.
+	gateHarvestRunBudget = 50 * time.Second
 )
 
 // gateHarvestStore is the subset of *database.SupabaseClient the worker uses.
@@ -115,28 +125,41 @@ func runGateHarvest(ctx context.Context, db gateHarvestStore, now time.Time) {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
+	runCtx, cancelRun := context.WithTimeout(ctx, gateHarvestRunBudget)
+	defer cancelRun()
 	for _, tenantID := range ids {
-		if ctx.Err() != nil {
-			return
-		}
-		var res gateHarvestResult
-		err := db.RunTenantTx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
-			var hErr error
-			res, hErr = harvestTenant(ctx, pgxHarvestOps{tx: tx}, tenantID, now)
-			return hErr
-		})
-		switch {
-		case err != nil:
-			if ctx.Err() == nil {
-				slog.Error("GateViolationHarvester: tenant run failed — retried next tick",
-					"tenant_id", tenantID, "error", err)
+		for runCtx.Err() == nil {
+			res, err := harvestTenantBatch(runCtx, db, tenantID, now)
+			if err != nil {
+				if ctx.Err() == nil {
+					slog.Error("GateViolationHarvester: tenant run failed — retried next tick",
+						"tenant_id", tenantID, "error", err)
+				}
+				break
 			}
-		case res.recorded > 0 || res.waived > 0:
-			slog.Info("GateViolationHarvester: gate decisions recorded as violations",
-				"tenant_id", tenantID, "recorded", res.recorded, "waived", res.waived,
-				"cases_opened", res.casesOpened, "cases_extended", res.casesExtended)
+			if res.recorded > 0 || res.waived > 0 {
+				slog.Info("GateViolationHarvester: gate decisions recorded as violations",
+					"tenant_id", tenantID, "recorded", res.recorded, "waived", res.waived,
+					"cases_opened", res.casesOpened, "cases_extended", res.casesExtended)
+			}
+			if res.recorded < gateHarvestBatch {
+				break // backlog drained for this tenant
+			}
 		}
 	}
+}
+
+// harvestTenantBatch runs one committed batch for a tenant under its own deadline.
+func harvestTenantBatch(ctx context.Context, db gateHarvestStore, tenantID string, now time.Time) (gateHarvestResult, error) {
+	txCtx, cancel := context.WithTimeout(ctx, gateHarvestTxBudget)
+	defer cancel()
+	var res gateHarvestResult
+	err := db.RunTenantTx(txCtx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
+		var hErr error
+		res, hErr = harvestTenant(ctx, pgxHarvestOps{tx: tx}, tenantID, now)
+		return hErr
+	})
+	return res, err
 }
 
 // ── Orchestration (DB access behind harvestOps) ────────────────────────────
@@ -177,6 +200,7 @@ type harvestOps interface {
 	createCase(ctx context.Context, tenantID string, g violationGroup) (string, error)
 	extendCase(ctx context.Context, tenantID string, c openCase, g violationGroup) error
 	linkViolations(ctx context.Context, tenantID, caseID string, violationIDs []string) error
+	refreshOpenCounts(ctx context.Context, tenantID string) (int, error)
 }
 
 type gateHarvestResult struct {
@@ -231,6 +255,13 @@ func harvestTenant(ctx context.Context, ops harvestOps, tenantID string, now tim
 		if err := ops.linkViolations(ctx, tenantID, caseID, ids); err != nil {
 			return res, fmt.Errorf("link violations to case %s: %w", caseID, err)
 		}
+	}
+	// violation_count is the case's history (never decreases); the open count
+	// is recomputed so a waived/resolved violation lowers it. Runs every time
+	// so resolutions made elsewhere (UI, API) are picked up too; it only
+	// writes rows whose count changed.
+	if _, err := ops.refreshOpenCounts(ctx, tenantID); err != nil {
+		return res, fmt.Errorf("refresh open violation counts: %w", err)
 	}
 	return res, nil
 }
@@ -352,7 +383,13 @@ SELECT $1, s.policy_id, p.name, s.agent_id, s.execution_id,
            'override', s.override, 'trust_score', s.trust_score, 'anomaly_score', s.anomaly_score,
            'hitl_decision_id', s.hitl_decision_id)),
        jsonb_strip_nulls(jsonb_build_object(
-           'tool_name', s.tool_name, 'action_class', s.action_class, 'reason', NULLIF(s.reason, ''))),
+           'tool_name', s.tool_name, 'action_class', s.action_class, 'reason', NULLIF(s.reason, ''),
+           -- GX-16: controls the policy declares it enforces (policy metadata
+           -- control_refs) travel with the violation so continuous compliance
+           -- can link it, snapshotted as they were when the gate refused.
+           'control_refs', CASE WHEN jsonb_typeof(p.metadata->'control_refs') = 'array'
+                                AND jsonb_array_length(p.metadata->'control_refs') > 0
+                               THEN p.metadata->'control_refs' END)),
        'OPEN', s.created_at, s.tx_id
   FROM src s
   LEFT JOIN ` + database.TblCorePolicies + ` p ON p.policy_id = s.policy_id AND p.tenant_id = $1
@@ -445,7 +482,7 @@ VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), NULLIF($3, ''), $4, 'COMPLIANCE', 'O
         $6, $7, $8,
         jsonb_strip_nulls(jsonb_build_object(
             'gate_group', $9::text, 'source', 'gate_violation_harvester',
-            'tool_name', NULLIF($10, ''), 'violation_count', $11::int,
+            'tool_name', NULLIF($10, ''), 'violation_count', $11::int, 'open_violation_count', $11::int,
             'first_detected_at', $12::timestamptz, 'last_detected_at', $13::timestamptz)))
 RETURNING case_id`
 
@@ -497,4 +534,29 @@ func (o pgxHarvestOps) linkViolations(ctx context.Context, tenantID, caseID stri
 		return fmt.Errorf("linked %d of %d violations", tag.RowsAffected(), len(violationIDs))
 	}
 	return nil
+}
+
+// gateHarvestRefreshOpenSQL sets metadata.open_violation_count on the tenant's
+// open harvester cases from the violations still OPEN/ACKNOWLEDGED. Only rows
+// whose count changed are written. $1 tenant_id.
+var gateHarvestRefreshOpenSQL = `
+UPDATE ` + database.TblComplianceComplianceCases + ` c
+   SET metadata = COALESCE(c.metadata, '{}'::jsonb) || jsonb_build_object('open_violation_count', s.n),
+       updated_at = now()
+  FROM (SELECT oc.case_id,
+               count(v.violation_id) FILTER (WHERE v.status IN ('OPEN', 'ACKNOWLEDGED'))::int AS n
+          FROM ` + database.TblComplianceComplianceCases + ` oc
+          LEFT JOIN ` + database.TblComplPolicyViolations + ` v
+                 ON v.tenant_id = $1 AND v.case_id = oc.case_id
+         WHERE oc.tenant_id = $1 AND oc.status IN ('OPEN', 'INVESTIGATING') AND oc.metadata ? 'gate_group'
+         GROUP BY oc.case_id) s
+ WHERE c.tenant_id = $1 AND c.case_id = s.case_id
+   AND (c.metadata->>'open_violation_count')::int IS DISTINCT FROM s.n`
+
+func (o pgxHarvestOps) refreshOpenCounts(ctx context.Context, tenantID string) (int, error) {
+	tag, err := o.tx.Exec(ctx, gateHarvestRefreshOpenSQL, tenantID)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
 }

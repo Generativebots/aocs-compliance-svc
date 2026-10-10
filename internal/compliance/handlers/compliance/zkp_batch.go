@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -257,12 +259,40 @@ func HandleUpdateComplianceSIEMConfig(db database.DB) http.HandlerFunc {
 		if !validate.Bind(w, r, &body) {
 			return
 		}
-		cfg := map[string]any{
-			"webhook_url": body.WebhookURL, "endpoint": body.WebhookURL, "format": body.Format,
-			"enabled": body.Enabled, "is_enabled": body.Enabled,
+		// B1: an empty body used to overwrite webhook_url/format with "" and
+		// enabled=false. Merge only what was sent, and validate it.
+		cfg := map[string]any{}
+		if u := strings.TrimSpace(body.WebhookURL); u != "" {
+			if pu, perr := url.Parse(u); perr != nil || (pu.Scheme != "https" && pu.Scheme != "http") || pu.Host == "" {
+				respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "webhook_url must be an http(s) URL")
+				return
+			}
+			cfg["webhook_url"], cfg["endpoint"] = u, u
+		}
+		if f := strings.ToUpper(strings.TrimSpace(body.Format)); f != "" {
+			if f != "CEF" && f != "LEEF" && f != "JSON" {
+				respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "format must be CEF, LEEF or JSON")
+				return
+			}
+			cfg["format"] = f
+		}
+		if body.Enabled != nil {
+			cfg["enabled"], cfg["is_enabled"] = *body.Enabled, *body.Enabled
 		}
 		if body.SecretHeader != "" {
 			cfg["secret_header"] = body.SecretHeader
+		}
+		if len(cfg) == 0 {
+			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest,
+				"nothing to update: send webhook_url, format, enabled or secret_header")
+			return
+		}
+		if body.Enabled != nil && *body.Enabled && cfg["webhook_url"] == nil {
+			if cur, cerr := database.GetTenantCredentialAny(r.Context(), db, tenantID, database.CredTypeCustom, database.CredProviderSIEM); cerr != nil ||
+				(cur.String("webhook_url") == "" && cur.String("endpoint") == "") {
+				respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "webhook_url is required to enable SIEM forwarding")
+				return
+			}
 		}
 		_, err := database.MergeTenantCredentialAndActivate(r.Context(), db, tenantID, database.CredTypeCustom, database.CredProviderSIEM, cfg, auth.GetUserID(r.Context()))
 		if err != nil {

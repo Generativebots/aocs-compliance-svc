@@ -22,9 +22,12 @@ const continuousComplianceInterval = 5 * time.Minute
 const autoFlagKey = "continuous_compliance_flag"
 
 // violationEvidenceRefs links a violation type to the evidence capability whose
-// controls it undermines (compl_obligations.metadata.evidence_ref). Controls
-// can also opt in explicitly with metadata.violation_types, and a violation can
-// name controls directly with details.control_refs.
+// controls it undermines (compl_obligations.metadata.evidence_ref). Generic
+// links (GX-16), for any violation type:
+//   - a violation names controls in details.control_refs / details.control_ref
+//     (gate violations carry the controls their policy declares in
+//     core_policies.metadata.control_refs, copied by the harvester);
+//   - a control opts in with metadata.violation_types or metadata.policy_ids.
 var violationEvidenceRefs = map[string][]string{
 	dcompliance.ViolationTypeDLPExfiltration: {"evlt_dlp_scanner"},
 }
@@ -75,6 +78,7 @@ func StartContinuousComplianceWorker(ctx context.Context, db continuousComplianc
 type openViolation struct {
 	ViolationID   string          `json:"violation_id"`
 	ViolationType string          `json:"violation_type"`
+	PolicyID      *string         `json:"policy_id"`
 	Details       json.RawMessage `json:"details"`
 	controlRefs   []string
 }
@@ -190,7 +194,7 @@ func reconcileTenantObligations(ctx context.Context, db continuousComplianceStor
 
 func reconcileTenant(ctx context.Context, db continuousComplianceStore, tenantID string, now time.Time, derive bool) int {
 	var violations []openViolation
-	if err := db.QueryRowsCompoundCtx(ctx, database.TblComplPolicyViolations, "violation_id,violation_type,details",
+	if err := db.QueryRowsCompoundCtx(ctx, database.TblComplPolicyViolations, "violation_id,violation_type,policy_id,details",
 		"tenant_id", tenantID, "status", "OPEN", &violations); err != nil {
 		slog.Error("ContinuousComplianceWorker: open violations query failed", "tenant_id", tenantID, "error", err)
 		return 0
@@ -315,6 +319,15 @@ func obligationLinked(ob obligationRow, meta map[string]any, v openViolation) bo
 			return true
 		}
 	}
+	if v.PolicyID != nil && *v.PolicyID != "" {
+		if ids, ok := meta["policy_ids"].([]any); ok {
+			for _, id := range ids {
+				if s, _ := id.(string); s == *v.PolicyID {
+					return true
+				}
+			}
+		}
+	}
 	if v.ViolationType == "" {
 		return false
 	}
@@ -341,9 +354,13 @@ func detailControlRefs(details json.RawMessage) []string {
 	}
 	var d struct {
 		ControlRefs []string `json:"control_refs"`
+		ControlRef  string   `json:"control_ref"`
 	}
 	if err := json.Unmarshal(details, &d); err != nil {
 		return nil
+	}
+	if d.ControlRef != "" {
+		return append(d.ControlRefs, d.ControlRef)
 	}
 	return d.ControlRefs
 }
