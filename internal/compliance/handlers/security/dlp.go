@@ -155,10 +155,8 @@ func HandleDLPScan(store *DLPStore) http.HandlerFunc {
 				severity = "HIGH"
 				riskLevel = "HIGH"
 			}
-			alertMsg := fmt.Sprintf("DLP: %s content detected in agent payload (direction=%s, pii=%d, code=%d, risk=%.2f). %s",
-				result.Classification, req.Direction,
-				result.TotalPIICount, result.TotalCodeCount,
-				result.RiskScore, result.Reasoning)
+			alertMsg := dlpAlertMessage(result.Classification, req.Direction,
+				result.TotalPIICount, result.TotalCodeCount, result.RiskScore, result.Reasoning)
 			alertRow := database.SentiAlert{
 				TenantID:  tenantID,
 				AlertType: "dlp_violation",
@@ -725,4 +723,40 @@ func dlpProviderCode(vendor string) string {
 	default:
 		return "CUSTOM"
 	}
+}
+
+// dlpAlertMessage builds the human-readable Sentinel alert text for a DLP hit.
+// Empty fields are left out (the old format printed "direction=" when the
+// caller sent no direction) and counts read as words, not key=value pairs.
+func dlpAlertMessage(classification, direction string, pii, code int, risk float64, reasoning string) string {
+	where := "an agent payload"
+	switch d := strings.ToLower(strings.TrimSpace(direction)); d {
+	case "":
+	case "inbound", "input", "request":
+		where = "an inbound agent payload"
+	case "outbound", "output", "response":
+		where = "an outbound agent payload"
+	default:
+		where = "an agent payload (" + d + ")"
+	}
+	parts := make([]string, 0, 3)
+	if pii > 0 {
+		parts = append(parts, fmt.Sprintf("%d PII item%s", pii, plural(pii)))
+	}
+	if code > 0 {
+		parts = append(parts, fmt.Sprintf("%d code/secret item%s", code, plural(code)))
+	}
+	parts = append(parts, fmt.Sprintf("risk %.2f", risk))
+	msg := fmt.Sprintf("DLP: %s content detected in %s — %s.", classification, where, strings.Join(parts, ", "))
+	if r := strings.TrimSpace(reasoning); r != "" {
+		msg += " " + r
+	}
+	return msg
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
