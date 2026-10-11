@@ -310,7 +310,9 @@ func HandleCasesSubmitJuryVote(db database.DB, coreClient *serviceclient.Client)
 				update["result"] = newResult
 			}
 			if body.VoterID != "" {
-				update["user_id"] = body.VoterID
+				// user_id is the immutable requester column; record the latest
+				// voter as updated_by (each voter is in core_hitl_votes).
+				update["updated_by"] = body.VoterID
 			}
 			// 3. Update main case status + quorum data
 			if err := tx.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
@@ -428,8 +430,9 @@ func HandleListHITLVotes(db database.DB) http.HandlerFunc {
 		}
 		var rows []map[string]any
 		// votes are in core_hitl_votes (TblCoreHitlVotes), not core_hitl.
-		// core_hitl_votes columns: vote_id, case_id, tenant_id, voter_id, decision, voted_at.
-		if err := db.QueryRowsCompound(database.TblCoreHitlVotes, database.ColsHitlVote, "case_id", caseID, "tenant_id", tenantID, &rows); err != nil {
+		// FK column is decision_id (legacy case_id is NULL on every writer path);
+		// ColsHitlVote aliases vote AS decision.
+		if err := db.QueryRowsCompound(database.TblCoreHitlVotes, database.ColsHitlVote, "decision_id", caseID, "tenant_id", tenantID, &rows); err != nil {
 			slog.Error("ListHITLVotes failed", "case_id", caseID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "list votes", err)
 			return

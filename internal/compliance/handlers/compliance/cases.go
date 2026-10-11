@@ -254,22 +254,20 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 			return
 		}
 
-		// Read verdict or vote from body and map to the CHECK-constrained values.
-		verdict, _ := body["verdict"].(string)
-		if verdict == "" {
-			vote, _ := body["vote"].(string)
-			switch vote {
-			case "reject", "REJECT", "REJECTED":
-				verdict = "REJECTED"
-			default:
-				verdict = "APPROVED"
-			}
-		}
-		if verdict != "APPROVED" && verdict != "REJECTED" {
-			verdict = "APPROVED" // safe fallback
+		// Read verdict / decision / vote from body and map to the CHECK-constrained
+		// values. Fail closed: an absent or unrecognised verdict is rejected (422),
+		// never silently recorded as APPROVED.
+		verdict, ok := arbitrationVerdict(body)
+		if !ok {
+			respond.ErrorWithCode(w, http.StatusUnprocessableEntity, respond.ErrCodeUnprocessable,
+				"verdict is required: APPROVED or REJECTED (fields: verdict | decision | vote)")
+			return
 		}
 
 		rationale, _ := body["rationale"].(string)
+		if rationale == "" {
+			rationale, _ = body["reason"].(string)
+		}
 		// X-User-Id is a client-supplied header and is trivially spoofable without mTLS.
 		var reviewerID string
 		if au, auErr := auth.GetAuthUser(r.Context()); auErr == nil && au != nil && au.UserID != "" {
@@ -759,3 +757,26 @@ func HandleCreateCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClien
 
 // HandleCreateCaseComment — see internal/handlers/compliance/case_comments.go
 // (moved to avoid redeclaration; cases.go previously contained a stub)
+
+// arbitrationVerdict extracts the reviewer's verdict from an arbitrate body.
+// Accepted keys (first non-empty wins): verdict, decision, vote. Accepted
+// values (case-insensitive): APPROVE/APPROVED, REJECT/REJECTED. Anything else
+// — including no verdict at all — returns ok=false so the caller fails closed.
+func arbitrationVerdict(body map[string]any) (string, bool) {
+	for _, k := range []string{"verdict", "decision", "vote"} {
+		s, _ := body[k].(string)
+		s = strings.ToUpper(strings.TrimSpace(s))
+		if s == "" {
+			continue
+		}
+		switch s {
+		case "APPROVE", "APPROVED":
+			return "APPROVED", true
+		case "REJECT", "REJECTED":
+			return "REJECTED", true
+		default:
+			return "", false
+		}
+	}
+	return "", false
+}

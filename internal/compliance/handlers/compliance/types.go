@@ -142,14 +142,14 @@ type CreateDLPFindingRequest struct {
 
 // CasesSubmitJuryVoteRequest is the request body for HandleCasesSubmitJuryVote. (8 fields)
 type CasesSubmitJuryVoteRequest struct {
-	CaseID     string  `json:"case_id" validate:"required"`
+	CaseID     string  `json:"case_id"` // optional: path {id} wins; handler 400s if both empty
 	VoterID    string  `json:"voter_id"`
 	MemberID   string  `json:"member_id"` // alias
 	Decision   string  `json:"decision"`
 	Verdict    string  `json:"verdict"` // alias
 	Confidence float64 `json:"confidence"`
 	Rationale  string  `json:"rationale"`
-	PolicyID   string  `json:"policy_id" validate:"required"` // accepted, not required
+	PolicyID   string  `json:"policy_id"` // accepted, not required
 }
 
 // UpdateSIEMConfigRequest is the request body for HandleUpdateSIEMConfig. (4 fields)
