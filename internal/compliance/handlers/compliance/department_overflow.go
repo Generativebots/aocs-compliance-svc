@@ -6,12 +6,15 @@
 //
 // This file provides:
 //
-//	HandleRouteDeptOverflow: POST /api/v1/departments/{slug}/overflow-route
+//	HandleRouteDeptOverflow: POST /api/v1/departments/{department_id}/overflow-route
 //	Evaluates current dept capacity and routes overflowing cases to the next
 //	department in the dept's overflow_routing_config.
 //
 //	HandleGuardDeptDeletion is a guard called before department deletion
 //	to either block or auto-reassign all open cases (D2D Gap-5).
+//
+// Departments are addressed by syst_departments.department_id (PK) only;
+// user-facing text shows the department name.
 package compliance
 
 import (
@@ -31,13 +34,14 @@ import (
 	"github.com/ocx/shared/validate"
 )
 
-// HandleRouteDeptOverflow — POST /api/v1/departments/{slug}/overflow-route
+// HandleRouteDeptOverflow — POST /api/v1/departments/{department_id}/overflow-route
 //
 // Checks the current dept capacity against core_hitl_sla.max_cases.
-// If over capacity, moves the oldest PENDING cases to the configured overflow dept.
+// If over capacity, moves the oldest PENDING cases to the overflow department
+// configured in overflow_routing_config.overflow_dept_id (FK → department_id).
 // Body: { max_cases_to_move?: int }   (default: 10)
 //
-// Returns: { dept_id, open_cases, capacity_limit, moved_count, target_dept }
+// Returns: { department_id, department_name, open_cases, capacity_limit, moved_count, overflow_to, overflow_to_name }
 func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Client) http.HandlerFunc {
 	var coreClient *serviceclient.Client
 	if len(coreClients) > 0 {
@@ -51,9 +55,9 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 		if !ok {
 			return
 		}
-		slug := mux.Vars(r)["slug"]
-		if slug == "" {
-			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing department slug")
+		deptID := mux.Vars(r)["department_id"]
+		if deptID == "" {
+			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing department_id")
 			return
 		}
 
@@ -69,19 +73,16 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 		}
 
 		// ── Load dept config ───────────────────────────────────────────────────
-		var deptRows []map[string]any
-		if err := db.QueryRowsCompound(database.TblSystDepartments,
-			"slug,name,enabled_features,overflow_routing_config",
-			"slug", slug, "tenant_id", tenantID, &deptRows); err != nil || len(deptRows) == 0 {
-			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, fmt.Sprintf("department %q not found", slug))
+		dept, found := loadDepartment(db, tenantID, deptID)
+		if !found {
+			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "department not found")
 			return
 		}
-		dept := deptRows[0]
 
 		// ── Load SLA/capacity config ───────────────────────────────────────────
 		var slaRows []map[string]any
 		if _dbErr := db.QueryRowsCompound(database.TblCoreHitlSla, "department_id,sla_hours,max_cases",
-			"department_id", slug, "tenant_id", tenantID, &slaRows); _dbErr != nil {
+			"department_id", dept.ID, "tenant_id", tenantID, &slaRows); _dbErr != nil {
 			slog.Error("db.QueryRowsCompound failed (best-effort)", "error", _dbErr)
 		}
 		maxCases := 200 // default
@@ -96,13 +97,13 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 		if coreClient != nil {
 			// SVC-BOUNDARY: read core_hitl via ocx-core-svc API
 			hitlRows, _rErr := coreClient.ListHITLCases(r.Context(), tenantID,
-				map[string]string{"department_id": slug, "status": "PENDING"}, 500)
+				map[string]string{"department_id": dept.ID, "status": "PENDING"}, 500)
 			if _rErr != nil {
 				respond.InternalError(w, http.StatusInternalServerError, "overflow_check_query_failed", _rErr)
 				return
 			}
 			pendingRows = hitlRows
-		} else if _dbErr := database.QueryTenantRows(r.Context(), db, database.TblCoreHitl, "decision_id,created_at", tenantID, []database.Eq{{Col: "department_id", Val: slug}, {Col: "status", Val: "PENDING"}}, &pendingRows); _dbErr != nil {
+		} else if _dbErr := database.QueryTenantRows(r.Context(), db, database.TblCoreHitl, "decision_id,created_at", tenantID, []database.Eq{{Col: "department_id", Val: dept.ID}, {Col: "status", Val: "PENDING"}}, &pendingRows); _dbErr != nil {
 			slog.Error("db.QueryRowsCompound failed", "error", _dbErr)
 			respond.InternalError(w, http.StatusInternalServerError, "overflow_check_query_failed", _dbErr)
 			return
@@ -111,49 +112,45 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 
 		if openCases <= maxCases {
 			respond.OK(w, map[string]any{
-				"dept_id":        slug,
-				"open_cases":     openCases,
-				"capacity_limit": maxCases,
-				"status":         "within_capacity",
-				"moved_count":    0,
+				"department_id":   dept.ID,
+				"department_name": dept.Name,
+				"open_cases":      openCases,
+				"capacity_limit":  maxCases,
+				"status":          "within_capacity",
+				"moved_count":     0,
 			})
 			return
 		}
 
-		// ── Determine overflow target dept ─────────────────────────────────────
-		overflowConfig, _ := dept["overflow_routing_config"].(string)
-		targetDept := ""
-		if overflowConfig != "" && overflowConfig != "null" {
-			var cfg struct {
-				OverflowDept string `json:"overflow_dept"`
-			}
-			if err := json.Unmarshal([]byte(overflowConfig), &cfg); err == nil {
-				targetDept = cfg.OverflowDept
-			}
+		// ── Determine overflow target dept (FK only — no hardcoded fallback) ───
+		if dept.OverflowDeptID == "" {
+			respond.ErrorWithCode(w, http.StatusUnprocessableEntity, respond.ErrCodeValidation,
+				fmt.Sprintf("department %q is over capacity but has no overflow department configured (overflow_routing_config.overflow_dept_id)", dept.Name))
+			return
 		}
-		// Default overflow: compliance (safest AOCS fallback)
-		if targetDept == "" {
-			targetDept = "compliance"
-		}
-		if targetDept == slug {
+		if dept.OverflowDeptID == dept.ID {
 			respond.ErrorWithCode(w, http.StatusConflict, respond.ErrCodeConflict,
-				fmt.Sprintf("overflow target dept is same as source dept %q — configure a different overflow_routing_config", slug))
+				fmt.Sprintf("overflow department for %q is itself — configure a different overflow department", dept.Name))
 			return
 		}
 
-		// ── Verify target dept has HITL enabled ────────────────────────────────
-		var targetDeptRows []map[string]any
-		if err := db.QueryRowsCompound(database.TblSystDepartments, "slug,enabled_features",
-			"slug", targetDept, "tenant_id", tenantID, &targetDeptRows); err != nil || len(targetDeptRows) == 0 {
+		// ── Verify target dept exists and has HITL enabled ─────────────────────
+		target, found := loadDepartment(db, tenantID, dept.OverflowDeptID)
+		if !found {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest,
-				fmt.Sprintf("overflow target department %q not found", targetDept))
+				fmt.Sprintf("overflow department configured for %q no longer exists", dept.Name))
+			return
+		}
+		if !target.hitlEnabled() {
+			respond.ErrorWithCode(w, http.StatusUnprocessableEntity, respond.ErrCodeValidation,
+				fmt.Sprintf("overflow department %q has HITL disabled", target.Name))
 			return
 		}
 
 		// ── Get overflow SLA for target dept ───────────────────────────────────
 		var targetSLARows []map[string]any
 		if _dbErr := db.QueryRowsCompound(database.TblCoreHitlSla, "department_id,sla_hours",
-			"department_id", targetDept, "tenant_id", tenantID, &targetSLARows); _dbErr != nil {
+			"department_id", target.ID, "tenant_id", tenantID, &targetSLARows); _dbErr != nil {
 			slog.Error("db.QueryRowsCompound failed (best-effort)", "error", _dbErr)
 		}
 		targetSLAHours := 48
@@ -176,15 +173,15 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 				continue
 			}
 			ctxUpdate, _ := json.Marshal(map[string]any{
-				"overflow_from":   slug,
-				"overflow_to":     targetDept,
+				"overflow_from":   dept.ID,
+				"overflow_to":     target.ID,
 				"overflow_at":     now,
-				"overflow_reason": fmt.Sprintf("dept %s at capacity, rerouting", slug),
+				"overflow_reason": fmt.Sprintf("%s at capacity, rerouted to %s", dept.Name, target.Name),
 			})
 			if coreClient != nil {
 				// SVC-BOUNDARY: update core_hitl via ocx-core-svc API
 				if _rErr := coreClient.PatchHITLCase(r.Context(), tenantID, caseID, map[string]any{
-					"department_id": targetDept,
+					"department_id": target.ID,
 					"sla_deadline":  newDeadline,
 					"context_data":  string(ctxUpdate),
 					"updated_at":    now,
@@ -194,7 +191,7 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 					continue
 				}
 			} else if err := db.UpdateRowCompoundCtx(database.WithMutationTenant(r.Context(), tenantID), database.TblCoreHitl, "decision_id", caseID, "status", "PENDING", map[string]any{
-				"department_id": targetDept,
+				"department_id": target.ID,
 				"sla_deadline":  newDeadline,
 				"context_data":  string(ctxUpdate),
 				"updated_at":    now,
@@ -208,7 +205,7 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 			auditCaseID := caseID // capture loop var before goroutine
 			concurrent.Go("compliance/dept_overflow", func() {
 				auditMeta, _ := json.Marshal(map[string]any{
-					"from_dept": slug, "to_dept": targetDept,
+					"from_dept": dept.ID, "to_dept": target.ID,
 					"reason": "overflow_routing", "sla_hours": targetSLAHours,
 				})
 				auditRow := map[string]any{
@@ -217,11 +214,13 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 					"entity_type": "hitl_case",
 					"tenant_id":   tenantID, // REQUIRED: all platform_events rows must be tenant-scoped
 					"payload": map[string]any{
-						"action":    "overflow_route",
-						"severity":  "WARNING",
-						"metadata":  auditMeta,
-						"from_dept": slug,
-						"to_dept":   targetDept,
+						"action":         "overflow_route",
+						"severity":       "WARNING",
+						"metadata":       auditMeta,
+						"from_dept":      dept.ID,
+						"from_dept_name": dept.Name,
+						"to_dept":        target.ID,
+						"to_dept_name":   target.Name,
 					},
 				}
 				if coreClient != nil {
@@ -235,17 +234,19 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 		}
 
 		slog.Info("overflow routing complete",
-			"dept", slug, "open_cases", openCases, "capacity", maxCases,
-			"moved", moved, "target_dept", targetDept,
+			"department_id", dept.ID, "open_cases", openCases, "capacity", maxCases,
+			"moved", moved, "target_department_id", target.ID,
 		)
 		respond.OK(w, map[string]any{
-			"dept_id":        slug,
-			"open_cases":     openCases,
-			"capacity_limit": maxCases,
-			"overflow_to":    targetDept,
-			"moved_count":    moved,
-			"new_sla_hours":  targetSLAHours,
-			"note":           fmt.Sprintf("Co-Pilot: %s at capacity. Moved %d cases to %s.", slug, moved, targetDept),
+			"department_id":    dept.ID,
+			"department_name":  dept.Name,
+			"open_cases":       openCases,
+			"capacity_limit":   maxCases,
+			"overflow_to":      target.ID,
+			"overflow_to_name": target.Name,
+			"moved_count":      moved,
+			"new_sla_hours":    targetSLAHours,
+			"note":             fmt.Sprintf("Co-Pilot: %s at capacity. Moved %d cases to %s.", dept.Name, moved, target.Name),
 		})
 	}
 }
@@ -253,10 +254,10 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 // HandleGuardDeptDeletion — called as a pre-deletion guard.
 // D2D Gap-5: Department deletion currently orphans all open HITL cases with no
 // re-assignment. This handler blocks deletion if open cases exist, unless a
-// target_dept is provided for case migration.
+// target_department_id is provided for case migration.
 //
-// POST /api/v1/departments/{slug}/pre-delete-check
-// Body: { target_dept?: string }  — if set, migrates cases; if not set, blocks deletion.
+// POST /api/v1/departments/{department_id}/pre-delete-check
+// Body: { target_department_id?: string }  — if set, migrates cases; if not set, blocks deletion.
 func HandleGuardDeptDeletion(db database.DB, coreClients ...*serviceclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if respond.RequireDB(w, db) {
@@ -266,14 +267,19 @@ func HandleGuardDeptDeletion(db database.DB, coreClients ...*serviceclient.Clien
 		if !ok {
 			return
 		}
-		slug := mux.Vars(r)["slug"]
-		if slug == "" {
-			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing department slug")
+		deptID := mux.Vars(r)["department_id"]
+		if deptID == "" {
+			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing department_id")
+			return
+		}
+		dept, found := loadDepartment(db, tenantID, deptID)
+		if !found {
+			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "department not found")
 			return
 		}
 
 		var req struct {
-			TargetDept string `json:"target_dept"`
+			TargetDepartmentID string `json:"target_department_id"`
 		}
 		respond.LimitBody(r)
 		if !validate.BindOptional(w, r, &req) {
@@ -283,13 +289,13 @@ func HandleGuardDeptDeletion(db database.DB, coreClients ...*serviceclient.Clien
 		if len(coreClients) > 0 && coreClients[0] != nil {
 			// SVC-BOUNDARY: read core_hitl via ocx-core-svc API
 			hitlRows, _rErr := coreClients[0].ListHITLCases(r.Context(), tenantID,
-				map[string]string{"department_id": slug, "status": "PENDING"}, 500)
+				map[string]string{"department_id": dept.ID, "status": "PENDING"}, 500)
 			if _rErr != nil {
 				respond.InternalError(w, http.StatusInternalServerError, "overflow_check_query_failed", _rErr)
 				return
 			}
 			pendingRows = hitlRows
-		} else if _dbErr := database.QueryTenantRows(r.Context(), db, database.TblCoreHitl, "decision_id", tenantID, []database.Eq{{Col: "department_id", Val: slug}, {Col: "status", Val: "PENDING"}}, &pendingRows); _dbErr != nil {
+		} else if _dbErr := database.QueryTenantRows(r.Context(), db, database.TblCoreHitl, "decision_id", tenantID, []database.Eq{{Col: "department_id", Val: dept.ID}, {Col: "status", Val: "PENDING"}}, &pendingRows); _dbErr != nil {
 			slog.Error("db.QueryRowsCompound failed", "error", _dbErr)
 			respond.InternalError(w, http.StatusInternalServerError, "overflow_check_query_failed", _dbErr)
 			return
@@ -298,21 +304,27 @@ func HandleGuardDeptDeletion(db database.DB, coreClients ...*serviceclient.Clien
 
 		if openCount == 0 {
 			respond.OK(w, map[string]any{
-				"safe_to_delete": true,
-				"open_cases":     0,
-				"dept_id":        slug,
+				"safe_to_delete":  true,
+				"open_cases":      0,
+				"department_id":   dept.ID,
+				"department_name": dept.Name,
 			})
 			return
 		}
 
-		// Open cases exist — block unless target_dept provided
-		if req.TargetDept == "" {
+		// Open cases exist — block unless a target department is provided
+		if req.TargetDepartmentID == "" {
 			respond.ErrorWithCode(w, http.StatusConflict, respond.ErrCodeConflict,
-				fmt.Sprintf("department %q has %d open HITL cases — provide target_dept to migrate them before deletion", slug, openCount))
+				fmt.Sprintf("department %q has %d open HITL cases — provide target_department_id to migrate them before deletion", dept.Name, openCount))
 			return
 		}
-		if req.TargetDept == slug {
-			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "target_dept must differ from the department being deleted")
+		if req.TargetDepartmentID == dept.ID {
+			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "target department must differ from the department being deleted")
+			return
+		}
+		target, found := loadDepartment(db, tenantID, req.TargetDepartmentID)
+		if !found {
+			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "target department not found")
 			return
 		}
 
@@ -325,15 +337,15 @@ func HandleGuardDeptDeletion(db database.DB, coreClients ...*serviceclient.Clien
 				continue
 			}
 			ctxUpdate, _ := json.Marshal(map[string]any{
-				"migrated_from":    slug,
-				"migrated_to":      req.TargetDept,
+				"migrated_from":    dept.ID,
+				"migrated_to":      target.ID,
 				"migration_at":     now,
-				"migration_reason": fmt.Sprintf("dept %s pre-deletion migration", slug),
+				"migration_reason": fmt.Sprintf("%s pre-deletion migration to %s", dept.Name, target.Name),
 			})
 			if len(coreClients) > 0 && coreClients[0] != nil {
 				// SVC-BOUNDARY: update core_hitl via ocx-core-svc API
 				if _rErr := coreClients[0].PatchHITLCase(r.Context(), tenantID, caseID, map[string]any{
-					"department_id": req.TargetDept,
+					"department_id": target.ID,
 					"context_data":  string(ctxUpdate),
 					"updated_at":    now,
 				}); _rErr == nil {
@@ -341,7 +353,7 @@ func HandleGuardDeptDeletion(db database.DB, coreClients ...*serviceclient.Clien
 				}
 			} else if err := db.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID,
 				map[string]any{
-					"department_id": req.TargetDept,
+					"department_id": target.ID,
 					"context_data":  string(ctxUpdate),
 					"updated_at":    now,
 				}); err == nil {
@@ -350,12 +362,14 @@ func HandleGuardDeptDeletion(db database.DB, coreClients ...*serviceclient.Clien
 		}
 
 		respond.OK(w, map[string]any{
-			"safe_to_delete": true,
-			"open_cases":     openCount,
-			"migrated":       migrated,
-			"migrated_to":    req.TargetDept,
-			"dept_id":        slug,
-			"note":           fmt.Sprintf("%d cases migrated to %s — department %s is now safe to delete.", migrated, req.TargetDept, slug),
+			"safe_to_delete":   migrated == openCount,
+			"open_cases":       openCount,
+			"migrated":         migrated,
+			"migrated_to":      target.ID,
+			"migrated_to_name": target.Name,
+			"department_id":    dept.ID,
+			"department_name":  dept.Name,
+			"note":             fmt.Sprintf("%d of %d cases migrated to %s from %s.", migrated, openCount, target.Name, dept.Name),
 		})
 	}
 }

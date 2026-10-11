@@ -53,8 +53,9 @@ import (
 //	  "intent":           "data_leak",
 //	  "confidence":       0.87,
 //	  "source":           "ai",               // or "local_fallback"
-//	  "departments":      ["dept_security", "dept_compliance"],
-//	  "capacity_status":  { "dept_security": { "available": true, "pending": 14, "max": 200 }, ... }
+//	  "departments":      ["<department_id>", "<department_id>"],
+//	  "department_names": ["Security", "Compliance"],
+//	  "capacity_status":  { "<department_id>": { "department_name": "Security", "available": true, "pending": 14, "max": 200 }, ... }
 //	}
 func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, coreClient *serviceclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -83,6 +84,11 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 		}
 
 		result := classifier.Classify(r.Context(), req.CaseType, req.PolicyCategory, req.RuleType, req.Description)
+		if result == nil {
+			respond.ErrorWithCode(w, http.StatusServiceUnavailable, respond.ErrCodeUnavailable,
+				"department routing classifier unavailable — pass department_ids explicitly")
+			return
+		}
 		slog.Info("classification complete",
 			"tenant_id", tenantID,
 			"intent", result.Intent,
@@ -92,71 +98,58 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 			"agent_id", req.AgentID,
 		)
 
-		var knownDepts []map[string]any
-		// nolint:tenant_filter — syst_departments is GLOBAL by design.
-		// Same model as global roles/permissions. Member ↔ dept association is in syst_user_roles.
-		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblSystDepartments, "slug,name,enabled_features", "tenant_id", tenantID, &knownDepts); _dbErr != nil {
-			slog.Error("db.QueryRows failed (best-effort)", "error", _dbErr)
-		}
-		deptMap := make(map[string]map[string]any, len(knownDepts))
-		for _, d := range knownDepts {
-			if s, ok2 := d["slug"].(string); ok2 && s != "" {
-				deptMap[s] = d
-			}
+		depts, deptErr := loadTenantDepartments(r.Context(), db, tenantID)
+		if deptErr != nil {
+			respond.InternalError(w, http.StatusServiceUnavailable, "could not load departments", deptErr)
+			return
 		}
 
-		// Filter result departments to only those present in the DB.
+		// Resolve classifier output to department_id PKs; drop anything unknown.
 		var validDepts []string
 		var invalidDepts []string
-		for _, dept := range result.Departments {
-			if _, found := deptMap[dept]; found {
-				validDepts = append(validDepts, dept)
-			} else {
-				invalidDepts = append(invalidDepts, dept)
+		seen := make(map[string]bool, len(result.Departments))
+		for _, key := range result.Departments {
+			d, found := depts.resolve(key)
+			if !found {
+				invalidDepts = append(invalidDepts, key)
+				continue
+			}
+			if !seen[d.ID] {
+				seen[d.ID] = true
+				validDepts = append(validDepts, d.ID)
 			}
 		}
 		if len(invalidDepts) > 0 {
-			slog.Warn("classifier returned unknown department slugs — filtered",
+			slog.Warn("classifier returned unknown departments — filtered",
 				"invalid", invalidDepts, "tenant_id", tenantID)
 		}
 		if len(validDepts) == 0 {
-			// All classifier suggestions were invalid — fall back to compliance as the catch-all.
-			// Was slog.Warn only — no platform event. Compliance team received cases
-			// without knowing routing degraded. Now writes platform event for audit trail.
-			slog.Warn("X-19: HITL routing fallback — no valid departments from classifier, defaulting to dept_compliance",
+			// No hardcoded catch-all department key: record the miss and make the
+			// caller choose explicitly.
+			slog.Warn("X-19: HITL routing unresolved — no valid departments from classifier",
 				"tenant_id", tenantID, "intent", result.Intent, "routing_source", result.RoutingSource)
-			if _, exists := deptMap["dept_compliance"]; exists {
-				validDepts = []string{"dept_compliance"}
-				// Post audit event via ocx-core-svc API (boundary enforcement: no direct core_events write).
-				if coreClient != nil {
-					concurrent.Go("hitl-routing-fallback-event", func() {
-						// was _ = (silently dropped). Audit event delivery failure
-						// created gaps in the compliance routing trail with no operator signal.
-						if evErr := coreClient.PostEvent(context.Background(), map[string]any{
-							"tenant_id":   tenantID,
-							"event_type":  "HITL_ROUTING_CATCHALL",
-							"entity_type": "department_routing",
-							"action":      "FALLBACK_TO_COMPLIANCE",
-							"new_value":   fmt.Sprintf(`{"intent":%q,"routing_source":%q,"invalid_depts":%d}`, result.Intent, result.RoutingSource, len(invalidDepts)),
-							"created_at":  time.Now().UTC().Format(time.RFC3339),
-						}); evErr != nil {
-							slog.Warn("HITL routing fallback: audit event delivery to core failed (non-fatal)",
-								"tenant_id", tenantID, "intent", result.Intent, "error", evErr)
-						}
-					})
-
-				} else if _wErr := db.InsertRow(database.TblCoreEvents, map[string]any{
-					"tenant_id":   tenantID,
-					"event_type":  "HITL_ROUTING_CATCHALL",
-					"entity_type": "department_routing",
-					"action":      "FALLBACK_TO_COMPLIANCE",
-					"new_value":   fmt.Sprintf(`{"intent":%q,"routing_source":%q,"invalid_depts":%d}`, result.Intent, result.RoutingSource, len(invalidDepts)),
-					"created_at":  time.Now().UTC().Format(time.RFC3339),
-				}); _wErr != nil {
-					slog.Error("db write failed: InsertRow",
-						"table", database.TblCoreEvents, "file", "aocs-compliance/handlers/compliance/department_routing.go", "err", _wErr)
-				}
+			evt := map[string]any{
+				"tenant_id":   tenantID,
+				"event_type":  "HITL_ROUTING_UNRESOLVED",
+				"entity_type": "department_routing",
+				"action":      "NO_VALID_DEPARTMENT",
+				"new_value":   fmt.Sprintf(`{"intent":%q,"routing_source":%q,"invalid_depts":%d}`, result.Intent, result.RoutingSource, len(invalidDepts)),
+				"created_at":  time.Now().UTC().Format(time.RFC3339),
 			}
+			if coreClient != nil {
+				concurrent.Go("hitl-routing-unresolved-event", func() {
+					if evErr := coreClient.PostEvent(context.Background(), evt); evErr != nil {
+						slog.Warn("HITL routing unresolved: audit event delivery to core failed (non-fatal)",
+							"tenant_id", tenantID, "intent", result.Intent, "error", evErr)
+					}
+				})
+			} else if _wErr := db.InsertRow(database.TblCoreEvents, evt); _wErr != nil {
+				slog.Error("db write failed: InsertRow",
+					"table", database.TblCoreEvents, "file", "aocs-compliance/handlers/compliance/department_routing.go", "err", _wErr)
+			}
+			respond.ErrorWithCode(w, http.StatusUnprocessableEntity, "department_required",
+				"no matching department for this case — pass department_ids explicitly")
+			return
 		}
 
 		checkCapacity := true
@@ -179,13 +172,14 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 				}
 				available := len(pendingRows) < maxCases
 				capacityStatus[dept] = map[string]any{
-					"available": available,
-					"pending":   len(pendingRows),
-					"max":       maxCases,
+					"department_name": depts.name(dept),
+					"available":       available,
+					"pending":         len(pendingRows),
+					"max":             maxCases,
 				}
 				if !available {
 					slog.Warn("department at capacity",
-						"dept", dept, "pending", len(pendingRows), "max", maxCases)
+						"department_id", dept, "pending", len(pendingRows), "max", maxCases)
 				}
 			}
 		}
@@ -223,6 +217,7 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 			"routing_source":   result.RoutingSource,
 			"routing_degraded": routingDegraded,
 			"departments":      validDepts,
+			"department_names": depts.names(validDepts),
 			"capacity_status":  capacityStatus,
 			"filtered_out":     invalidDepts,
 			"note": fmt.Sprintf(

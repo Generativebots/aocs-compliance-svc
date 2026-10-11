@@ -5,9 +5,8 @@
 // similarity) and intent validation (cosine similarity + keyword contradiction).
 //
 // ENT_GRPC_ADDR must be set to the Python pod's internal address.
-// Fail-open: if ENT is unreachable, DetectHallucination returns
-// hallucination_detected=false (LOW risk) so the gate does not block
-// legitimate traffic during a Python pod restart.
+// No fallback: if ENT is unreachable every RPC returns an error and the
+// caller surfaces it (the gate returns 502 hallucination_service_unavailable).
 package compliance
 
 import (
@@ -79,8 +78,7 @@ func (e *EntClient) Close() error {
 }
 
 // DetectHallucination calls the ENT DetectHallucination RPC (Phase 1A).
-// On failure, returns a safe fallback (hallucination_detected=false, LOW risk)
-// so the gate does not block traffic during ENT pod restarts.
+// On failure it returns an error (no local fallback scorer).
 func (e *EntClient) DetectHallucination(
 	ctx context.Context,
 	llmOutput, contextText, agentID, tenantID string,
@@ -101,12 +99,7 @@ func (e *EntClient) DetectHallucination(
 	respBytes, err = security.InvokeProtoJSON(ctx, e.conn, "/aocs.ent.EntService/DetectHallucination", reqBytes,
 		&entpb.EntHallucinationRequest{}, &entpb.EntHallucinationResponse{})
 	if err != nil {
-		// Now: run the local rule-based scorer as a fallback so obvious patterns are caught
-		// even without the ML service. IsFallback=true signals the audit dashboard that the
-		// score came from the local scorer, not the full ML pipeline.
-		e.logger.Warn("ENT DetectHallucination RPC failed — using local rule-based fallback scorer",
-			"error", err, "addr", e.addr, "agent_id", agentID)
-		return localHallucinationScore(llmOutput, contextText, agentID), nil
+		return nil, fmt.Errorf("ENT DetectHallucination unavailable (addr=%s): %w", e.addr, err)
 	}
 
 	var resp EntHallucinationResponse
@@ -124,8 +117,7 @@ func (e *EntClient) DetectHallucination(
 	return &resp, nil
 }
 
-// ValidateIntent calls the ENT ValidateIntent RPC.
-// On failure, returns a safe fallback (is_valid=true) — fail-open.
+// ValidateIntent calls the ENT ValidateIntent RPC. On failure it returns an error.
 func (e *EntClient) ValidateIntent(
 	ctx context.Context,
 	statedIntent, actualAction, agentID, tenantID string,
@@ -146,12 +138,7 @@ func (e *EntClient) ValidateIntent(
 	respBytes, err = security.InvokeProtoJSON(ctx, e.conn, "/aocs.ent.EntService/ValidateIntent", reqBytes,
 		&entpb.EntIntentRequest{}, &entpb.EntIntentResponse{})
 	if err != nil {
-		e.logger.Warn("ENT ValidateIntent RPC failed — fail-open (intent valid)",
-			"error", err, "addr", e.addr, "agent_id", agentID)
-		return &EntIntentResponse{
-			IsValid:    true,
-			IsFallback: true,
-		}, nil
+		return nil, fmt.Errorf("ENT ValidateIntent unavailable (addr=%s): %w", e.addr, err)
 	}
 
 	var resp EntIntentResponse
@@ -187,9 +174,7 @@ type EntExtractIntentsResponse = types.APEExtractResponse
 var _ types.APEExtractor = (*EntClient)(nil)
 
 // ExtractIntents calls the Python ENT service to run Gemini-powered APE
-// extraction on the given document content.
-// On failure, returns an empty (fallback) result — fail-open so the wizard
-// still functions when the Python pod is restarting.
+// extraction on the given document content. On failure it returns an error.
 func (e *EntClient) ExtractIntents(
 	ctx context.Context,
 	req *EntExtractIntentsRequest,
@@ -203,16 +188,7 @@ func (e *EntClient) ExtractIntents(
 	respBytes, err = security.InvokeProtoJSON(ctx, e.conn, "/aocs.ent.EntService/ExtractIntents", reqBytes,
 		&entpb.EntExtractIntentsRequest{}, &entpb.EntExtractIntentsResponse{})
 	if err != nil {
-		e.logger.Warn("ENT ExtractIntents RPC failed — fail-open (empty extraction)",
-			"error", err, "addr", e.addr)
-		return &EntExtractIntentsResponse{
-			Summary:    "",
-			Intents:    []EntExtractedIntent{},
-			Policies:   []EntExtractedPolicy{},
-			Goals:      []EntExtractedGoal{},
-			Conflicts:  []EntExtractedConflict{},
-			IsFallback: true,
-		}, nil
+		return nil, fmt.Errorf("ENT ExtractIntents unavailable (addr=%s): %w", e.addr, err)
 	}
 
 	var resp EntExtractIntentsResponse

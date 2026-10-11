@@ -68,7 +68,7 @@ type ZKPVerificationResult = types.ZKPVerificationResult
 // registered public key — this is a genuine zero-knowledge proof of key ownership.
 type ZKPVerifier struct {
 	mu         sync.RWMutex
-	challenges map[string]*ZKPChallenge // in-memory fallback when Redis is unavailable
+	challenges map[string]*ZKPChallenge // single-pod store, used only when Redis is not wired
 	logger     *slog.Logger
 	db         database.DB
 
@@ -173,14 +173,16 @@ func (v *ZKPVerifier) GenerateChallenge(tenantID string, proofType ProofType, pa
 		Parameters:  params,
 	}
 
-	// Persist to Redis for multi-pod consistency; fallback to in-memory.
+	// Redis is the store when wired (multi-pod); otherwise the single-pod map.
+	// No fallback from Redis to memory: a Redis failure is an error.
 	if v.redis != nil {
-		if b, err := json.Marshal(challenge); err == nil {
-			redisKey := zkpChallengeKey(challenge.TenantID, challenge.ChallengeID)
-			if err := v.redis.Set(v.svcCtx, redisKey, b, v.defaultChallengeTTL); err != nil {
-				v.logger.Warn("ZKP: Redis Set failed, falling back to in-memory", "error", err)
-				v.challenges[challenge.ChallengeID] = challenge
-			}
+		b, err := json.Marshal(challenge)
+		if err != nil {
+			return nil, fmt.Errorf("marshal ZKP challenge: %w", err)
+		}
+		redisKey := zkpChallengeKey(challenge.TenantID, challenge.ChallengeID)
+		if err := v.redis.Set(v.svcCtx, redisKey, b, v.defaultChallengeTTL); err != nil {
+			return nil, fmt.Errorf("ZKP challenge store (redis) unavailable: %w", err)
 		}
 	} else {
 		v.challenges[challenge.ChallengeID] = challenge
@@ -201,7 +203,7 @@ func (v *ZKPVerifier) VerifyProof(proof *ZKPProof) (*ZKPVerificationResult, erro
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
-	// Look up the challenge — Redis first for cross-pod reads, then in-memory fallback.
+	// Look up the challenge in the configured store (Redis when wired, else memory).
 	var challenge *ZKPChallenge
 	var ok bool
 	if v.redis != nil {
@@ -213,8 +215,7 @@ func (v *ZKPVerifier) VerifyProof(proof *ZKPProof) (*ZKPVerificationResult, erro
 				ok = true
 			}
 		}
-	}
-	if !ok {
+	} else {
 		challenge, ok = v.challenges[proof.ChallengeID]
 	}
 	// Tenant isolation: a challenge is only usable by the tenant it was issued

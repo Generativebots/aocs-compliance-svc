@@ -146,6 +146,12 @@ spec:
             secretKeyRef:
               name: aocs-compliance-secrets
               key: PLATFORM_MASTER_KEY
+        # R-08a: config.MustEnv("OCX_CHALLENGE_SECRET") in cmd/aocs-compliance/routes.go
+        - name: OCX_CHALLENGE_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: aocs-compliance-secrets
+              key: OCX_CHALLENGE_SECRET
 
         # ── S3 Fix: Cross-pod Redis CollusionStore ────────────────────────
         - name: OCX_REDIS_ADDR

@@ -62,7 +62,7 @@ services:
       HUB_INTERNAL_API_URL: http://aocs-hub:8080
 
       # ── Security ──────────────────────────────────────────────────────────
-      SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:-}
+      SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:?set SERVICE_JWT_SECRET in .env (must match aocs-system-svc)}
       PLATFORM_MASTER_KEY: ${PLATFORM_MASTER_KEY:-}
 
       # Shared Redis: session revocations / role changes issued by system.

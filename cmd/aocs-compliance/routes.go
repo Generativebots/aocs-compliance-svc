@@ -11,6 +11,7 @@ import (
 	hadmin "github.com/ocx/compliance/internal/compliance/handlers/admin"
 	hsecurity "github.com/ocx/compliance/internal/compliance/handlers/security"
 	"github.com/ocx/shared/infra/auth"
+	"github.com/ocx/shared/infra/config"
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/infra/middleware"
 	"github.com/ocx/shared/infra/security"
@@ -67,19 +68,17 @@ func registerComplianceRoutes(
 	// Load (or create once) the persistent Ed25519 signing key.
 	// LoadOrCreateSigningKey reads from compliance.platform_signing_keys.
 	// If no active key exists, it generates one and persists it.
-	// PLATFORM_MASTER_KEY must be set — absent → fails-fast (by design).
-	masterKey := os.Getenv("PLATFORM_MASTER_KEY")
-	if masterKey != "" && db != nil {
-		if _, err := security.LoadOrCreateSigningKey(context.Background(), db, masterKey); err != nil {
-			slog.Error("S2: LoadOrCreateSigningKey failed — evidence signing will use ZKPVerifier fallback",
-				"error", err,
-			)
-		} else {
-			slog.Info("S2: Persistent Ed25519 signing key loaded from DB")
-		}
-	} else {
-		slog.Warn("S2: PLATFORM_MASTER_KEY not set or DB unavailable — signing key not loaded (dev/test only)")
+	// PLATFORM_MASTER_KEY must be set — absent or load failure → fail fast (no fallback key).
+	masterKey := config.MustEnv("PLATFORM_MASTER_KEY")
+	if db == nil {
+		slog.Error("S2: database unavailable — cannot load the evidence signing key")
+		os.Exit(1)
 	}
+	if _, err := security.LoadOrCreateSigningKey(context.Background(), db, masterKey); err != nil {
+		slog.Error("S2: LoadOrCreateSigningKey failed — refusing to start without a persistent signing key", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("S2: Persistent Ed25519 signing key loaded from DB")
 
 	// ── Admin routes (SuperAdmin only) ────────────────────────────────────────
 	// POST /system/compliance/rotate-signing-key — rotates persistent Ed25519 key
@@ -96,15 +95,8 @@ func registerComplianceRoutes(
 		slog.Warn("S2: /system/compliance/rotate-signing-key NOT registered — pgx pool unavailable")
 	}
 
-	// ChallengeVerifier secret — must be set in production via OCX_CHALLENGE_SECRET.
-	challengeSecret := []byte(os.Getenv("OCX_CHALLENGE_SECRET"))
-	if len(challengeSecret) == 0 {
-		if os.Getenv("GOOGLE_CLOUD_PROJECT") != "" {
-			panic("OCX_CHALLENGE_SECRET must be set in production — refusing to start with insecure default")
-		}
-		slog.Warn("OCX_CHALLENGE_SECRET not set — using insecure default (dev/test only)")
-		challengeSecret = []byte("ocx-compliance-cv-secret-dev-only")
-	}
+	// ChallengeVerifier secret — required in every environment (no built-in default).
+	challengeSecret := []byte(config.MustEnv("OCX_CHALLENGE_SECRET"))
 	challengeVerifier := security.NewChallengeVerifier(challengeSecret)
 	// M3 NOTE: This inner limiter applies ONLY to expensive crypto endpoints (/nonce, /sybil, /challenge).
 	// SECURITY_RATE_LIMIT_RPM env allows ops to tune without redeployment.

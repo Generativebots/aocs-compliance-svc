@@ -41,13 +41,9 @@ func HandleGetComplianceDashboardSummary(db database.DB) http.HandlerFunc {
 		if err := db.QueryRowsCompound(database.TblComplReports,
 			"report_id, framework, status, compliance_score, total_controls, passed_controls, certifier_name, created_at, updated_at",
 			"tenant_id", tenantID, "status", "pending", &reports); err != nil {
-			// Fallback to all reports if the pending query failed
-			if err := db.QueryRows(database.TblComplReports,
-				"report_id, framework, status, compliance_score, total_controls, passed_controls, certifier_name, created_at, updated_at",
-				"tenant_id", tenantID, &reports); err != nil {
-				dashboardReadFailed(w, tenantID, err)
-				return
-			}
+			// No "all reports" substitute: a failed read is reported as a failure.
+			dashboardReadFailed(w, tenantID, err)
+			return
 		}
 		if reports == nil {
 			reports = []map[string]any{}

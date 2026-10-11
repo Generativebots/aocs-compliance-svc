@@ -166,8 +166,8 @@ func registerIntelComplianceRoutes(
 	// IntentClassifier — uses shared types interface
 	coreClassifier := types.NewIntentClassifierHTTP(extractorURL)
 	api.HandleFunc("/departments/route", auth.RequireAccess(pc, "compliance", "read", compliance.HandleRouteDepartment(db, coreClassifier, coreClient))).Methods("POST")
-	api.HandleFunc("/departments/{slug}/overflow-route", auth.RequireAccess(pc, "compliance", "write", compliance.HandleRouteDeptOverflow(db, coreClient))).Methods("POST")
-	api.HandleFunc("/departments/{slug}/pre-delete-check", auth.RequireAccess(pc, "compliance", "write", compliance.HandleGuardDeptDeletion(db, coreClient))).Methods("POST")
+	api.HandleFunc("/departments/{department_id}/overflow-route", auth.RequireAccess(pc, "compliance", "write", compliance.HandleRouteDeptOverflow(db, coreClient))).Methods("POST")
+	api.HandleFunc("/departments/{department_id}/pre-delete-check", auth.RequireAccess(pc, "compliance", "write", compliance.HandleGuardDeptDeletion(db, coreClient))).Methods("POST")
 
 	// ── Trust attestations ────────────────────────────────────────────────────
 	api.HandleFunc("/trust-attestations/{id}", auth.RequireAccess(pc, "compliance", "read", middleware.RequireValidPathVars("id")(compliance.HandleGetTrustAttestation(db)))).Methods("GET")

@@ -468,9 +468,9 @@ func HandleListViolations(db database.DB) http.HandlerFunc {
 			}
 			rows = filtered
 		}
-		// Apply department scope filter: violations link to agents which have department_id=slug.
+		// Apply department scope filter: department_id is the syst_departments PK.
 		// Step 1: if the violation row has department_id directly, use it.
-		// Step 2: resolve via agent's department_id (slug).
+		// Step 2: resolve via the agent's department_id (FK → syst_departments).
 		if deptID != "" {
 			// Build agent→dept map once
 			var agentRows []database.Agt
@@ -479,7 +479,7 @@ func HandleListViolations(db database.DB) http.HandlerFunc {
 			if err := db.QueryRowsCtx(r.Context(), database.TblAgentFullView, "agent_id,department_id",
 				"tenant_id", tenantID, &agentRows); err == nil {
 				for _, a := range agentRows {
-					agentDept[a.AgentID] = a.DepartmentID // department_id is slug e.g. "claims"
+					agentDept[a.AgentID] = a.DepartmentID // FK → syst_departments.department_id
 				}
 			}
 			filtered := rows[:0]

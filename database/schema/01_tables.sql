@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS compl_records (
     title               TEXT        NOT NULL,
     description         TEXT,
     assigned_to         TEXT,
-    department          TEXT,
+    department_id       TEXT,       -- FK (tenant_id, department_id) -> syst_departments (08_constraints.sql)
     region              TEXT,
     jurisdiction        TEXT,
     regulatory_framework TEXT,

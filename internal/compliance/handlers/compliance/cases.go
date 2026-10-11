@@ -36,7 +36,7 @@ import (
 // Supported query params:
 //
 //	?case_type=SELF_HEAL|AGENT_ESC|JURY_DEADLOCK
-//	?department_id=<slug>
+//	?department_id=<syst_departments.department_id>
 //	?status=PENDING|APPROVED|REJECTED|TIMEOUT
 //	?agent_id=<uuid>
 func HandleListCases(db database.DB) http.HandlerFunc {
@@ -53,10 +53,10 @@ func HandleListCases(db database.DB) http.HandlerFunc {
 		isSuperAdmin := false
 		if tenantID == "" {
 			au, authErr := auth.GetAuthUser(r.Context())
-			if authErr != nil || au == nil || au.Role != auth.RoleSuperAdmin {
+			if authErr != nil || au == nil || !au.IsSuperAdmin {
 				auRole := ""
 				if au != nil {
-					auRole = string(au.Role)
+					auRole = au.RoleName
 				}
 				slog.Warn("ListCases: missing tenant_id and caller is not super_admin",
 					"role", auRole, "remote_addr", r.RemoteAddr)
@@ -104,13 +104,15 @@ func HandleListCases(db database.DB) http.HandlerFunc {
 					h.created_at,  h.updated_at,          h.expires_at,
 					h.sla_breach_at, h.sla_breached,      h.sla_breached_at,
 					h.auto_escalated, h.override_verdict,
-					h.verdict_id,  h.jury_case_id,
+					h.verdict_id,  h.jury_case_id,        h.department_id,
 					-- JOINed enrichment
 					COALESCE(a.name, '')         AS agent_name,
-					COALESCE(p.name, '')         AS policy_name
+					COALESCE(p.name, '')         AS policy_name,
+					COALESCE(d.name, '')         AS department_name
 				FROM core_hitl h
 				LEFT JOIN core_agents         a ON a.agent_id  = h.agent_id  AND a.tenant_id = h.tenant_id
 				LEFT JOIN core_policies      p ON p.policy_id = h.policy_id AND p.tenant_id = h.tenant_id
+				LEFT JOIN syst_departments   d ON d.department_id = h.department_id AND d.tenant_id = h.tenant_id
 				ORDER BY h.created_at DESC
 				LIMIT $1 OFFSET $2`
 			joinArgs = []any{limit, offset}
@@ -131,13 +133,15 @@ func HandleListCases(db database.DB) http.HandlerFunc {
 					h.created_at,  h.updated_at,          h.expires_at,
 					h.sla_breach_at, h.sla_breached,      h.sla_breached_at,
 					h.auto_escalated, h.override_verdict,
-					h.verdict_id,  h.jury_case_id,
-					-- JOINed enrichment: agent display name + policy name in one round-trip
+					h.verdict_id,  h.jury_case_id,        h.department_id,
+					-- JOINed enrichment: agent / policy / department display names in one round-trip
 					COALESCE(a.name, '')         AS agent_name,
-					COALESCE(p.name, '')         AS policy_name
+					COALESCE(p.name, '')         AS policy_name,
+					COALESCE(d.name, '')         AS department_name
 				FROM core_hitl h
 				LEFT JOIN core_agents         a ON a.agent_id  = h.agent_id  AND a.tenant_id = h.tenant_id
 				LEFT JOIN core_policies      p ON p.policy_id = h.policy_id AND p.tenant_id = h.tenant_id
+				LEFT JOIN syst_departments   d ON d.department_id = h.department_id AND d.tenant_id = h.tenant_id
 				WHERE h.tenant_id = $1
 				ORDER BY h.created_at DESC
 				LIMIT $2 OFFSET $3`
@@ -145,26 +149,12 @@ func HandleListCases(db database.DB) http.HandlerFunc {
 		}
 
 		joinErr := db.QueryRawCtx(r.Context(), joinSQL, &rows, joinArgs...)
-		if joinErr != nil || rows == nil {
-			// Fallback to plain single-table query when pgxPool unavailable
-			slog.Warn("ListCases: JOIN query failed or pool unavailable, falling back",
-				"tenant_id", tenantID, "join_err", joinErr)
-			var plainErr error
-			if tenantID != "" {
-				plainErr = db.QueryRowsCtx(r.Context(), database.TblCoreHitl, database.ColsHITLDecision, "tenant_id", tenantID, &rows)
-			} else {
-				// SECURITY: tenantID is empty — this means the JWT claim is missing or
-				// malformed. Returning unscoped data would be a cross-tenant data leak.
-				// Deny by default (Google/AWS IAM zero-trust principle).
-				slog.Error("ListCases: tenantID empty in fallback path — aborting to prevent cross-tenant leak")
-				respond.InternalError(w, http.StatusBadRequest, "missing tenant context", nil)
-				return
-			}
-			if plainErr != nil {
-				slog.Error("ListCases fallback failed", "tenant_id", tenantID, "error", plainErr)
-				respond.InternalError(w, http.StatusInternalServerError, "list cases", plainErr)
-				return
-			}
+		if joinErr != nil {
+			// No degraded single-table fallback (it silently dropped agent/policy
+			// names, filters and paging). Report the real failure.
+			slog.Error("ListCases: query failed", "tenant_id", tenantID, "error", joinErr)
+			respond.InternalError(w, http.StatusServiceUnavailable, "list cases: database query failed", joinErr)
+			return
 		}
 
 		if rows == nil {
@@ -273,12 +263,9 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 		if au, auErr := auth.GetAuthUser(r.Context()); auErr == nil && au != nil && au.UserID != "" {
 			reviewerID = au.UserID
 		} else {
-			// Fallback for legacy clients still sending the header; log the event.
-			reviewerID = auth.GetUserID(r.Context())
-			if reviewerID != "" {
-				slog.Warn("ArbitrateCase: reviewer from X-User-Id header (JWT missing user claim)",
-					"case_id", caseID, "reviewer", reviewerID)
-			}
+			// No spoofable X-User-Id fallback: the reviewer must come from the JWT.
+			respond.Error(w, http.StatusUnauthorized, "reviewer identity missing from token")
+			return
 		}
 		now := time.Now().UTC().Format(time.RFC3339)
 
@@ -411,7 +398,7 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 //
 // assigned_to may be either:
 //   - A user UUID  → stored in user_id column
-//   - A role slug  → stored in context_data.assigned_role (UUID validation prevents 500)
+//   - A role key   → stored in context_data.assigned_role (UUID validation prevents 500)
 //
 // HandleAssignCase assigns a HITL case to a user/role and auto-routes to departments.
 // When department_ids is not provided in the request body, the IntentClassifier is used
@@ -461,7 +448,7 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 			return
 		}
 		operatorID := auth.GetUserID(r.Context())
-		// assigned_to (user UUID or role slug) | reviewer_id (alias) | the caller ("Assign to Me").
+		// assigned_to (user UUID or role key) | reviewer_id (alias) | the caller ("Assign to Me").
 		assignedTo := strings.TrimSpace(req.AssignedTo)
 		if assignedTo == "" {
 			assignedTo = strings.TrimSpace(req.ReviewerID)
@@ -500,7 +487,12 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 		hasClassSignal := req.CaseType != "" || req.PolicyCategory != "" || req.RuleType != "" || req.Description != ""
 		if len(deptIDs) == 0 && hasClassSignal {
 			classResult := classifier.Classify(r.Context(), req.CaseType, req.PolicyCategory, req.RuleType, req.Description)
-			deptIDs = classResult.Departments
+			if classResult == nil || len(classResult.Departments) == 0 {
+				respond.ErrorWithCode(w, http.StatusUnprocessableEntity, "department_required",
+					"automatic department routing is unavailable — pass department_ids explicitly")
+				return
+			}
+			deptIDs = classResult.Departments // resolved to department_id PKs below
 			// ai_intent, ai_confidence, routing_source are NOT real DB columns.
 			// Store classification metadata in context_data JSONB to avoid 500s.
 			classificationMeta := map[string]any{
@@ -516,57 +508,41 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 				"departments", deptIDs)
 		}
 		// Assigns to non-existent departments leave cases permanently unrouted.
-		// Skipped for AI-routed depts (classifier is responsible for its own slug validity).
+		// Every department is validated against syst_departments.department_id (PK);
+		// classifier output (id or name) is resolved to the PK first.
+		var depts deptIndex
 		if len(deptIDs) > 0 {
-			var knownDepts []map[string]any
-			// nolint:tenant_filter — syst_departments is GLOBAL by design.
-			// Standard departments (Engineering, Compliance, Finance, Legal…) are shared
-			// across ALL tenants — same model as global roles/permissions.
-			// Only member association (syst_user_roles) is tenant-scoped.
-			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblSystDepartments, "slug,enabled_features", "tenant_id", tenantID, &knownDepts); _dbErr != nil {
-				slog.Error("db.QueryRows failed (best-effort)", "error", _dbErr)
+			var loadErr error
+			depts, loadErr = loadTenantDepartments(r.Context(), db, tenantID)
+			if loadErr != nil {
+				slog.Error("department lookup failed", "error", loadErr)
+				respond.ErrorWithCode(w, http.StatusServiceUnavailable, "departments_unavailable", "could not load departments")
+				return
 			}
-			deptMap := make(map[string]map[string]any, len(knownDepts))
-			for _, d := range knownDepts {
-				if s, ok := d["slug"].(string); ok && s != "" {
-					deptMap[s] = d
-				}
-			}
+			resolved := make([]string, 0, len(deptIDs))
 			var invalid []string
-			for _, dept := range deptIDs {
-				if _, found := deptMap[dept]; !found {
-					invalid = append(invalid, dept)
+			for _, key := range deptIDs {
+				d, found := depts.resolve(key)
+				if !found {
+					invalid = append(invalid, key)
+					continue
 				}
+				resolved = append(resolved, d.ID)
 			}
 			if len(invalid) > 0 {
 				respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest,
-					fmt.Sprintf("department(s) not found in syst_departments: %v", invalid))
+					fmt.Sprintf("%d department(s) not found for this tenant", len(invalid)))
 				return
 			}
+			deptIDs = resolved
 
 			// A HITL case assigned to a department with HITL disabled will sit
 			// unactioned indefinitely with no error — prevent this at assignment time.
-			for _, dept := range deptIDs {
-				d := deptMap[dept]
-				ef, _ := d["enabled_features"].(map[string]any)
-				if ef != nil {
-					hitlEnabled, hasKey := ef["hitl"]
-					if hasKey {
-						switch v := hitlEnabled.(type) {
-						case bool:
-							if !v {
-								respond.ErrorWithCode(w, http.StatusUnprocessableEntity, respond.ErrCodeValidation,
-									fmt.Sprintf("department '%s' has HITL disabled (enabled_features.hitl=false) — enable it before assigning cases", dept))
-								return
-							}
-						case string:
-							if v == "false" || v == "0" {
-								respond.ErrorWithCode(w, http.StatusUnprocessableEntity, respond.ErrCodeValidation,
-									fmt.Sprintf("department '%s' has HITL disabled — enable it before assigning cases", dept))
-								return
-							}
-						}
-					}
+			for _, id := range deptIDs {
+				if d := depts[id]; !d.hitlEnabled() {
+					respond.ErrorWithCode(w, http.StatusUnprocessableEntity, respond.ErrCodeValidation,
+						fmt.Sprintf("department %q has HITL disabled (enabled_features.hitl=false) — enable it before assigning cases", d.Name))
+					return
 				}
 			}
 
@@ -585,10 +561,11 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 				}
 				if len(pendingRows) >= maxCases {
 					respond.JSON(w, http.StatusTooManyRequests, map[string]any{
-						"error":         fmt.Sprintf("department '%s' has reached the HITL case capacity limit (%d pending). Resolve existing cases or reassign to another department.", dept, maxCases),
-						"department":    dept,
-						"pending_count": len(pendingRows),
-						"max_capacity":  maxCases,
+						"error":           fmt.Sprintf("department %q has reached the HITL case capacity limit (%d pending). Resolve existing cases or reassign to another department.", depts.name(dept), maxCases),
+						"department_id":   dept,
+						"department_name": depts.name(dept),
+						"pending_count":   len(pendingRows),
+						"max_capacity":    maxCases,
 					})
 					return
 				}
@@ -600,9 +577,9 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 			update["case_type"] = req.CaseType
 		}
 
-		// Validate whether assigned_to is a UUID (user) or a role slug.
+		// Validate whether assigned_to is a UUID (user) or a role key.
 		// Writing a non-UUID into user_id causes downstream UUID joins to fail,
-		// so only real user UUIDs go to user_id; role slugs go to assigned_role.
+		// so only real user UUIDs go to user_id; role keys go to assigned_role.
 		if _, uuidErr := uuid.Parse(assignedTo); uuidErr == nil {
 			update["user_id"] = assignedTo
 			update["reviewer_id"] = assignedTo
@@ -689,7 +666,7 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 			}
 			return
 		}
-		respond.OK(w, map[string]any{"status": "ASSIGNED", "case_id": caseID, "assigned_to": assignedTo, "department_ids": deptIDs})
+		respond.OK(w, map[string]any{"status": "ASSIGNED", "case_id": caseID, "assigned_to": assignedTo, "department_ids": deptIDs, "department_names": depts.names(deptIDs)})
 	}
 }
 

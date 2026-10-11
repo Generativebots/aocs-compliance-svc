@@ -111,33 +111,23 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 				"case_id", caseID, "claimed_from", req.FromDeptID, "actual_dept", currentDept)
 		}
 
-		// ── Check 2: Target dept has HITL enabled ─────────────────────────────
-		var deptRows []map[string]any
-		if err := db.QueryRowsCompound(database.TblSystDepartments, "slug,enabled_features",
-			"slug", req.ToDeptID, "tenant_id", tenantID, &deptRows); err != nil || len(deptRows) == 0 {
-			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest,
-				fmt.Sprintf("target department '%s' not found", req.ToDeptID))
+		// ── Check 2: Target dept (by PK) exists and has HITL enabled ──────────
+		depts, deptErr := loadTenantDepartments(r.Context(), db, tenantID)
+		if deptErr != nil {
+			respond.InternalError(w, http.StatusServiceUnavailable, "could not load departments", deptErr)
 			return
 		}
-		toDept := deptRows[0]
-		if ef, ok := toDept["enabled_features"].(map[string]any); ok {
-			if hitlVal, hasKey := ef["hitl"]; hasKey {
-				switch v := hitlVal.(type) {
-				case bool:
-					if !v {
-						respond.ErrorWithCode(w, http.StatusUnprocessableEntity, respond.ErrCodeValidation,
-							fmt.Sprintf("department '%s' has HITL disabled — enable it before reassigning cases", req.ToDeptID))
-						return
-					}
-				case string:
-					if v == "false" || v == "0" {
-						respond.ErrorWithCode(w, http.StatusUnprocessableEntity, respond.ErrCodeValidation,
-							fmt.Sprintf("department '%s' has HITL disabled — enable it before reassigning cases", req.ToDeptID))
-						return
-					}
-				}
-			}
+		toDept, found := depts[req.ToDeptID]
+		if !found {
+			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "target department not found")
+			return
 		}
+		if !toDept.hitlEnabled() {
+			respond.ErrorWithCode(w, http.StatusUnprocessableEntity, respond.ErrCodeValidation,
+				fmt.Sprintf("department %q has HITL disabled — enable it before reassigning cases", toDept.Name))
+			return
+		}
+		fromName, toName := depts.name(currentDept), toDept.Name
 
 		// ── Cross-department policy re-evaluation ─────────────────────
 		// Compare source dept vs target dept governance policy thresholds.
@@ -151,11 +141,11 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 				AutoApproveThreshold float64 `json:"auto_approve_threshold"`
 				EscalateThreshold    float64 `json:"escalate_threshold"`
 			}
-			fetchPolicy := func(deptSlug string) deptPolicy {
+			fetchPolicy := func(departmentID string) deptPolicy {
 				var rows []map[string]any
 				if _dbErr := db.QueryRowsCompound(database.TblCoreHitlSla,
 					"department_id,auto_approve_threshold,escalate_threshold",
-					"department_id", deptSlug, "tenant_id", tenantID, &rows); _dbErr != nil {
+					"department_id", departmentID, "tenant_id", tenantID, &rows); _dbErr != nil {
 					slog.Error("QueryRowsCompound failed", "error", _dbErr)
 				}
 				if len(rows) == 0 {
@@ -179,9 +169,9 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 				policyConflict = fmt.Sprintf(
 					"Policy conflict: %s auto-approves at %.0f%% but %s auto-approves at %.0f%% — "+
 						"cases %s would escalate may auto-resolve in %s. Co-Pilot: confirm handover?",
-					currentDept, srcPolicy.AutoApproveThreshold*100,
-					req.ToDeptID, tgtPolicy.AutoApproveThreshold*100,
-					currentDept, req.ToDeptID,
+					fromName, srcPolicy.AutoApproveThreshold*100,
+					toName, tgtPolicy.AutoApproveThreshold*100,
+					fromName, toName,
 				)
 				slog.Warn("D2D policy conflict detected",
 					"from_dept", currentDept, "to_dept", req.ToDeptID,
@@ -192,9 +182,9 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 				policyConflict = fmt.Sprintf(
 					"Policy conflict: %s auto-approves at %.0f%% but %s requires %.0f%% — "+
 						"cases %s auto-resolves may escalate in %s. Co-Pilot: confirm handover?",
-					currentDept, srcPolicy.AutoApproveThreshold*100,
-					req.ToDeptID, tgtPolicy.AutoApproveThreshold*100,
-					currentDept, req.ToDeptID,
+					fromName, srcPolicy.AutoApproveThreshold*100,
+					toName, tgtPolicy.AutoApproveThreshold*100,
+					fromName, toName,
 				)
 			}
 		}
@@ -283,7 +273,9 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 			"status":           "reassigned",
 			"case_id":          caseID,
 			"from_dept":        currentDept,
+			"from_dept_name":   fromName,
 			"to_dept":          req.ToDeptID,
+			"to_dept_name":     toName,
 			"new_sla_deadline": newDeadline,
 			"sla_hours":        slaHours,
 		}

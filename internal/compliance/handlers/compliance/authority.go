@@ -21,26 +21,9 @@ func HandleAdminListAuthorityGaps(db database.DB) http.HandlerFunc {
 
 		gaps, err := db.ListAuthorityGaps(tenantID)
 		if err != nil {
+			// No REST fallback when the pool is unavailable: report it.
 			if err == database.ErrPoolUnavailable {
-				// FALLBACK: pgx not ready — use REST API for authority gaps.
-				slog.Warn("HandleAdminListAuthorityGaps: pgx unavailable — REST fallback", "tenant_id", tenantID)
-				var rawRows []map[string]any
-				restErr := db.QueryRows(
-					database.TblIAAuthorityGaps,
-					"gap_id,tenant_id,agent_id,gap_type,description,severity,status,created_at",
-					"tenant_id",
-					tenantID,
-					&rawRows,
-				)
-				if restErr != nil {
-					slog.Error("HandleAdminListAuthorityGaps: REST fallback failed", "tenant_id", tenantID, "error", restErr)
-					respond.InternalError(w, http.StatusInternalServerError, "Failed to list authority gaps:", restErr)
-					return
-				}
-				respond.JSON(w, http.StatusOK, map[string]any{
-					"gaps":  rawRows,
-					"total": len(rawRows),
-				})
+				respond.InternalError(w, http.StatusServiceUnavailable, "authority gaps: database pool unavailable", err)
 				return
 			}
 			respond.InternalError(w, http.StatusInternalServerError, "Failed to list authority gaps:", err)
