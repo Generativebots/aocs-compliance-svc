@@ -9,6 +9,8 @@
 # Depends on ocx-core-svc / aocs-hub at runtime for agent data.
 
 FROM golang:1.27-alpine AS builder
+# go.mod may require a patch release newer than the image tag; allow toolchain fetch
+ENV GOTOOLCHAIN=auto
 
 WORKDIR /src
 
