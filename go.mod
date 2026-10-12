@@ -1,6 +1,6 @@
 module github.com/ocx/compliance
 
-go 1.27.0
+go 1.27.2
 
 require (
 	cloud.google.com/go/pubsub v1.50.2
