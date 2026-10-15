@@ -12,12 +12,12 @@ on:
     inputs:
       service:
         description: 'Service name (aocs-compliance)'
-        required: true
+        required: false
         type: string
         default: 'aocs-compliance'
       region:
         description: 'GCP region'
-        required: true
+        required: false
         type: string
         default: 'us-central1'
       env:
