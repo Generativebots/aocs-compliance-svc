@@ -1,0 +1,24 @@
+name: actionlint
+
+on:
+  push:
+    branches: [main, develop, dev]
+    paths: ['.github/workflows/**']
+  pull_request:
+    paths: ['.github/workflows/**']
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    name: Lint workflows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Workflow syntax and expression checks only (shellcheck/pyflakes disabled
+      # to keep this gate deterministic; see S0-08).
+      - name: Run actionlint
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
+          ./actionlint -color -shellcheck= -pyflakes=
