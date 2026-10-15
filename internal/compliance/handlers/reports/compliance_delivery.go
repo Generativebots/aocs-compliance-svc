@@ -23,21 +23,18 @@ package reports
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/mail"
 	"net/smtp"
-	"os"
 	"strings"
 	"time"
 
 	"sync/atomic"
+
+	sharedcrypto "github.com/ocx/shared/infra/crypto"
 
 	"github.com/gorilla/mux"
 	"github.com/ocx/shared/infra/auth"
@@ -393,46 +390,19 @@ func loadTenantSMTPForDelivery(ctx context.Context, db database.DB, tenantID str
 	}, nil
 }
 
-// decryptSMTPKey decrypts an AES-GCM encrypted SMTP API key stored by tenant/smtp.go:encryptValue().
-// When OCX_ENCRYPTION_KEY is not set, the value is plain base64 — just decode it.
-// This mirrors tenant.decryptValue() without importing the tenant package (circular dep avoidance).
+// decryptSMTPKey decrypts an SMTP secret stored by aocs-system-svc tenant/smtp.go.
+// R-58: uses the same shared implementation as the writer (64-hex or legacy
+// 32-byte OCX_ENCRYPTION_KEY, AES-256-GCM); legacy plain-base64 values are
+// still readable.
 func decryptSMTPKey(ciphertext string) (string, error) {
-	raw, err := base64.StdEncoding.DecodeString(ciphertext)
+	pt, legacy, err := sharedcrypto.DecryptServiceSecret(ciphertext)
 	if err != nil {
-		return "", fmt.Errorf("base64 decode failed: %w", err)
+		return "", err
 	}
-
-	keyHex := os.Getenv("OCX_ENCRYPTION_KEY")
-	if keyHex == "" {
-		// No encryption key: stored as plain base64 (legacy / dev mode)
-		return string(raw), nil
+	if legacy {
+		slog.Warn("decryptSMTPKey: SMTP secret is stored without AES-GCM (legacy) — re-save SMTP config in aocs-system-svc")
 	}
-
-	key, err := hex.DecodeString(keyHex)
-	if err != nil || len(key) != 32 {
-		// Key is malformed — treat as plain base64 fallback with a warning
-		slog.Warn("decryptSMTPKey: OCX_ENCRYPTION_KEY is set but not valid 32-byte hex — treating as plaintext",
-			"key_len_bytes", len(key))
-		return string(raw), nil
-	}
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", fmt.Errorf("AES cipher init: %w", err)
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", fmt.Errorf("GCM init: %w", err)
-	}
-	if len(raw) < gcm.NonceSize() {
-		return "", fmt.Errorf("ciphertext too short (len=%d, nonce=%d)", len(raw), gcm.NonceSize())
-	}
-	nonce, ciphertextBytes := raw[:gcm.NonceSize()], raw[gcm.NonceSize():]
-	plaintext, err := gcm.Open(nil, nonce, ciphertextBytes, nil)
-	if err != nil {
-		return "", fmt.Errorf("AES-GCM decrypt failed: %w — check OCX_ENCRYPTION_KEY matches the key used when SMTP config was saved", err)
-	}
-	return string(plaintext), nil
+	return pt, nil
 }
 
 // sendComplianceEmail sends a compliance report email via SMTP.
