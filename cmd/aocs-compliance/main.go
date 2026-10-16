@@ -81,6 +81,16 @@ func main() {
 		&http.Client{Timeout: 15 * time.Second},
 	)
 
+	// HITL cases (core_hitl, core_hitl_votes, core_hitl_sla) are owned by ocx-core-svc's hub, which
+	// serves /internal/v1/hitl/*. HUB_INTERNAL_API_URL targets it; INTERNAL_API_URL is the fallback
+	// (cloud-run deployments point it at the hub already).
+	hubClient := coreClient
+	if hubURL := os.Getenv("HUB_INTERNAL_API_URL"); hubURL != "" {
+		hubClient = serviceclient.New("aocs-compliance", hubURL,
+			os.Getenv("SERVICE_JWT_SECRET"), &http.Client{Timeout: 15 * time.Second})
+	}
+	hcompliance.SetHITLCore(hubClient)
+
 	// Tenant telemetry (EU AI Act card) is served by aocs-gate, not system.
 	if gateURL := os.Getenv("CORE_INTERNAL_API_URL"); gateURL != "" {
 		hcompliance.TelemetryClient = serviceclient.New("aocs-compliance", gateURL,

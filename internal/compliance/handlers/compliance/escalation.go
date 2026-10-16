@@ -5,6 +5,7 @@ package compliance
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
+	"github.com/ocx/shared/infra/serviceclient"
 	"github.com/ocx/shared/respond"
 	"github.com/ocx/shared/validate"
 )
@@ -19,9 +21,10 @@ import (
 // HandleRejectJuror — POST /api/v1/hitl/cases/{id}/recuse
 // Records a juror recusal on a HITL/jury case.
 // Appends to recusal_log JSONB column (bugfix3.sql M1).
-func HandleRejectJuror(db database.DB) http.HandlerFunc {
+func HandleRejectJuror(db database.DB, coreClients ...*serviceclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDBWrite(w, db) {
+		cc := hitlCore(coreClients...)
+		if !requireHITLCore(w, cc) {
 			return
 		}
 		caseID := mux.Vars(r)["id"]
@@ -61,9 +64,9 @@ func HandleRejectJuror(db database.DB) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if err := db.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
+		if err := cc.PatchHITLCaseIf(r.Context(), tenantID, caseID, update, nil, nil); err != nil {
 			slog.Error("RecuseJuror failed", "case_id", caseID, "juror_id", jurorID, "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "recuse juror", err)
+			writeHITLCoreErr(w, err, "recuse juror")
 			return
 		}
 		slog.Info("Juror recused", "case_id", caseID, "juror_id", jurorID)
@@ -80,9 +83,10 @@ func HandleRejectJuror(db database.DB) http.HandlerFunc {
 // Returns the recusal_log JSONB array for a HITL case so the case
 // detail view (E6) can display the full recusal history panel.
 // recusal_log is an append-only JSONB array: [{juror_id, reason, recused_at}, ...]
-func HandleGetRecusalLog(db database.DB) http.HandlerFunc {
+func HandleGetRecusalLog(db database.DB, coreClients ...*serviceclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		cc := hitlCore(coreClients...)
+		if !requireHITLCore(w, cc) {
 			return
 		}
 		tenantID, ok := auth.MustGetTenantID(w, r)
@@ -94,16 +98,17 @@ func HandleGetRecusalLog(db database.DB) http.HandlerFunc {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "missing path parameter: id")
 			return
 		}
-		var rows []map[string]any
-		if _dbErr := db.QueryRowsCompound(database.TblCoreHitl, "decision_id,recusal_log", "decision_id", caseID, "tenant_id", tenantID, &rows); _dbErr != nil {
-			slog.Error("db operation failed", "method", "QueryRowsCompound", "error", _dbErr)
-		}
-		if len(rows) == 0 {
-			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "HITL case not found")
+		row, err := cc.FetchHITLCase(r.Context(), tenantID, caseID, "decision_id,recusal_log")
+		if err != nil {
+			if errors.Is(err, serviceclient.ErrHITLNotFound) {
+				respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "HITL case not found")
+				return
+			}
+			writeHITLCoreErr(w, err, "get recusal log")
 			return
 		}
 		// recusal_log arrives as raw JSON from Supabase — may be null/string/array
-		raw := rows[0]["recusal_log"]
+		raw := row["recusal_log"]
 		var entries []map[string]any
 		switch v := raw.(type) {
 		case string:

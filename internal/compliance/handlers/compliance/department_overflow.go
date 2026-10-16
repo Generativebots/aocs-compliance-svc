@@ -18,6 +18,7 @@
 package compliance
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -43,12 +44,9 @@ import (
 //
 // Returns: { department_id, department_name, open_cases, capacity_limit, moved_count, overflow_to, overflow_to_name }
 func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Client) http.HandlerFunc {
-	var coreClient *serviceclient.Client
-	if len(coreClients) > 0 {
-		coreClient = coreClients[0]
-	}
+	coreClient := hitlCore(coreClients...)
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDB(w, db) || !requireHITLCore(w, coreClient) {
 			return
 		}
 		tenantID, ok := auth.MustGetTenantID(w, r)
@@ -80,10 +78,9 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 		}
 
 		// ── Load SLA/capacity config ───────────────────────────────────────────
-		var slaRows []map[string]any
-		if _dbErr := db.QueryRowsCompound(database.TblCoreHitlSla, "department_id,sla_hours,max_cases",
-			"department_id", dept.ID, "tenant_id", tenantID, &slaRows); _dbErr != nil {
-			slog.Error("db.QueryRowsCompound failed (best-effort)", "error", _dbErr)
+		slaRows, _slaErr := coreClient.HITLSLALookup(r.Context(), tenantID, dept.ID)
+		if _slaErr != nil {
+			slog.Error("core HITLSLALookup failed (best-effort)", "error", _slaErr)
 		}
 		maxCases := 200 // default
 		if len(slaRows) > 0 {
@@ -94,7 +91,7 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 
 		// ── Count open cases ───────────────────────────────────────────────────
 		var pendingRows []map[string]any
-		if coreClient != nil {
+		{
 			// SVC-BOUNDARY: read core_hitl via ocx-core-svc API
 			hitlRows, _rErr := coreClient.ListHITLCases(r.Context(), tenantID,
 				map[string]string{"department_id": dept.ID, "status": "PENDING"}, 500)
@@ -103,10 +100,6 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 				return
 			}
 			pendingRows = hitlRows
-		} else if _dbErr := database.QueryTenantRows(r.Context(), db, database.TblCoreHitl, "decision_id,created_at", tenantID, []database.Eq{{Col: "department_id", Val: dept.ID}, {Col: "status", Val: "PENDING"}}, &pendingRows); _dbErr != nil {
-			slog.Error("db.QueryRowsCompound failed", "error", _dbErr)
-			respond.InternalError(w, http.StatusInternalServerError, "overflow_check_query_failed", _dbErr)
-			return
 		}
 		openCases := len(pendingRows)
 
@@ -148,10 +141,9 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 		}
 
 		// ── Get overflow SLA for target dept ───────────────────────────────────
-		var targetSLARows []map[string]any
-		if _dbErr := db.QueryRowsCompound(database.TblCoreHitlSla, "department_id,sla_hours",
-			"department_id", target.ID, "tenant_id", tenantID, &targetSLARows); _dbErr != nil {
-			slog.Error("db.QueryRowsCompound failed (best-effort)", "error", _dbErr)
+		targetSLARows, _tslaErr := coreClient.HITLSLALookup(r.Context(), tenantID, target.ID)
+		if _tslaErr != nil {
+			slog.Error("core HITLSLALookup failed (best-effort)", "error", _tslaErr)
 		}
 		targetSLAHours := 48
 		if len(targetSLARows) > 0 {
@@ -178,26 +170,14 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 				"overflow_at":     now,
 				"overflow_reason": fmt.Sprintf("%s at capacity, rerouted to %s", dept.Name, target.Name),
 			})
-			if coreClient != nil {
-				// SVC-BOUNDARY: update core_hitl via ocx-core-svc API
-				if _rErr := coreClient.PatchHITLCase(r.Context(), tenantID, caseID, map[string]any{
-					"department_id": target.ID,
-					"sla_deadline":  newDeadline,
-					"context_data":  string(ctxUpdate),
-					"updated_at":    now,
-				}); _rErr != nil {
-					slog.Error("failed to move case via coreClient",
-						"case_id", caseID, "error", _rErr)
-					continue
-				}
-			} else if err := db.UpdateRowCompoundCtx(database.WithMutationTenant(r.Context(), tenantID), database.TblCoreHitl, "decision_id", caseID, "status", "PENDING", map[string]any{
+			// Only PENDING cases move; the precondition is evaluated under core's row lock.
+			if _rErr := coreClient.PatchHITLCaseIf(r.Context(), tenantID, caseID, map[string]any{
 				"department_id": target.ID,
 				"sla_deadline":  newDeadline,
 				"context_data":  string(ctxUpdate),
 				"updated_at":    now,
-			}); err != nil {
-				slog.Error("failed to move case",
-					"case_id", caseID, "error", err)
+			}, []string{"PENDING"}, nil); _rErr != nil {
+				slog.Error("failed to move case via coreClient", "case_id", caseID, "error", _rErr)
 				continue
 			}
 			moved++
@@ -223,12 +203,8 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 						"to_dept_name":   target.Name,
 					},
 				}
-				if coreClient != nil {
-					if _err := coreClient.PostEvent(r.Context(), auditRow); _err != nil {
-						slog.Error("coreClient.PostEvent overflow_routed failed (best-effort)", "error", _err)
-					}
-				} else if _dbErr := db.InsertRow(database.TblCoreEvents, auditRow); _dbErr != nil {
-					slog.Error("db.InsertRow failed (best-effort)", "error", _dbErr)
+				if _err := coreClient.PostEvent(context.Background(), auditRow); _err != nil {
+					slog.Error("coreClient.PostEvent overflow_routed failed (best-effort)", "error", _err)
 				}
 			})
 		}
@@ -259,8 +235,9 @@ func HandleRouteDeptOverflow(db database.DB, coreClients ...*serviceclient.Clien
 // POST /api/v1/departments/{department_id}/pre-delete-check
 // Body: { target_department_id?: string }  — if set, migrates cases; if not set, blocks deletion.
 func HandleGuardDeptDeletion(db database.DB, coreClients ...*serviceclient.Client) http.HandlerFunc {
+	coreClient := hitlCore(coreClients...)
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDB(w, db) || !requireHITLCore(w, coreClient) {
 			return
 		}
 		tenantID, ok := auth.MustGetTenantID(w, r)
@@ -286,19 +263,15 @@ func HandleGuardDeptDeletion(db database.DB, coreClients ...*serviceclient.Clien
 			return
 		}
 		var pendingRows []map[string]any
-		if len(coreClients) > 0 && coreClients[0] != nil {
+		{
 			// SVC-BOUNDARY: read core_hitl via ocx-core-svc API
-			hitlRows, _rErr := coreClients[0].ListHITLCases(r.Context(), tenantID,
+			hitlRows, _rErr := coreClient.ListHITLCases(r.Context(), tenantID,
 				map[string]string{"department_id": dept.ID, "status": "PENDING"}, 500)
 			if _rErr != nil {
 				respond.InternalError(w, http.StatusInternalServerError, "overflow_check_query_failed", _rErr)
 				return
 			}
 			pendingRows = hitlRows
-		} else if _dbErr := database.QueryTenantRows(r.Context(), db, database.TblCoreHitl, "decision_id", tenantID, []database.Eq{{Col: "department_id", Val: dept.ID}, {Col: "status", Val: "PENDING"}}, &pendingRows); _dbErr != nil {
-			slog.Error("db.QueryRowsCompound failed", "error", _dbErr)
-			respond.InternalError(w, http.StatusInternalServerError, "overflow_check_query_failed", _dbErr)
-			return
 		}
 		openCount := len(pendingRows)
 
@@ -342,21 +315,12 @@ func HandleGuardDeptDeletion(db database.DB, coreClients ...*serviceclient.Clien
 				"migration_at":     now,
 				"migration_reason": fmt.Sprintf("%s pre-deletion migration to %s", dept.Name, target.Name),
 			})
-			if len(coreClients) > 0 && coreClients[0] != nil {
-				// SVC-BOUNDARY: update core_hitl via ocx-core-svc API
-				if _rErr := coreClients[0].PatchHITLCase(r.Context(), tenantID, caseID, map[string]any{
-					"department_id": target.ID,
-					"context_data":  string(ctxUpdate),
-					"updated_at":    now,
-				}); _rErr == nil {
-					migrated++
-				}
-			} else if err := db.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID,
-				map[string]any{
-					"department_id": target.ID,
-					"context_data":  string(ctxUpdate),
-					"updated_at":    now,
-				}); err == nil {
+			// SVC-BOUNDARY: update core_hitl via ocx-core-svc API (PENDING only, under row lock)
+			if _rErr := coreClient.PatchHITLCaseIf(r.Context(), tenantID, caseID, map[string]any{
+				"department_id": target.ID,
+				"context_data":  string(ctxUpdate),
+				"updated_at":    now,
+			}, []string{"PENDING"}, nil); _rErr == nil {
 				migrated++
 			}
 		}

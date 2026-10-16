@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"net/http"
 	"time"
@@ -34,12 +33,9 @@ import (
 // HandleReassignCase — POST /api/v1/hitl/cases/{id}/reassign
 // Body: { from_dept_id, to_dept_id, reason, escalation_level? }
 func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) http.HandlerFunc {
-	var coreClient *serviceclient.Client
-	if len(coreClients) > 0 {
-		coreClient = coreClients[0]
-	}
+	coreClient := hitlCore(coreClients...)
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDB(w, db) {
+		if respond.RequireDB(w, db) || !requireHITLCore(w, coreClient) {
 			return
 		}
 		tenantID, ok := auth.MustGetTenantID(w, r)
@@ -67,40 +63,19 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 			return
 		}
 
-		// Without this, two concurrent reassignments can both read the same department_id
-		// and both proceed, causing the case to land in an inconsistent department.
-		var caseRows []map[string]any
-		type reassignResult struct {
-			currentDept   string
-			currentStatus string
+		// Current department comes from core; the terminal-status guard is re-checked atomically
+		// (under core's row lock) by the PATCH below, so concurrent reassignments cannot both win.
+		caseRow, fErr := coreClient.FetchHITLCase(r.Context(), tenantID, caseID, "decision_id,department_id,status")
+		if fErr != nil {
+			writeHITLCoreErr(w, fErr, "load case for reassignment")
+			return
 		}
-		txResult, isTxErr := func() (reassignResult, error) {
-			var res reassignResult
-			err := db.WithTransaction(r.Context(), func(tx database.DB) error {
-				if qErr := tx.QueryRowsCompoundForUpdate(database.TblCoreHitl,
-					"decision_id,department_id,status",
-					"decision_id", caseID, "tenant_id", tenantID, &caseRows); qErr != nil || len(caseRows) == 0 {
-					return fmt.Errorf("not_found")
-				}
-				res.currentDept, _ = caseRows[0]["department_id"].(string)
-				res.currentStatus, _ = caseRows[0]["status"].(string)
-				if res.currentStatus == "APPROVED" || res.currentStatus == "REJECTED" || res.currentStatus == "RESOLVED" {
-					return fmt.Errorf("terminal:%s", res.currentStatus)
-				}
-				return nil
-			})
-			return res, err
-		}()
-		if isTxErr != nil {
-			switch {
-			case isTxErr.Error() == "not_found":
-				respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "case not found")
-			case strings.HasPrefix(isTxErr.Error(), "terminal:"):
-				respond.ErrorWithCode(w, http.StatusConflict, respond.ErrCodeConflict,
-					fmt.Sprintf("case is in terminal status '%s' — reassignment not permitted", strings.TrimPrefix(isTxErr.Error(), "terminal:")))
-			default:
-				respond.InternalError(w, http.StatusInternalServerError, "lock case for reassignment", isTxErr)
-			}
+		var txResult struct{ currentDept, currentStatus string }
+		txResult.currentDept, _ = caseRow["department_id"].(string)
+		txResult.currentStatus, _ = caseRow["status"].(string)
+		if st := txResult.currentStatus; st == "APPROVED" || st == "REJECTED" || st == "RESOLVED" {
+			respond.ErrorWithCode(w, http.StatusConflict, respond.ErrCodeConflict,
+				fmt.Sprintf("case is in terminal status '%s' — reassignment not permitted", st))
 			return
 		}
 		currentDept := txResult.currentDept
@@ -142,11 +117,9 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 				EscalateThreshold    float64 `json:"escalate_threshold"`
 			}
 			fetchPolicy := func(departmentID string) deptPolicy {
-				var rows []map[string]any
-				if _dbErr := db.QueryRowsCompound(database.TblCoreHitlSla,
-					"department_id,auto_approve_threshold,escalate_threshold",
-					"department_id", departmentID, "tenant_id", tenantID, &rows); _dbErr != nil {
-					slog.Error("QueryRowsCompound failed", "error", _dbErr)
+				rows, _dbErr := coreClient.HITLSLALookup(r.Context(), tenantID, departmentID)
+				if _dbErr != nil {
+					slog.Error("core HITLSLALookup failed", "error", _dbErr)
 				}
 				if len(rows) == 0 {
 					return deptPolicy{AutoApproveThreshold: 0.8, EscalateThreshold: 0.4}
@@ -190,10 +163,9 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 		}
 
 		// ── Check 3: Recompute SLA deadline for target dept ───────────────────
-		var slaRows []map[string]any
-		if _dbErr := db.QueryRowsCompound(database.TblCoreHitlSla, "department_id,sla_hours",
-			"department_id", req.ToDeptID, "tenant_id", tenantID, &slaRows); _dbErr != nil {
-			slog.Error("QueryRowsCompound failed", "error", _dbErr)
+		slaRows, _slaErr := coreClient.HITLSLALookup(r.Context(), tenantID, req.ToDeptID)
+		if _slaErr != nil {
+			slog.Error("core HITLSLALookup failed", "error", _slaErr)
 		}
 		slaHours := 48 // Default SLA
 		if len(slaRows) > 0 {
@@ -236,32 +208,18 @@ func HandleReassignCase(db database.DB, coreClients ...*serviceclient.Client) ht
 			"new_sla_deadline": newDeadline,
 			"policy_conflict":  policyConflict, // persisted in audit trail
 		})
-		auditRow := map[string]any{
+		// Department update + handover audit event are applied by core in ONE transaction.
+		update[serviceclient.HITLPatchAuditEvent] = map[string]any{
 			"event_type": "case.dept_handover",
-			"tenant_id":  tenantID,
 			"entity_id":  caseID,
 			"action":     "dept_reassign",
 			"severity":   "INFO",
-			"metadata":   meta,
+			"metadata":   json.RawMessage(meta),
 			"created_at": now,
 		}
-
-		// Atomically update department assignment and insert handover audit event in tx
-		if txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
-			if err := tx.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
-				return err
-			}
-			if coreClient != nil {
-				if _err := coreClient.PostEvent(r.Context(), auditRow); _err != nil {
-					slog.Warn("coreClient.PostEvent dept_handover failed (non-fatal)", "error", _err)
-				}
-			} else if _dbErr := tx.InsertRow(database.TblCoreEvents, auditRow); _dbErr != nil {
-				slog.Warn("InsertRow dept_handover failed in tx (non-fatal)", "error", _dbErr)
-			}
-			return nil
-		}); txErr != nil {
-			slog.Error("update failed", "case_id", caseID, "error", txErr)
-			respond.InternalError(w, http.StatusInternalServerError, "reassign case", txErr)
+		if err := coreClient.PatchHITLCaseIf(r.Context(), tenantID, caseID, update, nil, []string{"APPROVED", "REJECTED", "RESOLVED"}); err != nil {
+			slog.Error("update failed", "case_id", caseID, "error", err)
+			writeHITLCoreErr(w, err, "reassign case")
 			return
 		}
 

@@ -32,12 +32,9 @@ type bulkHITLResolveRequest struct {
 // Accepts up to 50 decision IDs and a verdict, updates each row in core_hitl.
 // Returns per-decision success/failure breakdown in the response.
 func HandleResolveBulkHITL(db database.DB, coreClients ...*serviceclient.Client) http.HandlerFunc {
-	var coreClient *serviceclient.Client
-	if len(coreClients) > 0 {
-		coreClient = coreClients[0]
-	}
+	coreClient := hitlCore(coreClients...)
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDBWrite(w, db) {
+		if !requireHITLCore(w, coreClient) {
 			return
 		}
 		tenantID, ok := auth.MustGetTenantID(w, r)
@@ -78,7 +75,7 @@ func HandleResolveBulkHITL(db database.DB, coreClients ...*serviceclient.Client)
 		results := make([]map[string]any, 0, len(req.DecisionIDs))
 		for _, decisionID := range req.DecisionIDs {
 			result := map[string]any{"decision_id": decisionID, "verdict": req.Verdict}
-			if coreClient != nil {
+			{
 				// SVC-BOUNDARY: update core_hitl via ocx-core-svc API
 				if _rErr := coreClient.PatchHITLCase(r.Context(), tenantID, decisionID, map[string]any{
 					"status":            req.Verdict,
@@ -106,42 +103,6 @@ func HandleResolveBulkHITL(db database.DB, coreClients ...*serviceclient.Client)
 					}); _sErr != nil {
 						slog.Error("PostEvent failed (best-effort)", "decision_id", decisionID, "error", _sErr)
 					}
-				}
-			} else {
-				// Fallback: direct DB when coreClient is not wired (wrapped in transaction)
-				txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
-					if err := tx.UpdateRowCompound(
-						database.TblCoreHitl,
-						"decision_id", decisionID,
-						"tenant_id", tenantID,
-						map[string]any{
-							"status":            req.Verdict,
-							"reviewer_id":       reviewerID,
-							"resolution_reason": req.Reason,
-							"resolved_at":       now,
-							"updated_at":        now,
-						},
-					); err != nil {
-						return err
-					}
-					return tx.InsertPlatformEvent(database.PlatformEvent{
-						EventID:   uuid.NewString(),
-						TenantID:  tenantID,
-						EventType: "HITL_DECISION_" + req.Verdict,
-						ActorID:   reviewerID,
-						UserID:    reviewerID,
-						TargetID:  decisionID,
-						Action:    req.Verdict,
-						Severity:  "INFO",
-						NewValue:  reasonJSON,
-					})
-				})
-				if txErr != nil {
-					slog.Error("HandleResolveBulkHITL: transactional update failed", "decision_id", decisionID, "error", txErr)
-					result["error"] = "update failed"
-					result["ok"] = false
-				} else {
-					result["ok"] = true
 				}
 			}
 			results = append(results, result)

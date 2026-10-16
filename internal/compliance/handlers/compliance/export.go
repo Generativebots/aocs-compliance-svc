@@ -4,16 +4,12 @@
 package compliance
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
+	"errors"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/ocx/shared/infra/auth"
-	"github.com/ocx/shared/infra/concurrent"
 	"github.com/ocx/shared/infra/database"
 	"github.com/ocx/shared/infra/serviceclient"
 	"github.com/ocx/shared/respond"
@@ -43,7 +39,7 @@ func HandleGetCaseExportJob(db database.DB) http.HandlerFunc {
 // POST /api/v1/hitl/cases/{id}/merge
 // Merges a child HITL case into a parent, consolidating decisions and reasons.
 
-func HandleMergeCase(db database.DB) http.HandlerFunc {
+func HandleMergeCase(db database.DB, coreClients ...*serviceclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if respond.RequireDB(w, db) {
 			return
@@ -74,14 +70,21 @@ func HandleMergeCase(db database.DB) http.HandlerFunc {
 			return
 		}
 
-		// Verify parent case exists and belongs to the same tenant
-		var parentRows []map[string]any
-		if err := db.QueryRowsCompound(database.TblCoreHitl, "decision_id,status", "decision_id", body.ParentCaseID, "tenant_id", tenantID, &parentRows); err != nil || len(parentRows) == 0 {
-			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "parent case not found")
+		cc := hitlCore(coreClients...)
+		if !requireHITLCore(w, cc) {
 			return
 		}
-		parentStatus, _ := parentRows[0]["status"].(string)
-		if parentStatus == "MERGED" {
+		// Verify parent case exists and belongs to the same tenant
+		parent, err := cc.FetchHITLCase(r.Context(), tenantID, body.ParentCaseID, "decision_id,status")
+		if err != nil {
+			if errors.Is(err, serviceclient.ErrHITLNotFound) {
+				respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "parent case not found")
+				return
+			}
+			writeHITLCoreErr(w, err, "merge case")
+			return
+		}
+		if ps, _ := parent["status"].(string); ps == "MERGED" {
 			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "cannot merge into a case that is already merged")
 			return
 		}
@@ -91,8 +94,8 @@ func HandleMergeCase(db database.DB) http.HandlerFunc {
 			"additional_reasons": body.AdditionalReasons,
 			"status":             "MERGED",
 		}
-		if err := db.UpdateRowCompound(database.TblCoreHitl, "decision_id", childID, "tenant_id", tenantID, update); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "merge case", err)
+		if err := cc.PatchHITLCaseIf(r.Context(), tenantID, childID, update, nil, []string{"MERGED"}); err != nil {
+			writeHITLCoreErr(w, err, "merge case")
 			return
 		}
 		respond.OK(w, map[string]any{
@@ -184,224 +187,26 @@ func HandleCasesSubmitJuryVote(db database.DB, coreClient *serviceclient.Client)
 			return
 		}
 
-		// 1. INSERT into core_hitl_votes (UNIQUE case_id+voter_id → 409 on duplicate)
-		vote := database.HITLVote{
-			CaseID:     caseID,
-			TenantID:   tenantID,
-			VoterID:    body.VoterID,
-			Decision:   decision,
-			Confidence: body.Confidence,
-			Rationale:  body.Rationale,
-		}
-		respondedAt := time.Now().UTC().Format(time.RFC3339)
-		var txResult struct {
-			newStatus       string
-			newResult       string
-			quorumReached   bool
-			panelComplete   bool
-			approveCount    int
-			rejectCount     int
-			abstainCount    int
-			totalCast       int
-			quorumThreshold int
-			approveRatio    float64
-			rejectRatio     float64
-			// postDeadlockEvent signals that a QUORUM_DEADLOCKED platform event should be
-			// posted via ocx-core-svc API *after* the transaction commits (compliance service isolation).
-			postDeadlockEvent bool
-		}
-		if txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
-			// 1. INSERT vote (UNIQUE case_id+voter_id → error on duplicate)
-			if err := tx.InsertRow(database.TblCoreHitlVotes, vote.InsertPayload()); err != nil {
-				return err
-			}
-			// 2. Read current case state inside tx to prevent TOCTOU race
-			var rows []map[string]any
-			if err := tx.QueryRowsCompoundForUpdate(database.TblCoreHitl, "decision_id,status,result,decision_data",
-				"decision_id", caseID, "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
-				return fmt.Errorf("case not found: %s", caseID)
-			}
-			cur := rows[0]
-			curStatus, _ := cur["status"].(string)
-			existingData, _ := cur["decision_data"].(map[string]any)
-			if existingData == nil {
-				existingData = map[string]any{}
-			}
-			votes, _ := existingData["votes"].([]any)
-			votes = append(votes, map[string]any{
-				"voter_id":   body.VoterID,
-				"decision":   decision,
-				"confidence": body.Confidence,
-				"rationale":  body.Rationale,
-				"voted_at":   respondedAt,
-			})
-			existingData["votes"] = votes
-
-			const (
-				minQuorumFloor     = 5
-				supermajorityRatio = 0.65
-			)
-			quorumThreshold := minQuorumFloor
-			if qt, ok := existingData["quorum_threshold"].(float64); ok && int(qt) >= minQuorumFloor {
-				quorumThreshold = int(qt)
-			}
-			if quorumThreshold%2 == 0 {
-				quorumThreshold++
-			}
-
-			approveCount, rejectCount, abstainCount := 0, 0, 0
-			for _, v := range votes {
-				if vm, ok := v.(map[string]any); ok {
-					switch vm["decision"] {
-					case "APPROVE":
-						approveCount++
-					case "REJECT":
-						rejectCount++
-					case "ABSTAIN":
-						abstainCount++
-					}
-				}
-			}
-			totalCast := approveCount + rejectCount + abstainCount
-
-			newStatus := curStatus
-			newResult := ""
-			quorumReached := false
-			panelComplete := totalCast >= quorumThreshold
-			approveRatio := 0.0
-			rejectRatio := 0.0
-			if totalCast > 0 {
-				approveRatio = float64(approveCount) / float64(totalCast)
-				rejectRatio = float64(rejectCount) / float64(totalCast)
-			}
-			if panelComplete {
-				if approveRatio > supermajorityRatio {
-					newStatus = "APPROVED"
-					newResult = "APPROVED"
-					quorumReached = true
-				} else if rejectRatio > supermajorityRatio {
-					newStatus = "REJECTED"
-					newResult = "REJECTED"
-					quorumReached = true
-				}
-			}
-
-			existingData["approve_count"] = approveCount
-			existingData["reject_count"] = rejectCount
-			existingData["abstain_count"] = abstainCount
-			existingData["total_cast"] = totalCast
-			existingData["quorum_threshold"] = quorumThreshold
-			existingData["supermajority_ratio"] = supermajorityRatio
-			existingData["approve_ratio"] = approveRatio
-			existingData["reject_ratio"] = rejectRatio
-			existingData["panel_complete"] = panelComplete
-			existingData["quorum_reached"] = quorumReached
-
-			ddBytes, marshalErr := json.Marshal(existingData)
-			if marshalErr != nil {
-				return marshalErr
-			}
-			update := map[string]any{
-				"status":        newStatus,
-				"decision_data": string(ddBytes),
-				"responded_at":  respondedAt,
-			}
-			if quorumReached {
-				update["result"] = newResult
-			}
-			if body.VoterID != "" {
-				// user_id is the immutable requester column; record the latest
-				// voter as updated_by (each voter is in core_hitl_votes).
-				update["updated_by"] = body.VoterID
-			}
-			// 3. Update main case status + quorum data
-			if err := tx.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
-				return err
-			}
-
-			// 4. X-15: Auto-escalate deadlocked panels
-			if panelComplete && !quorumReached {
-				if err := tx.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID,
-					map[string]any{
-						"status":     "ESCALATED",
-						"result":     "DEADLOCKED",
-						"updated_at": respondedAt,
-					}); err != nil {
-					return err
-				}
-				// Event posted after transaction commits to avoid ocx-core-svc write inside local transaction.
-				txResult.postDeadlockEvent = true
-			}
-
-			// Capture results for response
-			txResult.newStatus = newStatus
-			txResult.newResult = newResult
-			txResult.quorumReached = quorumReached
-			txResult.panelComplete = panelComplete
-			txResult.approveCount = approveCount
-			txResult.rejectCount = rejectCount
-			txResult.abstainCount = abstainCount
-			txResult.totalCast = totalCast
-			txResult.quorumThreshold = quorumThreshold
-			txResult.approveRatio = approveRatio
-			txResult.rejectRatio = rejectRatio
-			return nil
-		}); txErr != nil {
-			slog.Error("HandleCasesSubmitJuryVote: transaction failed", "case_id", caseID, "voter_id", body.VoterID, "error", txErr)
-			// Check if it's a duplicate vote (unique constraint)
-			if txErr.Error() != "" {
-				respond.ErrorWithCode(w, http.StatusConflict, respond.ErrCodeConflict, "vote already cast or case state error: "+txErr.Error())
-			} else {
-				respond.InternalError(w, http.StatusInternalServerError, "submit vote", txErr)
-			}
+		// Quorum rules (min panel 5, odd-only, >65% supermajority, deadlock escalation) and the
+		// core_hitl_votes / core_hitl writes live in ocx-core-svc; one transaction there.
+		cc := hitlCore(coreClient)
+		if !requireHITLCore(w, cc) {
 			return
 		}
-		slog.Info("jury vote cast",
-			"case_id", caseID, "tenant", tenantID, "voter", body.VoterID,
-			"decision", decision, "quorum_reached", txResult.quorumReached,
-			"approve", txResult.approveCount, "reject", txResult.rejectCount, "abstain", txResult.abstainCount,
-			"total", txResult.totalCast, "threshold", txResult.quorumThreshold,
-			"approve_ratio", txResult.approveRatio, "reject_ratio", txResult.rejectRatio,
-		)
-		if txResult.panelComplete && !txResult.quorumReached {
-			slog.Error("X-15: HITL quorum DEADLOCKED — auto-escalated", "case_id", caseID)
-		}
-		// Post QUORUM_DEADLOCKED audit event via ocx-core-svc API after transaction commits.
-		if txResult.postDeadlockEvent && coreClient != nil {
-			concurrent.Go("quorum-deadlocked-event", func() {
-				if err := coreClient.PostEvent(context.Background(), map[string]any{
-					"tenant_id":   tenantID,
-					"event_type":  "QUORUM_DEADLOCKED",
-					"entity_id":   caseID,
-					"entity_type": "hitl_decision",
-					"action":      "AUTO_ESCALATED",
-					"new_value": fmt.Sprintf(`{"approve_count":%d,"reject_count":%d,"approve_ratio":%.2f,"reject_ratio":%.2f,"threshold":%d}`,
-						txResult.approveCount, txResult.rejectCount, txResult.approveRatio, txResult.rejectRatio, txResult.quorumThreshold),
-					"created_at": respondedAt,
-				}); err != nil {
-					slog.Error("SD-26: failed to post QUORUM_DEADLOCKED audit event to core",
-						"tenant_id", tenantID, "case_id", caseID, "error", err)
-				}
-			})
-		}
-		respond.JSON(w, http.StatusOK, map[string]any{
-			"case_id":             caseID,
-			"voter_id":            body.VoterID,
-			"decision":            decision,
-			"status":              txResult.newStatus,
-			"result":              txResult.newResult,
-			"quorum_threshold":    txResult.quorumThreshold,
-			"supermajority_ratio": 0.65,
-			"approve_count":       txResult.approveCount,
-			"reject_count":        txResult.rejectCount,
-			"abstain_count":       txResult.abstainCount,
-			"total_cast":          txResult.totalCast,
-			"approve_ratio":       txResult.approveRatio,
-			"reject_ratio":        txResult.rejectRatio,
-			"panel_complete":      txResult.panelComplete,
-			"quorum_reached":      txResult.quorumReached,
-			"voted_at":            respondedAt,
+		res, err := cc.CastHITLVote(r.Context(), tenantID, caseID, map[string]any{
+			"voter_id":   body.VoterID,
+			"decision":   decision,
+			"confidence": body.Confidence,
+			"rationale":  body.Rationale,
 		})
+		if err != nil {
+			slog.Error("HandleCasesSubmitJuryVote: core vote failed", "case_id", caseID, "voter_id", body.VoterID, "error", err)
+			writeHITLCoreErr(w, err, "submit vote")
+			return
+		}
+		slog.Info("jury vote cast", "case_id", caseID, "tenant", tenantID, "voter", body.VoterID,
+			"decision", decision, "status", res["status"], "quorum_reached", res["quorum_reached"])
+		respond.JSON(w, http.StatusOK, res)
 	}
 }
 
@@ -410,7 +215,7 @@ func HandleCasesSubmitJuryVote(db database.DB, coreClient *serviceclient.Client)
 //
 // Reads from core_hitl_votes (Batch 8). Frontend uses this for the
 // quorum tally panel (GROUP BY decision done client-side or via SQL VIEW).
-func HandleListHITLVotes(db database.DB) http.HandlerFunc {
+func HandleListHITLVotes(db database.DB, coreClients ...*serviceclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if respond.RequireDB(w, db) {
 			return
@@ -428,31 +233,17 @@ func HandleListHITLVotes(db database.DB) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		var rows []map[string]any
-		// votes are in core_hitl_votes (TblCoreHitlVotes), not core_hitl.
-		// FK column is decision_id (legacy case_id is NULL on every writer path);
-		// ColsHitlVote aliases vote AS decision.
-		if err := db.QueryRowsCompound(database.TblCoreHitlVotes, database.ColsHitlVote, "decision_id", caseID, "tenant_id", tenantID, &rows); err != nil {
-			slog.Error("ListHITLVotes failed", "case_id", caseID, "error", err)
-			respond.InternalError(w, http.StatusInternalServerError, "list votes", err)
+		cc := hitlCore(coreClients...)
+		if !requireHITLCore(w, cc) {
 			return
 		}
-		if rows == nil {
-			rows = []map[string]any{}
+		out, err := cc.ListHITLVotes(r.Context(), tenantID, caseID)
+		if err != nil {
+			slog.Error("ListHITLVotes failed", "case_id", caseID, "error", err)
+			writeHITLCoreErr(w, err, "list votes")
+			return
 		}
-		// Derive tally for convenience
-		tally := map[string]int{"APPROVE": 0, "REJECT": 0, "ABSTAIN": 0}
-		for _, v := range rows {
-			if d, ok := v["decision"].(string); ok {
-				tally[d]++
-			}
-		}
-		respond.OK(w, map[string]any{
-			"case_id": caseID,
-			"votes":   rows,
-			"total":   len(rows),
-			"tally":   tally,
-		})
+		respond.OK(w, out)
 	}
 }
 

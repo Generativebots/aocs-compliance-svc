@@ -139,10 +139,7 @@ func CreateCase(
 	input CreateCaseInput,
 	rc ...*serviceclient.Client,
 ) (*CaseCreated, error) {
-	var r1 *serviceclient.Client
-	if len(rc) > 0 {
-		r1 = rc[0]
-	}
+	r1 := hitlCore(rc...)
 	if db == nil {
 		return nil, fmt.Errorf("caselifecycle.CreateCase: db is nil")
 	}
@@ -210,12 +207,11 @@ func CreateCase(
 		row["department_id"] = input.DepartmentID
 	}
 
-	if r1 != nil {
-		if err := r1.CreateHITLCase(ctx, row); err != nil {
-			return nil, fmt.Errorf("caselifecycle.CreateCase: ocx-core-svc insert failed: %w", err)
-		}
-	} else if err := db.InsertRowCtx(ctx, database.TblCoreHitl, row); err != nil {
-		return nil, fmt.Errorf("caselifecycle.CreateCase: insert failed: %w", err)
+	if r1 == nil {
+		return nil, fmt.Errorf("caselifecycle.CreateCase: ocx-core-svc client not configured (core_hitl is written by core)")
+	}
+	if err := r1.CreateHITLCase(ctx, row); err != nil {
+		return nil, fmt.Errorf("caselifecycle.CreateCase: ocx-core-svc insert failed: %w", err)
 	}
 
 	slog.Info("HITL case created",

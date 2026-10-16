@@ -136,7 +136,10 @@ func HandleGetCase(db database.DB, coreClients ...*serviceclient.Client) http.Ha
 		}
 
 		var row map[string]any
-		if coreClient != nil {
+		if coreClient = hitlCore(coreClient); coreClient == nil {
+			respond.ErrorWithCode(w, http.StatusServiceUnavailable, respond.ErrCodeUnavailable, "ocx-core-svc is not configured")
+			return
+		} else {
 			// SVC-BOUNDARY: read core_hitl via ocx-core-svc API
 			hitlRow, _rErr := coreClient.GetHITLCase(r.Context(), tenantID, caseID, database.ColsHITLDecision)
 			if _rErr != nil || hitlRow == nil {
@@ -144,15 +147,6 @@ func HandleGetCase(db database.DB, coreClients ...*serviceclient.Client) http.Ha
 				return
 			}
 			row = hitlRow
-		} else {
-			// Fallback: direct DB access when coreClient not wired (test mode)
-			var rows []map[string]any
-			if err := db.QueryRowsCompound(database.TblCoreHitl, database.ColsHITLDecision,
-				"decision_id", caseID, "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
-				respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "case not found")
-				return
-			}
-			row = rows[0]
 		}
 
 		var cd map[string]any
