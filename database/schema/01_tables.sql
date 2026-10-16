@@ -469,3 +469,16 @@ COMMENT ON TABLE compl_tenant_baselines IS
 COMMENT ON TABLE compl_evidence_vault IS
     'Ring 3 evidence vault anchor seeded by AGENT_REGISTERED event. '
     'All ZKP proofs and DLP scan results reference this row.';
+
+-- F-04: global framework control catalog. compl_obligations is per tenant; this is the shared
+-- catalog tenants adopt from. Read-only for tenants; platform-maintained (seed: migrations/20261015_01_control_catalog.sql).
+CREATE TABLE IF NOT EXISTS compl_control_catalog (
+    framework    TEXT        NOT NULL,
+    control_id   TEXT        NOT NULL,
+    title        TEXT        NOT NULL,
+    category     TEXT        NOT NULL DEFAULT '',
+    description  TEXT        NOT NULL DEFAULT '',
+    is_active    BOOLEAN     NOT NULL DEFAULT true,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (framework, control_id)
+);
