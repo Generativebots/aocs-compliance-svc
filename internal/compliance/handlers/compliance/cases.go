@@ -91,19 +91,12 @@ func HandleListCases(db database.DB) http.HandlerFunc {
 		// Row 9 (CM-01): read compliance's own event-fed projection of core_hitl
 		// (compl_core_projection, kind='hitl_case'); agent/policy display names are
 		// already resolved in the payload. No core_* table is read here.
-		const caseSelect = `
-			SELECT p.payload, COALESCE(d.name, '') AS department_name
-			FROM compl_core_projection p
-			LEFT JOIN syst_departments d
-			       ON d.department_id = p.payload->>'department_id' AND d.tenant_id = p.tenant_id
-			WHERE p.kind = 'hitl_case'`
-		const caseOrder = ` ORDER BY (p.payload->>'created_at')::timestamptz DESC NULLS LAST, p.entity_id`
 		if isSuperAdmin {
-			joinSQL = caseSelect + caseOrder + ` LIMIT $1 OFFSET $2`
+			joinSQL = hitlCaseSelect + hitlCaseOrder + ` LIMIT $1 OFFSET $2`
 			joinArgs = []any{limit, offset}
 		} else {
 			//nolint:tenant_filter — tenantID injected as $1
-			joinSQL = caseSelect + ` AND p.tenant_id = $1` + caseOrder + ` LIMIT $2 OFFSET $3`
+			joinSQL = hitlCaseSelect + ` AND p.tenant_id = $1` + hitlCaseOrder + ` LIMIT $2 OFFSET $3`
 			joinArgs = []any{tenantID, limit, offset}
 		}
 
@@ -718,6 +711,16 @@ func arbitrationVerdict(body map[string]any) (string, bool) {
 	}
 	return "", false
 }
+
+// hitlCaseSelect / hitlCaseOrder — ListCases reads compliance's own projection of core_hitl.
+const hitlCaseSelect = `
+	SELECT p.payload, COALESCE(d.name, '') AS department_name
+	FROM compl_core_projection p
+	LEFT JOIN syst_departments d
+	       ON d.department_id = p.payload->>'department_id' AND d.tenant_id = p.tenant_id
+	WHERE p.kind = 'hitl_case'`
+
+const hitlCaseOrder = ` ORDER BY (p.payload->>'created_at')::timestamptz DESC NULLS LAST, p.entity_id`
 
 // hitlCaseColumns is the case shape ListCases has always returned (core_hitl columns).
 var hitlCaseColumns = []string{

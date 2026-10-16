@@ -100,7 +100,7 @@ func getPolicySummary(ctx context.Context, p *database.PGXPool, tenantID string)
 	const query = `
 		WITH ` + policyProjectionCTE + `
 		SELECT p.policy_id, p.name, COALESCE(p.description, ''), COALESCE(p.status, ''),
-		       COALESCE(p.version, 1)::text,
+		       COALESCE(p.version, '1'),
 		       COALESCE(p.rules, '[]'::jsonb), COALESCE(p.metadata, '{}'::jsonb),
 		       CASE WHEN jsonb_typeof(p.rules) = 'array' THEN jsonb_array_length(p.rules) ELSE 0 END,
 		       LEAST(100.0, 100.0 * COALESCE(array_length(p.bound_agents, 1), 0) / ta.n)::float8,
