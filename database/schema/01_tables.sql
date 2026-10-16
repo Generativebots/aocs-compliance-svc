@@ -471,7 +471,7 @@ COMMENT ON TABLE compl_evidence_vault IS
     'All ZKP proofs and DLP scan results reference this row.';
 
 -- F-04: global framework control catalog. compl_obligations is per tenant; this is the shared
--- catalog tenants adopt from. Read-only for tenants; platform-maintained (seed: migrations/20261015_01_control_catalog.sql).
+-- catalog tenants adopt from. Read-only for tenants; platform-maintained (seed: database/seeds/control_catalog.sql).
 CREATE TABLE IF NOT EXISTS compl_control_catalog (
     framework    TEXT        NOT NULL,
     control_id   TEXT        NOT NULL,
@@ -482,3 +482,22 @@ CREATE TABLE IF NOT EXISTS compl_control_catalog (
     created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (framework, control_id)
 );
+
+-- Row 9 (CM-01): compliance's own read model of core data. Core emits compliance.projection
+-- events (DB trigger -> core_events outbox -> Pub/Sub); the propagation consumer upserts here, so
+-- compliance handlers never read core_hitl / core_agents / core_policies.
+--   kind = 'hitl_case' | 'policy' | 'agent'; entity_id = decision_id / policy_id / agent_id.
+-- One generic table instead of three: no existing compl_* table fits without polluting its own
+-- lists, FKs and triggers (compl_cases, compl_records).
+CREATE TABLE IF NOT EXISTS compl_core_projection (
+    tenant_id   TEXT        NOT NULL REFERENCES public.syst_tenants(tenant_id) ON DELETE CASCADE,
+    kind        TEXT        NOT NULL CHECK (kind IN ('hitl_case','policy','agent')),
+    entity_id   TEXT        NOT NULL,
+    payload     JSONB       NOT NULL DEFAULT '{}',
+    source_ts   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (tenant_id, kind, entity_id)
+);
+COMMENT ON TABLE compl_core_projection IS
+    'Event-fed read model of core_hitl / core_policies / core_agents for compliance reads. '
+    'Upserted idempotently by the compliance propagation consumer; source_ts guards against out-of-order replays.';

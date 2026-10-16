@@ -88,67 +88,27 @@ func HandleListCases(db database.DB) http.HandlerFunc {
 			}
 		}
 
+		// Row 9 (CM-01): read compliance's own event-fed projection of core_hitl
+		// (compl_core_projection, kind='hitl_case'); agent/policy display names are
+		// already resolved in the payload. No core_* table is read here.
+		const caseSelect = `
+			SELECT p.payload, COALESCE(d.name, '') AS department_name
+			FROM compl_core_projection p
+			LEFT JOIN syst_departments d
+			       ON d.department_id = p.payload->>'department_id' AND d.tenant_id = p.tenant_id
+			WHERE p.kind = 'hitl_case'`
+		const caseOrder = ` ORDER BY (p.payload->>'created_at')::timestamptz DESC NULLS LAST, p.entity_id`
 		if isSuperAdmin {
-			joinSQL = `
-				SELECT
-					h.decision_id, h.decision_id          AS case_id,
-					h.tenant_id,   h.agent_id,            h.request_id,
-					h.decision_type, h.status,            h.case_type,
-					h.priority,    h.context_data,        h.decision_data,
-					h.action_payload, h.financial_value,  h.financial_exposure,
-					h.risk_score,  h.identity_score       AS trust_score,
-					h.entropy_score, h.cognitive_score,
-					h.quorum_required, h.quorum_achieved, h.jury_pool_size,
-					h.assigned_to, h.policy_id,           h.gate_tool_name,
-					h.reason,      h.result,              h.source,
-					h.created_at,  h.updated_at,          h.expires_at,
-					h.sla_breach_at, h.sla_breached,      h.sla_breached_at,
-					h.auto_escalated, h.override_verdict,
-					h.verdict_id,  h.jury_case_id,        h.department_id,
-					-- JOINed enrichment
-					COALESCE(a.name, '')         AS agent_name,
-					COALESCE(p.name, '')         AS policy_name,
-					COALESCE(d.name, '')         AS department_name
-				FROM core_hitl h
-				LEFT JOIN core_agents         a ON a.agent_id  = h.agent_id  AND a.tenant_id = h.tenant_id
-				LEFT JOIN core_policies      p ON p.policy_id = h.policy_id AND p.tenant_id = h.tenant_id
-				LEFT JOIN syst_departments   d ON d.department_id = h.department_id AND d.tenant_id = h.tenant_id
-				ORDER BY h.created_at DESC
-				LIMIT $1 OFFSET $2`
+			joinSQL = caseSelect + caseOrder + ` LIMIT $1 OFFSET $2`
 			joinArgs = []any{limit, offset}
 		} else {
 			//nolint:tenant_filter — tenantID injected as $1
-			joinSQL = `
-				SELECT
-					h.decision_id, h.decision_id          AS case_id,
-					h.tenant_id,   h.agent_id,            h.request_id,
-					h.decision_type, h.status,            h.case_type,
-					h.priority,    h.context_data,        h.decision_data,
-					h.action_payload, h.financial_value,  h.financial_exposure,
-					h.risk_score,  h.identity_score       AS trust_score,
-					h.entropy_score, h.cognitive_score,
-					h.quorum_required, h.quorum_achieved, h.jury_pool_size,
-					h.assigned_to, h.policy_id,           h.gate_tool_name,
-					h.reason,      h.result,              h.source,
-					h.created_at,  h.updated_at,          h.expires_at,
-					h.sla_breach_at, h.sla_breached,      h.sla_breached_at,
-					h.auto_escalated, h.override_verdict,
-					h.verdict_id,  h.jury_case_id,        h.department_id,
-					-- JOINed enrichment: agent / policy / department display names in one round-trip
-					COALESCE(a.name, '')         AS agent_name,
-					COALESCE(p.name, '')         AS policy_name,
-					COALESCE(d.name, '')         AS department_name
-				FROM core_hitl h
-				LEFT JOIN core_agents         a ON a.agent_id  = h.agent_id  AND a.tenant_id = h.tenant_id
-				LEFT JOIN core_policies      p ON p.policy_id = h.policy_id AND p.tenant_id = h.tenant_id
-				LEFT JOIN syst_departments   d ON d.department_id = h.department_id AND d.tenant_id = h.tenant_id
-				WHERE h.tenant_id = $1
-				ORDER BY h.created_at DESC
-				LIMIT $2 OFFSET $3`
+			joinSQL = caseSelect + ` AND p.tenant_id = $1` + caseOrder + ` LIMIT $2 OFFSET $3`
 			joinArgs = []any{tenantID, limit, offset}
 		}
 
-		joinErr := db.QueryRawCtx(r.Context(), joinSQL, &rows, joinArgs...)
+		var projRows []map[string]any
+		joinErr := db.QueryRawCtx(r.Context(), joinSQL, &projRows, joinArgs...)
 		if joinErr != nil {
 			// No degraded single-table fallback (it silently dropped agent/policy
 			// names, filters and paging). Report the real failure.
@@ -157,8 +117,9 @@ func HandleListCases(db database.DB) http.HandlerFunc {
 			return
 		}
 
-		if rows == nil {
-			rows = []map[string]any{}
+		rows = make([]map[string]any, 0, len(projRows))
+		for _, pr := range projRows {
+			rows = append(rows, hitlCaseRow(pr))
 		}
 
 		// doesn't support JSONB WHERE or multi-column AND in a single QueryRows call.
@@ -756,4 +717,37 @@ func arbitrationVerdict(body map[string]any) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// hitlCaseColumns is the case shape ListCases has always returned (core_hitl columns).
+var hitlCaseColumns = []string{
+	"decision_id", "tenant_id", "agent_id", "request_id", "decision_type", "status", "case_type",
+	"priority", "context_data", "decision_data", "action_payload", "financial_value",
+	"financial_exposure", "risk_score", "entropy_score", "cognitive_score", "quorum_required",
+	"quorum_achieved", "jury_pool_size", "assigned_to", "policy_id", "gate_tool_name", "reason",
+	"result", "source", "created_at", "updated_at", "expires_at", "sla_breach_at", "sla_breached",
+	"sla_breached_at", "auto_escalated", "override_verdict", "verdict_id", "jury_case_id",
+	"department_id", "agent_name", "policy_name",
+}
+
+// hitlCaseRow flattens a compl_core_projection row (payload jsonb + department_name) into the
+// legacy ListCases row: case_id aliases decision_id and trust_score aliases identity_score.
+func hitlCaseRow(pr map[string]any) map[string]any {
+	payload := map[string]any{}
+	switch v := pr["payload"].(type) {
+	case map[string]any:
+		payload = v
+	case []byte:
+		_ = json.Unmarshal(v, &payload)
+	case string:
+		_ = json.Unmarshal([]byte(v), &payload)
+	}
+	out := make(map[string]any, len(hitlCaseColumns)+3)
+	for _, c := range hitlCaseColumns {
+		out[c] = payload[c] // absent -> nil, same as a NULL column
+	}
+	out["case_id"] = payload["decision_id"]
+	out["trust_score"] = payload["identity_score"]
+	out["department_name"] = pr["department_name"]
+	return out
 }
