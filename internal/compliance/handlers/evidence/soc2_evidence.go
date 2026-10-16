@@ -28,6 +28,7 @@ package evaluation
 // Permission: compliance:write (Auditor or superadmin level)
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -132,15 +133,9 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 		// Each count becomes an evidence item for the respective TSC category.
 
 		// CC5/CC6: Active policies and gate verdicts
-		var policyRows []struct {
-			PolicyID string `json:"policy_id"`
-		}
-		policyCount := 0
-		// Reads core_policies to count active governance policies for TSC CC5/CC6 evidence.
-		if err := db.QueryRowsCompound(database.TblCorePolicies, "policy_id",
-			"tenant_id", tenantID, "status", "ACTIVE", &policyRows); err == nil {
-			policyCount = len(policyRows)
-		}
+		// Counts active governance policies for TSC CC5/CC6 evidence from compliance's
+		// read model (compl_core_projection) — no core_policies read (Row 9 / CM-01).
+		policyCount := countActiveProjection(r.Context(), db, tenantID, "policy")
 
 		// Compliance cases (incidents, violations)
 		var violationRows []struct {
@@ -153,14 +148,7 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 		}
 
 		// Active agents (each represents an access principal)
-		var agentRows []struct {
-			AgentID string `json:"agent_id"`
-		}
-		agentCount := 0
-		if err := db.QueryRowsCompound(database.TblCoreAgents, "agent_id",
-			"tenant_id", tenantID, "status", "ACTIVE", &agentRows); err == nil {
-			agentCount = len(agentRows)
-		}
+		agentCount := countActiveProjection(r.Context(), db, tenantID, "agent")
 
 		// CC4/CC7: HITL cases (human monitoring decisions)
 		var hitlRows []struct {
@@ -249,7 +237,7 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 				Description:   "Policies, procedures, and controls that address risk responses.",
 				ControlStatus: "EFFECTIVE",
 				Evidence: []SOC2EvidenceItem{
-					{Type: "SYSTEM_GENERATED", Description: "Active enforcement policies in period", Source: "core_policies (status=ACTIVE)", Count: policyCount, Period: req.PeriodStart + " to " + req.PeriodEnd},
+					{Type: "SYSTEM_GENERATED", Description: "Active enforcement policies in period", Source: "policy read model (status=ACTIVE)", Count: policyCount, Period: req.PeriodStart + " to " + req.PeriodEnd},
 					{Type: "SYSTEM_GENERATED", Description: "Policy lifecycle: DRAFT→REVIEW→APPROVED→PUBLISHED (aocs-studio-svc)", Source: "aocs-studio-svc/handlers_workflow.go"},
 					{Type: "SYSTEM_GENERATED", Description: "25-stage gate enforcement pipeline — every agent action evaluated", Source: "aocs-gate/handlers/gate"},
 				},
@@ -260,7 +248,7 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 				Description:   "Authentication, authorisation, and access control mechanisms.",
 				ControlStatus: "EFFECTIVE",
 				Evidence: []SOC2EvidenceItem{
-					{Type: "SYSTEM_GENERATED", Description: "Active AI agents — each with scoped authority profile", Source: "core_agents (status=ACTIVE)", Count: agentCount, Period: req.PeriodStart + " to " + req.PeriodEnd},
+					{Type: "SYSTEM_GENERATED", Description: "Active AI agents — each with scoped authority profile", Source: "agent read model (status=ACTIVE)", Count: agentCount, Period: req.PeriodStart + " to " + req.PeriodEnd},
 					{Type: "SYSTEM_GENERATED", Description: "AES-256-GCM credential encryption for all connector credentials", Source: "aocs-system-svc/handlers/platform/connector_registry.go"},
 					{Type: "SYSTEM_GENERATED", Description: "OAuth PKCE flow for all ML provider connections", Source: "aocs-system-svc/handlers/agents/provider_oauth.go"},
 					{Type: "SYSTEM_GENERATED", Description: "JWT + RBAC enforcement on all API routes", Source: "ocx-shared-go/infra/auth"},
@@ -405,4 +393,25 @@ func HandleListSOC2Packages(db database.DB) http.HandlerFunc {
 			"total":    len(rows),
 		})
 	}
+}
+
+// countActiveProjection counts ACTIVE rows of one kind in compl_core_projection for a tenant.
+// A query failure yields 0, matching the previous best-effort evidence counts.
+func countActiveProjection(ctx context.Context, db database.DB, tenantID, kind string) int {
+	var rows []map[string]any
+	if err := db.QueryRawCtx(ctx,
+		`SELECT COUNT(*)::bigint AS n FROM compl_core_projection
+		  WHERE tenant_id = $1 AND kind = $2 AND payload->>'status' = 'ACTIVE'`,
+		&rows, tenantID, kind); err != nil || len(rows) == 0 {
+		return 0
+	}
+	switch n := rows[0]["n"].(type) {
+	case int64:
+		return int(n)
+	case int32:
+		return int(n)
+	case float64:
+		return int(n)
+	}
+	return 0
 }

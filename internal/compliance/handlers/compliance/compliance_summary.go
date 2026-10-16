@@ -24,10 +24,34 @@ import (
 // All three call TABLE-returning Postgres RPCs via direct pgx queries.
 // Zero N+1 — one DB round-trip replaces 1-per-row fetch looperations.
 
+// policyProjectionCTE exposes compl_core_projection(kind='policy') as a relation shaped like the
+// policy columns these queries need (Row 9 / CM-01: no core_policies read). Embed as the FIRST
+// CTE ("WITH " + policyProjectionCTE + ", ...").
+const policyProjectionCTE = `pol AS (
+		SELECT pr.tenant_id, pr.entity_id AS policy_id,
+		       pr.payload->>'name'                       AS name,
+		       pr.payload->>'description'                AS description,
+		       pr.payload->>'status'                     AS status,
+		       pr.payload->>'version'                    AS version,
+		       NULLIF(pr.payload->'rules', 'null'::jsonb)                  AS rules,
+		       NULLIF(pr.payload->'metadata', 'null'::jsonb)               AS metadata,
+		       NULLIF(pr.payload->'regulatory_frameworks', 'null'::jsonb)  AS regulatory_frameworks,
+		       ARRAY(SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(pr.payload->'applicable_regulations') = 'array'
+		                  THEN pr.payload->'applicable_regulations' ELSE '[]'::jsonb END)) AS applicable_regulations,
+		       ARRAY(SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(pr.payload->'bound_agents') = 'array'
+		                  THEN pr.payload->'bound_agents' ELSE '[]'::jsonb END))           AS bound_agents,
+		       NULLIF(pr.payload->>'priority', '')::int                    AS priority,
+		       (pr.payload->>'is_active')::boolean                         AS is_active,
+		       NULLIF(pr.payload->>'updated_at', '')::timestamptz          AS updated_at,
+		       NULLIF(pr.payload->>'created_at', '')::timestamptz          AS created_at,
+		       NULLIF(pr.payload->>'deleted_at', '')::timestamptz          AS deleted_at
+		  FROM compl_core_projection pr
+		 WHERE pr.kind = 'policy'
+	)`
+
 // GET /api/v1/policies/summary
 // Returns policies joined with coverage %, rule count, and last verdict.
 // Replaces the N+1 pattern: one call to v_policy_with_coverage via RPC.
-
 type PolicySummaryRow struct {
 	ID          string          `json:"id"`
 	Name        string          `json:"name"`
@@ -70,10 +94,11 @@ func HandleGetPolicySummary(pgx *database.PGXPool) http.HandlerFunc {
 }
 
 func getPolicySummary(ctx context.Context, p *database.PGXPool, tenantID string) ([]PolicySummaryRow, error) {
-	// Direct query on core_policies (get_policy_summary() returns only 6 columns).
+	// Query on the compliance read model of policies (get_policy_summary() returns only 6 columns).
 	// coverage_pct = bound agents / active agents for the tenant (0-100).
 	// last_verdict = most recent gate action recorded against the policy.
 	const query = `
+		WITH ` + policyProjectionCTE + `
 		SELECT p.policy_id, p.name, COALESCE(p.description, ''), COALESCE(p.status, ''),
 		       COALESCE(p.version, 1)::text,
 		       COALESCE(p.rules, '[]'::jsonb), COALESCE(p.metadata, '{}'::jsonb),
@@ -83,9 +108,9 @@ func getPolicySummary(ctx context.Context, p *database.PGXPool, tenantID string)
 		       COALESCE(p.updated_at, p.created_at, NOW()) AS updated_at,
 		       COALESCE(p.created_at, NOW()),
 		       lv.action
-		FROM core_policies p
-		CROSS JOIN (SELECT GREATEST(COUNT(*), 1) AS n FROM core_agents
-		             WHERE tenant_id = $1 AND status = 'ACTIVE') ta
+		FROM pol p
+		CROSS JOIN (SELECT GREATEST(COUNT(*), 1) AS n FROM compl_core_projection
+		             WHERE tenant_id = $1 AND kind = 'agent' AND payload->>'status' = 'ACTIVE') ta
 		LEFT JOIN LATERAL (
 		    SELECT v.verdict AS action
 		      FROM lv_core_gate_decisions v
@@ -165,7 +190,7 @@ func getComplianceObligations(ctx context.Context, p *database.PGXPool, tenantID
 	// compliance_score was hardcoded 0.0::float8 — permanently misrepresented
 	// compliance coverage on the EU AI Act / SOC2 obligation dashboard.
 	// Now computed as: (active_policies_covering_framework / total_policies) where
-	// a policy covers a framework when core_policies.framework_id matches OR the tenant
+	// a policy covers a framework when the policy projection's framework_id matches OR the tenant
 	// has at least one active policy (global coverage signal).
 	//
 	// Score formula (per framework):
@@ -177,9 +202,9 @@ func getComplianceObligations(ctx context.Context, p *database.PGXPool, tenantID
 	// enforcement level in record_value/payload). A policy covers a framework when its
 	// regulatory_frameworks JSON or applicable_regulations[] names the framework id or name.
 	const query = `
-		WITH total_active AS (
+		WITH ` + policyProjectionCTE + `, total_active AS (
 			SELECT GREATEST(COUNT(*) FILTER (WHERE status = 'ACTIVE'), 1) AS n
-			FROM core_policies
+			FROM pol
 			WHERE tenant_id = $1 AND deleted_at IS NULL
 		), fw AS (
 			SELECT COALESCE(f.framework_id, f.record_key, f.setting_id) AS framework_id,
@@ -209,7 +234,7 @@ func getComplianceObligations(ctx context.Context, p *database.PGXPool, tenantID
 		CROSS JOIN total_active ta
 		CROSS JOIN LATERAL (
 			SELECT COUNT(*) AS active_for_framework
-			  FROM core_policies p
+			  FROM pol p
 			 WHERE p.tenant_id = $1 AND p.deleted_at IS NULL AND p.status = 'ACTIVE'
 			   AND (COALESCE(p.regulatory_frameworks, '[]'::jsonb) ?| ARRAY[fw.framework_id, fw.name]
 			        OR fw.framework_id = ANY(COALESCE(p.applicable_regulations, '{}'))
@@ -288,7 +313,7 @@ func HandleGetPolicyImpact(pgx *database.PGXPool) http.HandlerFunc {
 // actions the policy blocked); policies with no verdicts fall back to
 // priority/10. $2 = ” returns all policies, otherwise only that policy.
 const policyImpactSQL = `
-	WITH stats AS (
+	WITH ` + policyProjectionCTE + `, stats AS (
 		SELECT p.policy_id, p.name, COALESCE(p.status, '') AS status, p.priority,
 		       COALESCE(array_length(p.bound_agents, 1), 0) AS bound_agents,
 		       COALESCE(p.updated_at, p.created_at, NOW()) AS policy_ts,
@@ -296,10 +321,10 @@ const policyImpactSQL = `
 		       COUNT(*) FILTER (WHERE v.verdict IN ('BLOCK', 'DENY')) AS blocked,
 		       COUNT(DISTINCT v.agent_id) AS verdict_agents,
 		       MAX(v.created_at) AS last_verdict_at
-		FROM core_policies p
+		FROM pol p
 		LEFT JOIN lv_core_gate_decisions v ON v.policy_id = p.policy_id AND v.tenant_id = p.tenant_id
 		WHERE p.tenant_id = $1 AND p.deleted_at IS NULL AND ($2 = '' OR p.policy_id = $2)
-		GROUP BY p.policy_id
+		GROUP BY p.policy_id, p.name, p.status, p.priority, p.bound_agents, p.updated_at, p.created_at
 	), scored AS (
 		SELECT *, CASE WHEN total > 0 THEN blocked::float8 / total
 		               ELSE LEAST(1.0, COALESCE(priority, 5) / 10.0) END AS impact

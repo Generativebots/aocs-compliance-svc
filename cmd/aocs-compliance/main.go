@@ -168,6 +168,8 @@ func main() {
 		// Complementary: GCP Pub/Sub / LocalEventBus (dev fallback only).
 		propagation.StartCompliancePropagationConsumers(svc.BgCtx, db, os.Getenv("GCP_PROJECT_ID"))
 		slog.Info("cross-service propagation consumers started (GCP Pub/Sub / LocalEventBus dev fallback)")
+		// Row 9 (CM-01): core_hitl / core_policies / core_agents read model, fed by core events.
+		go propagation.StartCoreProjectionConsumer(svc.BgCtx, pgx, os.Getenv("GCP_PROJECT_ID"))
 	}
 
 	// ── DLP Store ───────────────────────────────────────────────────────────

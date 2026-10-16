@@ -126,3 +126,7 @@ CREATE INDEX IF NOT EXISTS idx_compl_cases_gate_group
 CREATE INDEX IF NOT EXISTS idx_compl_regulatory_tenant_id ON public.compl_regulatory (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_compl_policy_exceptions_tenant_id ON public.compl_policy_exceptions (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_compl_risk_assessments_tenant_id ON public.compl_risk_assessments (tenant_id);
+
+-- compl_core_projection: list/filter by kind newest-first (cases list, policy summary)
+CREATE INDEX IF NOT EXISTS idx_compl_core_projection_kind
+    ON compl_core_projection (tenant_id, kind, source_ts DESC);

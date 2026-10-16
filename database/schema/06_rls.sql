@@ -33,6 +33,8 @@ ALTER TABLE compl_risk_assessments    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE compl_risk_assessments    FORCE  ROW LEVEL SECURITY;
 ALTER TABLE compl_cases             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE compl_cases             FORCE  ROW LEVEL SECURITY;
+ALTER TABLE compl_core_projection   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE compl_core_projection   FORCE  ROW LEVEL SECURITY;
 -- GAP-RLS-01 FIX: new tables from cross-ring propagation work
 ALTER TABLE compl_tenant_baselines             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE compl_tenant_baselines             FORCE  ROW LEVEL SECURITY;
@@ -66,7 +68,8 @@ BEGIN
     'compl_risk_assessments',
     'compl_cases',
     'compl_tenant_baselines',
-    'compl_evidence_vault'
+    'compl_evidence_vault',
+    'compl_core_projection'
   ] LOOP
     EXECUTE format('DROP POLICY IF EXISTS superadmin_all ON %I', t);
     EXECUTE format('CREATE POLICY superadmin_all ON %I USING (%s)', t, admin_expr);
@@ -98,13 +101,13 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
     compl_dlp_integrations, compl_reports, compl_case_comments, compl_signing_keys,
     compl_anomaly, compl_policy_violations, compl_regulatory, compl_policy_exceptions,
     compl_risk_assessments, compl_cases, compl_tenant_baselines, compl_evidence_vault,
-    compl_idempotency_log
+    compl_idempotency_log, compl_core_projection
     TO svc_compliance, service_role;
 GRANT SELECT ON
     compl_records, compl_obligations, compl_evidence, compl_evidence_anchors,
     compl_dlp_integrations, compl_reports, compl_case_comments,
     compl_policy_violations, compl_regulatory, compl_policy_exceptions,
-    compl_risk_assessments, compl_cases, compl_tenant_baselines, compl_evidence_vault
+    compl_risk_assessments, compl_cases, compl_tenant_baselines, compl_evidence_vault, compl_core_projection
     TO authenticated, svc_platform;
 
 -- Logical views (lv_*): same grants as their host table.
