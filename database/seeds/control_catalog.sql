@@ -1,4 +1,4 @@
--- 20261015_01: seed data for the global framework control catalog (F-04).
+-- seed data for the global framework control catalog (F-04).
 -- DDL (table, RLS, read policy) now lives in database/schema/01_tables.sql and 06_rls.sql; apply those
 -- (idempotent) before running this seed. This file is data only.
 INSERT INTO compl_control_catalog (framework, control_id, title, category) VALUES
