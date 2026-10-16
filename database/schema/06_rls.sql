@@ -122,3 +122,8 @@ GRANT DELETE, INSERT, SELECT, UPDATE ON public.lv_core_gdpr_requests TO svc_comp
 GRANT DELETE, INSERT, SELECT, UPDATE ON public.lv_core_gdpr_requests TO svc_core;
 GRANT SELECT ON public.lv_core_gdpr_requests TO svc_platform;
 GRANT DELETE, INSERT, SELECT, UPDATE ON public.lv_core_gdpr_requests TO svc_system;
+
+-- F-04: control catalog is global and read-only for tenants.
+ALTER TABLE compl_control_catalog ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS compl_control_catalog_read ON compl_control_catalog;
+CREATE POLICY compl_control_catalog_read ON compl_control_catalog FOR SELECT USING (true);

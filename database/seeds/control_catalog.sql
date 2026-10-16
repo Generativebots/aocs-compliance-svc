@@ -1,21 +1,6 @@
--- 20261015_01: global framework control catalog (F-04).
--- compl_obligations is per tenant; there was no shared catalog of framework controls to adopt from.
--- Read-only for tenants; maintained by the platform (migrations / regulatory scraper later).
-CREATE TABLE IF NOT EXISTS compl_control_catalog (
-    framework    TEXT        NOT NULL,
-    control_id   TEXT        NOT NULL,
-    title        TEXT        NOT NULL,
-    category     TEXT        NOT NULL DEFAULT '',
-    description  TEXT        NOT NULL DEFAULT '',
-    is_active    BOOLEAN     NOT NULL DEFAULT true,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (framework, control_id)
-);
-
-ALTER TABLE compl_control_catalog ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS compl_control_catalog_read ON compl_control_catalog;
-CREATE POLICY compl_control_catalog_read ON compl_control_catalog FOR SELECT USING (true);
-
+-- seed data for the global framework control catalog (F-04).
+-- DDL (table, RLS, read policy) now lives in database/schema/01_tables.sql and 06_rls.sql; apply those
+-- (idempotent) before running this seed. This file is data only.
 INSERT INTO compl_control_catalog (framework, control_id, title, category) VALUES
  ('SOC2','CC1','Control environment','Common Criteria'),
  ('SOC2','CC2','Communication and information','Common Criteria'),
