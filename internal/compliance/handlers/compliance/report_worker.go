@@ -157,28 +157,6 @@ func generateTenantReport(ctx context.Context, db database.DB, coreClient *servi
 				hitlBlocked++
 			}
 		}
-	} else {
-		var hitlRows []map[string]any
-		if _dbErr := db.QueryRowsCursor(database.TblCoreHitl, "decision_id,status,decision_type,created_at",
-			"tenant_id", tenantID, database.CursorPage{Limit: 200}, &hitlRows); _dbErr != nil {
-			slog.Error("db.QueryRows HITL failed (best-effort)", "error", _dbErr)
-		}
-		for _, row := range hitlRows {
-			createdAt, _ := row["created_at"].(string)
-			if createdAt < since {
-				continue
-			}
-			hitlTotal++
-			switch row["decision_type"] {
-			case "ALLOW_OVERRIDE", "MODIFY_OUTPUT":
-				hitlApproved++
-			case "BLOCK_OVERRIDE":
-				hitlBlocked++
-			}
-			if row["status"] == "SLA_BREACHED" {
-				hitlOverdue++
-			}
-		}
 	}
 	_ = hitlOverdue // used in report data below
 

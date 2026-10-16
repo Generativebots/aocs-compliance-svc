@@ -13,6 +13,7 @@ package reports
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -99,7 +100,28 @@ func HandleGetRLHCClaims(db database.DB) http.HandlerFunc {
 				return db.QueryRowsCtx(r.Context(), database.TblRLHCClusters, database.ColsQcoreRlhcCorrectionClusters, "tenant_id", tenantID, &clusters)
 			}},
 			{fn: func() error {
-				return db.QueryRowsCtx(r.Context(), database.TblCoreHitl, database.ColsHitlDecisions, "tenant_id", tenantID, &feedback)
+				// core_hitl is core-owned: read compliance's projection of it (compl_core_projection).
+				var proj []map[string]any
+				if err := db.QueryRowsCtx(r.Context(), database.TblComplCoreProjection, "kind,payload", "tenant_id", tenantID, &proj); err != nil {
+					return err
+				}
+				for _, pr := range proj {
+					if k, _ := pr["kind"].(string); k != "hitl_case" {
+						continue
+					}
+					row := map[string]any{}
+					switch v := pr["payload"].(type) {
+					case map[string]any:
+						row = v
+					case []byte:
+						_ = json.Unmarshal(v, &row)
+					case string:
+						_ = json.Unmarshal([]byte(v), &row)
+					}
+					row["case_id"] = row["decision_id"]
+					feedback = append(feedback, row)
+				}
+				return nil
 			}},
 		})
 

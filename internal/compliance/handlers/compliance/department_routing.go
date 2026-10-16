@@ -167,8 +167,12 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 		if checkCapacity {
 			for _, dept := range validDepts {
 				var pendingRows []map[string]any
-				if _dbErr := database.QueryTenantRows(r.Context(), db, database.TblCoreHitl, "decision_id", tenantID, []database.Eq{{Col: "department_id", Val: dept}, {Col: "status", Val: "PENDING"}}, &pendingRows); _dbErr != nil {
-					slog.Error("db.QueryRowsCompound failed (best-effort)", "error", _dbErr)
+				if cc := hitlCore(coreClient); cc != nil {
+					rows, _lErr := cc.ListHITLCases(r.Context(), tenantID, map[string]string{"department_id": dept, "status": "PENDING"}, 1000)
+					if _lErr != nil {
+						slog.Error("core ListHITLCases failed (best-effort)", "error", _lErr)
+					}
+					pendingRows = rows
 				}
 				available := len(pendingRows) < maxCases
 				capacityStatus[dept] = map[string]any{

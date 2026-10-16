@@ -245,58 +245,37 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 			return
 		}
 
-		// transaction. Without this, two concurrent verdict submissions can both pass
-		// the terminal-status check and both overwrite the decided verdict (TOCTOU race).
-		// Pattern: WithTransaction → QueryRowsCompoundForUpdate (lock) → UpdateRowCompound.
-		var txErr error
-		txErr = db.WithTransaction(r.Context(), func(tx database.DB) error {
-			var existing []map[string]any
-			if err := tx.QueryRowsCompoundForUpdate(database.TblCoreHitl, "decision_id,status",
-				"decision_id", caseID, "tenant_id", tenantID, &existing); err != nil {
-				return fmt.Errorf("lock decision row: %w", err)
-			}
-			if len(existing) == 0 {
-				return fmt.Errorf("not_found")
-			}
-			curStatus, _ := existing[0]["status"].(string)
-			switch curStatus {
-			case "APPROVED", "REJECTED", "MERGED", "RESOLVED":
-				return fmt.Errorf("terminal:%s", curStatus)
-			}
-			if err := tx.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
-				return fmt.Errorf("update verdict: %w", err)
-			}
-			// Audit row written durably in the same transaction as the verdict update
-			capturedAgent, _ := body["agent_id"].(string)
-			auditRow := map[string]any{
-				"action":    "HITL_VERDICT",
-				"tenant_id": tenantID,
-				"entity_id": caseID,
-				"agent_id":  capturedAgent,
-				"user_id":   reviewerID,
-				"verdict":   verdict,
-			}
-			if aErr := tx.InsertRow(database.TblCoreEvents, auditRow); aErr != nil {
-				slog.Warn("ArbitrateCase: failed to write audit row in tx (non-fatal)", "error", aErr)
-			}
-			return nil
-		})
-		if txErr != nil {
-			if txErr.Error() == "not_found" {
+		// Verdict write, terminal-status guard and HITL_VERDICT audit row are applied by core
+		// in ONE transaction under the row lock (ocx-core-svc owns core_hitl / core_events).
+		cc := hitlCore(coreClient)
+		if !requireHITLCore(w, cc) {
+			return
+		}
+		capturedAgentID, _ := body["agent_id"].(string)
+		update[serviceclient.HITLPatchAuditEvent] = map[string]any{
+			"event_type": "HITL_VERDICT",
+			"action":     "HITL_VERDICT",
+			"entity_id":  caseID,
+			"agent_id":   capturedAgentID,
+			"actor_id":   reviewerID,
+			"metadata":   map[string]any{"verdict": verdict, "reviewer": reviewerID},
+		}
+		if txErr := cc.PatchHITLCaseIf(r.Context(), tenantID, caseID, update, nil,
+			[]string{"APPROVED", "REJECTED", "MERGED", "RESOLVED"}); txErr != nil {
+			var conflict *serviceclient.HITLConflictError
+			switch {
+			case errors.Is(txErr, serviceclient.ErrHITLNotFound):
 				respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "case not found")
-				return
-			}
-			if strings.HasPrefix(txErr.Error(), "terminal:") {
-				curStatus := strings.TrimPrefix(txErr.Error(), "terminal:")
+			case errors.As(txErr, &conflict):
 				respond.JSON(w, http.StatusConflict, map[string]any{
 					"case_id": caseID,
-					"status":  curStatus,
+					"status":  conflict.Status,
 					"note":    "case already decided — re-arbitration not permitted (idempotency)",
 				})
-				return
+			default:
+				slog.Error("ArbitrateCase failed", "case_id", caseID, "error", txErr)
+				respond.InternalError(w, http.StatusBadGateway, "arbitrate case", txErr)
 			}
-			slog.Error("ArbitrateCase failed", "case_id", caseID, "error", txErr)
-			respond.InternalError(w, http.StatusInternalServerError, "arbitrate case", txErr)
 			return
 		}
 		capturedVerdict := verdict
@@ -304,21 +283,6 @@ func HandleResolveCase(db database.DB, psBroker *eventbus.PubSubBroker, coreClie
 		capturedCase := caseID
 		capturedAgent, _ := body["agent_id"].(string)
 		capturedTenant := tenantID // tenantID already fetched above for idempotency check
-
-		// If coreClient is configured, also notify core service asynchronously
-		if coreClient != nil {
-			concurrent.GoDetached(r.Context(), 10*time.Second, "cases/hitl_verdict_core_event", func(bgCtx context.Context) {
-				auditRow := map[string]any{
-					"action":    "HITL_VERDICT",
-					"tenant_id": capturedTenant,
-					"entity_id": capturedCase, "agent_id": capturedAgent,
-					"user_id": capturedReviewer, "verdict": capturedVerdict,
-				}
-				if _err := coreClient.PostEvent(bgCtx, auditRow); _err != nil {
-					slog.Error("coreClient.PostEvent HITL_VERDICT failed", "error", _err)
-				}
-			})
-		}
 
 		// 4: Publish verdict to TopicVerdictRecorded so SDK polling clients
 		// and jury consumers can unblock the suspended agent action.
@@ -367,9 +331,10 @@ var (
 	}
 )
 
-func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.HandlerFunc {
+func HandleAssignCase(db database.DB, classifier types.IntentClassifier, coreClients ...*serviceclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if respond.RequireDBWrite(w, db) {
+		cc := hitlCore(coreClients...)
+		if respond.RequireDBWrite(w, db) || !requireHITLCore(w, cc) {
 			return
 		}
 		vars := mux.Vars(r)
@@ -509,9 +474,9 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 				}
 			}
 			for _, dept := range deptIDs {
-				var pendingRows []map[string]any
-				if _dbErr := database.QueryTenantRows(r.Context(), db, database.TblCoreHitl, "decision_id", tenantID, []database.Eq{{Col: "department_id", Val: dept}, {Col: "status", Val: "PENDING"}}, &pendingRows); _dbErr != nil {
-					slog.Error("db.QueryRowsCompound failed (best-effort)", "error", _dbErr)
+				pendingRows, _lErr := cc.ListHITLCases(r.Context(), tenantID, map[string]string{"department_id": dept, "status": "PENDING"}, 1000)
+				if _lErr != nil {
+					slog.Error("core ListHITLCases failed (best-effort)", "error", _lErr)
 				}
 				if len(pendingRows) >= maxCases {
 					respond.JSON(w, http.StatusTooManyRequests, map[string]any{
@@ -546,77 +511,52 @@ func HandleAssignCase(db database.DB, classifier types.IntentClassifier) http.Ha
 		classMeta, _ := update["_classification_meta"].(map[string]any)
 		delete(update, "_classification_meta") // temp key — never a DB column
 
-		// Lock the case, reject missing/terminal cases honestly, merge
-		// assignment metadata into context_data, update and write the audit row
-		// in one transaction.
-		var caseRows []map[string]any
-		if txErr := db.WithTransaction(r.Context(), func(tx database.DB) error {
-			if qErr := tx.QueryRowsCompoundForUpdate(database.TblCoreHitl, "status,context_data",
-				"decision_id", caseID, "tenant_id", tenantID, &caseRows); qErr != nil {
-				return qErr
-			}
-			if len(caseRows) == 0 {
-				return errAssignNotFound
-			}
-			if st, _ := caseRows[0]["status"].(string); assignTerminalStatuses[strings.ToUpper(st)] {
-				return fmt.Errorf("%w: %s", errAssignTerminal, st)
-			}
-			ctxData := map[string]any{}
-			if cd, ok := caseRows[0]["context_data"].(map[string]any); ok {
-				for k, v := range cd {
-					ctxData[k] = v
-				}
-			}
-			ctxData["assigned_to"] = assignedTo
-			ctxData["assigned_by"] = operatorID
-			ctxData["assigned_at"] = now
-			if len(deptIDs) > 0 {
-				ctxData["department_ids"] = deptIDs
-			}
-			if req.Reason != "" {
-				ctxData["assignment_reason"] = req.Reason
-			}
-			for k, v := range classMeta {
-				ctxData[k] = v
-			}
-			// pgx cannot encode nested map[string]any → JSONB directly.
-			cdBytes, jsonErr := json.Marshal(ctxData)
-			if jsonErr != nil {
-				return fmt.Errorf("marshal context_data: %w", jsonErr)
-			}
-			update["context_data"] = string(cdBytes)
-
-			if err := tx.UpdateRowCompound(database.TblCoreHitl, "decision_id", caseID, "tenant_id", tenantID, update); err != nil {
-				return err
-			}
-			assignEvent := map[string]any{
-				"event_id":    generatePlatformID(),
-				"entity_id":   caseID,
-				"entity_type": "hitl_case",
-				"tenant_id":   tenantID,
-				"event_type":  "CASE_ASSIGNED",
-				"payload": map[string]any{
-					"case_id":        caseID,
-					"assigned_to":    assignedTo,
-					"assigned_by":    operatorID,
-					"department_ids": deptIDs,
-					"reason":         req.Reason,
-					"occurred_at":    now,
-				},
-			}
-			if err := tx.InsertRow(database.TblCoreEvents, assignEvent); err != nil {
-				slog.Warn("AssignCase: audit insert failed in tx (non-fatal)", "case_id", caseID, "error", err)
-			}
-			return nil
-		}); txErr != nil {
+		// Core applies, in ONE transaction under the row lock: terminal-status guard, merge of the
+		// assignment metadata into context_data, the update and the CASE_ASSIGNED audit row.
+		ctxMerge := map[string]any{
+			"assigned_to": assignedTo,
+			"assigned_by": operatorID,
+			"assigned_at": now,
+		}
+		if len(deptIDs) > 0 {
+			ctxMerge["department_ids"] = deptIDs
+		}
+		if req.Reason != "" {
+			ctxMerge["assignment_reason"] = req.Reason
+		}
+		for k, v := range classMeta {
+			ctxMerge[k] = v
+		}
+		update[serviceclient.HITLPatchMergeContext] = ctxMerge
+		update[serviceclient.HITLPatchAuditEvent] = map[string]any{
+			"event_id":    generatePlatformID(),
+			"entity_id":   caseID,
+			"entity_type": "hitl_case",
+			"event_type":  "CASE_ASSIGNED",
+			"payload": map[string]any{
+				"case_id":        caseID,
+				"assigned_to":    assignedTo,
+				"assigned_by":    operatorID,
+				"department_ids": deptIDs,
+				"reason":         req.Reason,
+				"occurred_at":    now,
+			},
+		}
+		terminal := make([]string, 0, len(assignTerminalStatuses))
+		for st := range assignTerminalStatuses {
+			terminal = append(terminal, st)
+		}
+		if txErr := cc.PatchHITLCaseIf(r.Context(), tenantID, caseID, update, nil, terminal); txErr != nil {
+			var conflict *serviceclient.HITLConflictError
 			switch {
-			case errors.Is(txErr, errAssignNotFound):
+			case errors.Is(txErr, serviceclient.ErrHITLNotFound):
 				respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "case not found")
-			case errors.Is(txErr, errAssignTerminal):
-				respond.ErrorWithCode(w, http.StatusConflict, respond.ErrCodeConflict, txErr.Error()+" — assignment not permitted")
+			case errors.As(txErr, &conflict):
+				respond.ErrorWithCode(w, http.StatusConflict, respond.ErrCodeConflict,
+					fmt.Sprintf("case is in terminal status %s — assignment not permitted", conflict.Status))
 			default:
 				slog.Error("AssignCase failed", "case_id", caseID, "error", txErr)
-				respond.InternalError(w, http.StatusInternalServerError, "assign case", txErr)
+				respond.InternalError(w, http.StatusBadGateway, "assign case", txErr)
 			}
 			return
 		}
