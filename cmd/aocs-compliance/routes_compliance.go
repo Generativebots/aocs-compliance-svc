@@ -41,6 +41,11 @@ func registerIntelComplianceRoutes(
 
 	// ── Consolidated Dashboard Summary (Batch SWR Elimination) ───────
 	api.HandleFunc("/compliance/dashboard-summary", auth.RequireAccess(pc, "compliance", "read", compliance.HandleGetComplianceDashboardSummary(db))).Methods("GET")
+	// Signed offline evidence bundle (evidence, obligations, ledger slice, chain verification).
+	// Framework control catalog + one-call adoption into compl_obligations (F-04).
+	api.HandleFunc("/compliance/controls/catalog", auth.RequireAccess(pc, "compliance", "read", compliance.HandleControlCatalog(db))).Methods("GET")
+	api.HandleFunc("/compliance/controls/adopt", auth.RequireAccess(pc, "compliance", "write", compliance.HandleAdoptControls(db))).Methods("POST")
+	api.HandleFunc("/compliance/audit-pack", auth.RequireAccess(pc, "compliance", "read", compliance.HandleAuditPack(db, pgx))).Methods("POST")
 
 	// ── Violations ────────────────────────────────────────────────────────────
 	api.HandleFunc("/violations", auth.RequireAccess(pc, "compliance", "read", compliance.HandleListViolations(db))).Methods("GET")

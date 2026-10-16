@@ -53,7 +53,7 @@ func HandleDLPScan(store *DLPStore) http.HandlerFunc {
 			return
 		}
 		if tenantID == "" {
-			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "X-Tenant-ID header required")
+			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "verified tenant required")
 			return
 		}
 
@@ -290,7 +290,7 @@ func HandleDLPMonitorPID(store *DLPStore) http.HandlerFunc {
 			return
 		}
 		if tenantID == "" {
-			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "X-Tenant-ID header required")
+			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "verified tenant required")
 			return
 		}
 
@@ -491,7 +491,7 @@ func HandleCreateDLPIntegration(store *DLPStore) http.HandlerFunc {
 			return
 		}
 		if tenantID == "" {
-			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "X-Tenant-ID header required")
+			respond.ErrorWithCode(w, http.StatusBadRequest, respond.ErrCodeBadRequest, "verified tenant required")
 			return
 		}
 

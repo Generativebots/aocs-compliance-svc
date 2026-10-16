@@ -104,6 +104,21 @@ func main() {
 	hcompliance.StartContinuousComplianceWorker(svc.BgCtx, db)
 	slog.Info("ContinuousComplianceWorker started — 5m violation/posture sync")
 
+	// F-07: alert owners of escalated violations that outlive the SLA.
+	hcompliance.StartEscalationSLAWorker(svc.BgCtx, db, func() ([]string, error) {
+		rows, err := db.ListAllTenants()
+		if err != nil {
+			return nil, err
+		}
+		ids := make([]string, 0, len(rows))
+		for _, t := range rows {
+			if t.TenantID != "" {
+				ids = append(ids, t.TenantID)
+			}
+		}
+		return ids, nil
+	})
+
 	// GX-15: gate BLOCK/ESC decisions → compl_policy_violations → cases.
 	hcompliance.StartGateViolationHarvester(svc.BgCtx, db)
 

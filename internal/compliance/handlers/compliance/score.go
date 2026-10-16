@@ -579,7 +579,15 @@ func HandleEscalateViolation(db database.DB) http.HandlerFunc {
 			respond.InternalError(w, http.StatusInternalServerError, "db operation failed", err)
 			return
 		}
-		respond.JSON(w, http.StatusOK, map[string]string{"status": "ESCALATED"})
+		resp := map[string]any{"status": "ESCALATED"}
+		if owner, source, rerr := routeViolationAlert(r.Context(), db, tenantID, id, optBody.Reason); rerr != nil {
+			resp["alert_routed"] = false
+		} else {
+			resp["alert_routed"] = true
+			resp["alert_owner"] = owner
+			resp["alert_owner_source"] = source
+		}
+		respond.JSON(w, http.StatusOK, resp)
 	}
 }
 func HandleCreateViolationComment(db database.DB) http.HandlerFunc {
