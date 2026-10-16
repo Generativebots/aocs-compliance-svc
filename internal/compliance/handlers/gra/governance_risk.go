@@ -98,6 +98,7 @@ func HandleListAllAuditLog(db database.DB) http.HandlerFunc {
 
 		var result []map[string]any
 		var err error
+		var page database.PageParams
 
 		// Use the most selective compound filter available; all paths use 90-day window.
 		switch {
@@ -108,8 +109,11 @@ func HandleListAllAuditLog(db database.DB) http.HandlerFunc {
 			err = db.QueryRowsWithin90DaysCompound(database.TblCoreEvents, database.ColsPlatformEvent,
 				tenantFilter, "agent_id", agentFilter, &result)
 		case tenantFilter != "":
-			err = db.QueryRowsWithin90Days(database.TblCoreEvents, database.ColsPlatformEvent,
-				tenantFilter, &result)
+			// Paged (?limit=&offset=): the unpaged 90-day read returned up to 10,000
+			// rows (~4.5 MB) and exceeded the per-query timeout.
+			page = database.ParsePageParams(r.URL.Query())
+			err = db.QueryRowsLimitedWithWindow(database.TblCoreEvents, database.ColsPlatformEvent,
+				"tenant_id", tenantFilter, 90, page, &result)
 		case r.URL.Query().Get("scope") == "all": // AllTenantsScope granted above
 			// SuperAdmin full scan — 90-day window.
 			err = db.QueryRowsGlobalWithin90Days(r.Context(), database.TblCoreEvents, database.ColsPlatformEvent, &result)
@@ -141,10 +145,14 @@ func HandleListAllAuditLog(db database.DB) http.HandlerFunc {
 		if result == nil {
 			result = []map[string]any{}
 		}
-		respond.OK(w, map[string]any{
+		resp := map[string]any{
 			"events": result,
 			"total":  len(result),
-		})
+		}
+		if page.Limit > 0 {
+			resp["limit"], resp["offset"] = page.Limit, page.Offset
+		}
+		respond.OK(w, resp)
 	}
 }
 
