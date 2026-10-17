@@ -70,6 +70,10 @@ CREATE TABLE IF NOT EXISTS compl_obligations (
     CONSTRAINT chk_compl_obligations_name_trimmed CHECK (name = trim(name))
 );
 
+-- Process ownership of an adopted control (TEXT reference to a process owned by another service;
+-- nullable until assigned). Drives the compliance-by-process view.
+ALTER TABLE compl_obligations ADD COLUMN IF NOT EXISTS process_id TEXT;
+
 -- ── compl_evidence ─────────────────────────────────────────────────
 -- Evidence vault: ZKP proofs, DLP findings, audit screenshots, SOC2 artifacts.
 CREATE TABLE IF NOT EXISTS compl_evidence (

@@ -3,6 +3,7 @@ package compliance
 import (
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -22,6 +23,43 @@ type DashboardSummaryResponse struct {
 	DLP          map[string]any   `json:"dlp"`
 	History7D    []map[string]any `json:"history_7d"`
 	History90D   []map[string]any `json:"history_90d"`
+	Processes    []ProcessPosture `json:"processes"`
+}
+
+// ProcessPosture is the adopted-control posture of one process. ProcessID is empty for the
+// unassigned bucket so the UI can show how much of the program is not yet tied to a process.
+type ProcessPosture struct {
+	ProcessID string  `json:"process_id"`
+	Total     int     `json:"total"`
+	Passed    int     `json:"passed"`
+	Score     float64 `json:"score"`
+}
+
+// aggregateByProcess groups obligations by process_id (empty = unassigned).
+func aggregateByProcess(obligations []map[string]any) []ProcessPosture {
+	by := map[string]*ProcessPosture{}
+	var order []string
+	for _, ob := range obligations {
+		pid, _ := ob["process_id"].(string)
+		pp, ok := by[pid]
+		if !ok {
+			pp = &ProcessPosture{ProcessID: pid}
+			by[pid] = pp
+			order = append(order, pid)
+		}
+		pp.Total++
+		if st, _ := ob["status"].(string); st == "COMPLIANT" || st == "PASSED" {
+			pp.Passed++
+		}
+	}
+	out := make([]ProcessPosture, 0, len(order))
+	for _, pid := range order {
+		pp := by[pid]
+		pp.Score = float64(pp.Passed) / float64(pp.Total) * 100.0
+		out = append(out, *pp)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Total > out[j].Total })
+	return out
 }
 
 // HandleGetComplianceDashboardSummary — GET /compliance/dashboard-summary
@@ -72,7 +110,7 @@ func HandleGetComplianceDashboardSummary(db database.DB) http.HandlerFunc {
 		// 3. Frameworks from compl_obligations
 		var obligations []map[string]any
 		if err := db.QueryRows(database.TblComplObligations,
-			"control_id,name,control_ref,framework,status",
+			"control_id,name,control_ref,framework,status,process_id",
 			"tenant_id", tenantID, &obligations); err != nil {
 			slog.Warn("READ_DEGRADED: compliance dashboard obligations read failed",
 				"tenant_id", tenantID, "error", err)
@@ -230,6 +268,7 @@ func HandleGetComplianceDashboardSummary(db database.DB) http.HandlerFunc {
 			DLP:          dlpStats,
 			History7D:    history7d,
 			History90D:   history90d,
+			Processes:    aggregateByProcess(obligations),
 		}
 
 		slog.Debug("HandleGetComplianceDashboardSummary served", "tenant_id", tenantID, "frameworks", len(frameworks))

@@ -45,6 +45,8 @@ func registerIntelComplianceRoutes(
 	// Framework control catalog + one-call adoption into compl_obligations (F-04).
 	api.HandleFunc("/compliance/controls/catalog", auth.RequireAccess(pc, "compliance", "read", compliance.HandleControlCatalog(db))).Methods("GET")
 	api.HandleFunc("/compliance/controls/adopt", auth.RequireAccess(pc, "compliance", "write", compliance.HandleAdoptControls(db))).Methods("POST")
+	api.HandleFunc("/compliance/controls/adopted", auth.RequireAccess(pc, "compliance", "read", compliance.HandleListAdoptedControls(db))).Methods("GET")
+	api.HandleFunc("/compliance/controls/adopted/{id}", auth.RequireAccess(pc, "compliance", "write", middleware.RequireValidPathVars("id")(compliance.HandleUpdateAdoptedControl(db)))).Methods("PATCH")
 	api.HandleFunc("/compliance/audit-pack", auth.RequireAccess(pc, "compliance", "read", compliance.HandleAuditPack(db, pgx))).Methods("POST")
 
 	// ── Violations ────────────────────────────────────────────────────────────
