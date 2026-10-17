@@ -16,6 +16,7 @@ package gra
 
 import (
 	"fmt"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -103,20 +104,23 @@ func HandleListAllAuditLog(db database.DB) http.HandlerFunc {
 		// Use the most selective compound filter available; all paths use 90-day window.
 		switch {
 		case eventType != "" && tenantFilter != "":
-			err = db.QueryRowsWithin90DaysCompound(database.TblCoreEvents, database.ColsPlatformEvent,
+			err = coredata.QueryRowsWithin90DaysCompound(coredata.ResEvents, database.ColsPlatformEvent,
 				tenantFilter, "event_type", eventType, &result)
 		case agentFilter != "" && tenantFilter != "":
-			err = db.QueryRowsWithin90DaysCompound(database.TblCoreEvents, database.ColsPlatformEvent,
+			err = coredata.QueryRowsWithin90DaysCompound(coredata.ResEvents, database.ColsPlatformEvent,
 				tenantFilter, "agent_id", agentFilter, &result)
 		case tenantFilter != "":
 			// Paged (?limit=&offset=): the unpaged 90-day read returned up to 10,000
 			// rows (~4.5 MB) and exceeded the per-query timeout.
 			page = database.ParsePageParams(r.URL.Query())
-			err = db.QueryRowsLimitedWithWindow(database.TblCoreEvents, database.ColsPlatformEvent,
+			err = coredata.QueryRowsLimitedWithWindow(coredata.ResEvents, database.ColsPlatformEvent,
 				"tenant_id", tenantFilter, 90, page, &result)
 		case r.URL.Query().Get("scope") == "all": // AllTenantsScope granted above
-			// SuperAdmin full scan — 90-day window.
-			err = db.QueryRowsGlobalWithin90Days(r.Context(), database.TblCoreEvents, database.ColsPlatformEvent, &result)
+			// Cross-tenant scans are not exposed by core's data gateway (it is tenant-pinned);
+			// a SuperAdmin must name the tenant.
+			respond.ErrorWithCode(w, http.StatusBadRequest, "tenant_required",
+				"scope=all is not supported; pass tenant_id")
+			return
 		default:
 			// Should never reach here — tenantFilter is always set for non-superadmins above.
 			respond.ErrorWithCode(w, http.StatusForbidden, respond.ErrCodeForbidden,

@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"github.com/ocx/shared/infra/httpclient"
 	"io"
 	"log/slog"
@@ -25,7 +26,7 @@ import (
 // HTTP-level context is handled upstream by the per-drive sync functions.
 func upsertDriveDocument(db database.DB, row map[string]any) error {
 	// Try insert — ON CONFLICT DO NOTHING for truly new files
-	if err := db.InsertRowIdempotent(database.TblCoreTenantDocs, row, "tenant_id,source_id"); err != nil {
+	if err := coredata.InsertRowIdempotent(coredata.ResTenantDocs, row, "tenant_id,source_id"); err != nil {
 		slog.Debug("drive upsert insert failed, will attempt update", "source_id", row["source_id"], "error", err)
 	}
 	// Always update in case the file name / URL / status changed
@@ -38,7 +39,7 @@ func upsertDriveDocument(db database.DB, row map[string]any) error {
 	if mime, ok := row["mime_type"].(string); ok {
 		updates["mime_type"] = mime
 	}
-	return db.UpdateRowCompound(database.TblCoreTenantDocs,
+	return coredata.UpdateRowCompound(coredata.ResTenantDocs,
 		"tenant_id", fmt.Sprint(row["tenant_id"]),
 		"source_id", fmt.Sprint(row["source_id"]),
 		updates)

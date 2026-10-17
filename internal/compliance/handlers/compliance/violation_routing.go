@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"log/slog"
 	"strings"
 	"time"
@@ -59,7 +60,7 @@ type alertKind struct{ typ, title, body string }
 // routeAlert resolves the violation's owner and writes one ALERT notification.
 func routeAlert(ctx context.Context, db database.DB, tenantID, violationID string, kind alertKind) (owner, source string, err error) {
 	var rows []map[string]any
-	if qerr := db.QueryRowsCompound(database.TblCoreEnforcementActions,
+	if qerr := coredata.QueryRowsCompound(coredata.ResEnforcementActions,
 		"assigned_to,department_id,metadata,reason",
 		"enforcement_action_id", violationID, "tenant_id", tenantID, &rows); qerr != nil || len(rows) == 0 {
 		return "", "", fmt.Errorf("load violation for routing: %v", qerr)
@@ -98,7 +99,7 @@ func routeAlert(ctx context.Context, db database.DB, tenantID, violationID strin
 	if deptID != "" {
 		row["department_id"] = deptID
 	}
-	if ierr := db.InsertRow(database.TblCoreNotifications, row); ierr != nil {
+	if ierr := coredata.InsertRow(coredata.ResNotifications, row); ierr != nil {
 		slog.Error("violation alert routing failed", "violation", violationID, "error", ierr)
 		return owner, source, ierr
 	}

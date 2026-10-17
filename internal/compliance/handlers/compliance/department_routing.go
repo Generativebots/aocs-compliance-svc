@@ -19,6 +19,7 @@ package compliance
 import (
 	"context"
 	"fmt"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"log/slog"
 	"net/http"
 	"os"
@@ -143,9 +144,9 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 							"tenant_id", tenantID, "intent", result.Intent, "error", evErr)
 					}
 				})
-			} else if _wErr := db.InsertRow(database.TblCoreEvents, evt); _wErr != nil {
+			} else if _wErr := coredata.InsertRow(coredata.ResEvents, evt); _wErr != nil {
 				slog.Error("db write failed: InsertRow",
-					"table", database.TblCoreEvents, "file", "aocs-compliance/handlers/compliance/department_routing.go", "err", _wErr)
+					"table", coredata.ResEvents, "file", "aocs-compliance/handlers/compliance/department_routing.go", "err", _wErr)
 			}
 			respond.ErrorWithCode(w, http.StatusUnprocessableEntity, "department_required",
 				"no matching department for this case — pass department_ids explicitly")
@@ -189,7 +190,7 @@ func HandleRouteDepartment(db database.DB, classifier types.IntentClassifier, co
 		}
 
 		concurrent.Go("department_routing", func() {
-			if _dbErr := db.InsertRow(database.TblCoreEvents, map[string]any{
+			if _dbErr := coredata.InsertRow(coredata.ResEvents, map[string]any{
 				"event_type": "department_route_query",
 				"tenant_id":  tenantID,
 				"agent_id":   req.AgentID,

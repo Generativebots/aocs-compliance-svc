@@ -12,6 +12,7 @@
 package reports
 
 import (
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"log/slog"
 	"net/http"
 
@@ -86,13 +87,13 @@ func HandleGetSanctionSummary(db database.DB) http.HandlerFunc {
 		// during outages. Operators saw clean dashboard during most dangerous periods.
 		dataUnavailable := false
 		if tenantID != "" {
-			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreCompliance, database.ColsComplianceCases, "tenant_id", tenantID, &actions); _dbErr != nil {
+			if _dbErr := coredata.QueryRowsCtx(r.Context(), coredata.ResComplianceActions, database.ColsComplianceCases, "tenant_id", tenantID, &actions); _dbErr != nil {
 				slog.Error("X-08: compliance actions DB query failed — dashboard will show DATA_UNAVAILABLE",
 					"tenant_id", tenantID, "err", _dbErr)
 				dataUnavailable = true
 			}
 		} else {
-			if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreCompliance, database.ColsComplianceCases, "tenant_id", tenantID, &actions); _dbErr != nil {
+			if _dbErr := coredata.QueryRowsCtx(r.Context(), coredata.ResComplianceActions, database.ColsComplianceCases, "tenant_id", tenantID, &actions); _dbErr != nil {
 				slog.Error("X-08: compliance actions DB query failed (no tenant filter) — dashboard will show DATA_UNAVAILABLE", "err", _dbErr)
 				dataUnavailable = true
 			}

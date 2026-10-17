@@ -4,13 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/ocx/shared/infra/auth"
 	"github.com/ocx/shared/infra/database"
+	"github.com/ocx/shared/infra/serviceclient"
 	"github.com/ocx/shared/logger"
 	"github.com/ocx/shared/respond"
 )
@@ -23,6 +26,35 @@ import (
 //
 // All three call TABLE-returning Postgres RPCs via direct pgx queries.
 // Zero N+1 — one DB round-trip replaces 1-per-row fetch looperations.
+
+// gateStatsFn returns per-policy gate verdict aggregates for a tenant (policyID "" = all). The
+// gate decision log is core's, so the production source is core's /internal/v1/gate/policy-stats
+// (SetGateStatsClient); with no source wired, policies simply have no verdict history.
+var gateStatsFn func(ctx context.Context, tenantID, policyID string) ([]serviceclient.PolicyGateStats, error)
+
+// SetGateStatsClient wires the core client the gate stats come from.
+func SetGateStatsClient(c *serviceclient.Client) {
+	if c == nil {
+		gateStatsFn = nil
+		return
+	}
+	gateStatsFn = c.GatePolicyStats
+}
+
+func fetchGateStats(ctx context.Context, tenantID, policyID string) (map[string]serviceclient.PolicyGateStats, error) {
+	out := map[string]serviceclient.PolicyGateStats{}
+	if gateStatsFn == nil {
+		return out, nil
+	}
+	rows, err := gateStatsFn(ctx, tenantID, policyID)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.PolicyID] = r
+	}
+	return out, nil
+}
 
 // policyProjectionCTE exposes compl_core_projection(kind='policy') as a relation shaped like the
 // policy columns these queries need (Row 9 / CM-01: no core_policies read). Embed as the FIRST
@@ -107,15 +139,10 @@ func getPolicySummary(ctx context.Context, p *database.PGXPool, tenantID string)
 		       COALESCE(p.is_active, p.status = 'ACTIVE') AS is_active,
 		       COALESCE(p.updated_at, p.created_at, NOW()) AS updated_at,
 		       COALESCE(p.created_at, NOW()),
-		       lv.action
+		       NULL::text
 		FROM pol p
 		CROSS JOIN (SELECT GREATEST(COUNT(*), 1) AS n FROM compl_core_projection
 		             WHERE tenant_id = $1 AND kind = 'agent' AND payload->>'status' = 'ACTIVE') ta
-		LEFT JOIN LATERAL (
-		    SELECT v.verdict AS action
-		      FROM lv_core_gate_decisions v
-		     WHERE v.tenant_id = p.tenant_id AND v.policy_id = p.policy_id
-		     ORDER BY v.created_at DESC LIMIT 1) lv ON true
 		WHERE p.tenant_id = $1 AND p.deleted_at IS NULL
 		ORDER BY is_active DESC, updated_at DESC`
 
@@ -140,7 +167,21 @@ func getPolicySummary(ctx context.Context, p *database.PGXPool, tenantID string)
 		r.Metadata = json.RawMessage(metaRaw)
 		out = append(out, r)
 	}
-	return out, pgxRows.Err()
+	if err := pgxRows.Err(); err != nil {
+		return out, err
+	}
+	// last_verdict comes from core's gate decision log; a stats outage only blanks that column.
+	if stats, serr := fetchGateStats(ctx, tenantID, ""); serr != nil {
+		slog.Warn("policy summary: gate stats unavailable; last_verdict omitted", "tenant_id", tenantID, "error", serr)
+	} else {
+		for i := range out {
+			if st, ok := stats[out[i].ID]; ok && st.LastVerdict != "" {
+				v := st.LastVerdict
+				out[i].LastVerdict = &v
+			}
+		}
+	}
+	return out, nil
 }
 
 // GET /api/v1/gra/compliance-obligations
@@ -308,45 +349,62 @@ func HandleGetPolicyImpact(pgx *database.PGXPool) http.HandlerFunc {
 	}
 }
 
-// policyImpactSQL scores each policy from its gate verdict history in
-// the gate decision log (lv_core_gate_decisions). impact_score is on a 0-1 scale (fraction of evaluated
-// actions the policy blocked); policies with no verdicts fall back to
-// priority/10. $2 = ” returns all policies, otherwise only that policy.
+// policyImpactSQL reads the policy facts the impact score needs from the policy projection.
+// The verdict history (total / blocked / distinct agents / last verdict) is core's gate decision
+// log, merged in Go from core's gate stats (fetchGateStats). an empty $2 returns all policies,
+// otherwise only that policy.
 const policyImpactSQL = `
-	WITH ` + policyProjectionCTE + `, stats AS (
-		SELECT p.policy_id, p.name, COALESCE(p.status, '') AS status, p.priority,
-		       COALESCE(array_length(p.bound_agents, 1), 0) AS bound_agents,
-		       COALESCE(p.updated_at, p.created_at, NOW()) AS policy_ts,
-		       COUNT(v.decision_id) AS total,
-		       COUNT(*) FILTER (WHERE v.verdict IN ('BLOCK', 'DENY')) AS blocked,
-		       COUNT(DISTINCT v.agent_id) AS verdict_agents,
-		       MAX(v.created_at) AS last_verdict_at
-		FROM pol p
-		LEFT JOIN lv_core_gate_decisions v ON v.policy_id = p.policy_id AND v.tenant_id = p.tenant_id
-		WHERE p.tenant_id = $1 AND p.deleted_at IS NULL AND ($2 = '' OR p.policy_id = $2)
-		GROUP BY p.policy_id, p.name, p.status, p.priority, p.bound_agents, p.updated_at, p.created_at
-	), scored AS (
-		SELECT *, CASE WHEN total > 0 THEN blocked::float8 / total
-		               ELSE LEAST(1.0, COALESCE(priority, 5) / 10.0) END AS impact
-		FROM stats
-	)
-	SELECT policy_id, name, status, impact::float8,
-	       GREATEST(verdict_agents, bound_agents)::bigint,
-	       CASE WHEN impact >= 0.8 THEN 'CRITICAL' WHEN impact >= 0.6 THEN 'HIGH'
-	            WHEN impact >= 0.4 THEN 'MEDIUM' ELSE 'LOW' END,
-	       CASE WHEN total > 0 THEN LEAST(1.0, total / 100.0)::float8 END,
-	       COALESCE(last_verdict_at, policy_ts)
-	FROM scored
-	ORDER BY impact DESC
-	LIMIT 500`
+	WITH ` + policyProjectionCTE + `
+	SELECT p.policy_id, p.name, COALESCE(p.status, ''), p.priority,
+	       COALESCE(array_length(p.bound_agents, 1), 0)::bigint,
+	       COALESCE(p.updated_at, p.created_at, NOW())
+	FROM pol p
+	WHERE p.tenant_id = $1 AND p.deleted_at IS NULL AND ($2 = '' OR p.policy_id = $2)`
+
+// policyImpactLimit caps the rows returned (highest impact first).
+const policyImpactLimit = 500
 
 func getPolicyImpactAnalysis(ctx context.Context, p *database.PGXPool, tenantID string) ([]PolicyImpactRow, error) {
 	return queryPolicyImpact(ctx, p, tenantID, "")
 }
 
+// scorePolicyImpact: impact is the fraction of evaluated actions the policy blocked; policies
+// with no verdicts fall back to priority/10 (capped at 1).
+func scorePolicyImpact(total, blocked int64, priority *int) float64 {
+	if total > 0 {
+		return float64(blocked) / float64(total)
+	}
+	pr := 5.0
+	if priority != nil {
+		pr = float64(*priority)
+	}
+	if v := pr / 10.0; v < 1.0 {
+		return v
+	}
+	return 1.0
+}
+
+func riskLevelFor(impact float64) string {
+	switch {
+	case impact >= 0.8:
+		return "CRITICAL"
+	case impact >= 0.6:
+		return "HIGH"
+	case impact >= 0.4:
+		return "MEDIUM"
+	}
+	return "LOW"
+}
+
 func queryPolicyImpact(ctx context.Context, p *database.PGXPool, tenantID, policyID string) ([]PolicyImpactRow, error) {
 	if p == nil {
 		return []PolicyImpactRow{}, nil
+	}
+	// Impact gates destructive policy changes, so a gate-stats outage is an error here rather
+	// than a silently priority-only score.
+	stats, err := fetchGateStats(ctx, tenantID, policyID)
+	if err != nil {
+		return nil, fmt.Errorf("policy impact gate stats: %w", err)
 	}
 	pgxRows, err := p.Query(ctx, policyImpactSQL, tenantID, policyID)
 	if err != nil {
@@ -357,16 +415,42 @@ func queryPolicyImpact(ctx context.Context, p *database.PGXPool, tenantID, polic
 	out := []PolicyImpactRow{}
 	for pgxRows.Next() {
 		var r PolicyImpactRow
-		if err := pgxRows.Scan(
-			&r.PolicyID, &r.PolicyName, &r.PolicyStatus,
-			&r.ImpactScore, &r.AffectedAgents,
-			&r.RiskLevel, &r.Confidence, &r.LastEvaluated,
-		); err != nil {
+		var priority *int
+		var boundAgents int64
+		var policyTS time.Time
+		if err := pgxRows.Scan(&r.PolicyID, &r.PolicyName, &r.PolicyStatus, &priority, &boundAgents, &policyTS); err != nil {
 			return nil, fmt.Errorf("policy impact scan: %w", err)
+		}
+		st := stats[r.PolicyID]
+		r.ImpactScore = scorePolicyImpact(st.Total, st.Blocked, priority)
+		r.AffectedAgents = boundAgents
+		if st.VerdictAgents > boundAgents {
+			r.AffectedAgents = st.VerdictAgents
+		}
+		r.RiskLevel = riskLevelFor(r.ImpactScore)
+		if st.Total > 0 {
+			c := float64(st.Total) / 100.0
+			if c > 1 {
+				c = 1
+			}
+			r.Confidence = &c
+		}
+		r.LastEvaluated = policyTS
+		if st.LastVerdictAt != "" {
+			if t, perr := time.Parse(time.RFC3339Nano, st.LastVerdictAt); perr == nil {
+				r.LastEvaluated = t
+			}
 		}
 		out = append(out, r)
 	}
-	return out, pgxRows.Err()
+	if err := pgxRows.Err(); err != nil {
+		return nil, err
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].ImpactScore > out[j].ImpactScore })
+	if len(out) > policyImpactLimit {
+		out = out[:policyImpactLimit]
+	}
+	return out, nil
 }
 
 // POST /api/v1/gov/rules/{id}/impact-preview

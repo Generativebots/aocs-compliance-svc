@@ -29,6 +29,7 @@ package compliance
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -40,6 +41,7 @@ import (
 	dcompliance "github.com/ocx/compliance/internal/compliance/domain/compliance"
 	"github.com/ocx/shared/infra/concurrent"
 	"github.com/ocx/shared/infra/database"
+	"github.com/ocx/shared/infra/serviceclient"
 )
 
 const (
@@ -96,29 +98,43 @@ func StartGateViolationHarvester(ctx context.Context, db gateHarvestStore) {
 	})
 }
 
-// gateHarvestDiscoverPred selects tenants with a blocking decision or an
-// override inside the catch-up window (superset of what harvestTenant reads).
-const gateHarvestDiscoverPred = `w.verdict IN ('BLOCK','ESC') AND w.created_at > $1`
+// gateFeedClient is the gate decision feed served by ocx-core-svc (the decision log is core's).
+type gateFeedClient interface {
+	GateHarvestTenants(ctx context.Context, since time.Time) ([]string, error)
+	GateHarvest(ctx context.Context, tenantID string, since time.Time, limit int) ([]serviceclient.GateHarvestRow, error)
+	GateOverrides(ctx context.Context, tenantID string, txIDs []string) (map[string]json.RawMessage, error)
+}
+
+var gateFeed gateFeedClient
+
+// SetGateFeedClient wires the core client the harvester reads gate decisions from. Without it the
+// harvester has no source and records nothing (logged each run).
+func SetGateFeedClient(c *serviceclient.Client) {
+	if c == nil {
+		gateFeed = nil
+		return
+	}
+	gateFeed = c
+}
 
 func runGateHarvest(ctx context.Context, db gateHarvestStore, now time.Time) {
+	feed := gateFeed
+	if feed == nil {
+		slog.Warn("GateViolationHarvester: no core gate feed configured — gate refusals are not being recorded")
+		return
+	}
 	floor := now.Add(-gateHarvestCatchUp)
-	// Tenants with recent blocking decisions; overrides (rare) are covered by
-	// a second discovery on the event log.
+	// Tenants with recent blocking decisions or overrides, discovered by core.
 	tenants := map[string]bool{}
-	for _, d := range []struct{ table, pred string }{
-		{"core_gate_decisions", gateHarvestDiscoverPred},
-		{"core_events", `w.event_type = 'gate.verdict_overridden' AND w.created_at > $1`},
-	} {
-		ids, err := database.ListTenantsWithWork(ctx, db, gateHarvestWorker, d.table, d.pred, floor)
-		if err != nil {
-			if ctx.Err() == nil {
-				slog.Error("GateViolationHarvester: tenant discovery failed", "table", d.table, "error", err)
-			}
-			continue
+	found, err := feed.GateHarvestTenants(ctx, floor)
+	if err != nil {
+		if ctx.Err() == nil {
+			slog.Error("GateViolationHarvester: tenant discovery failed", "error", err)
 		}
-		for _, id := range ids {
-			tenants[id] = true
-		}
+		return
+	}
+	for _, id := range found {
+		tenants[id] = true
 	}
 	ids := make([]string, 0, len(tenants))
 	for id := range tenants {
@@ -156,7 +172,7 @@ func harvestTenantBatch(ctx context.Context, db gateHarvestStore, tenantID strin
 	var res gateHarvestResult
 	err := db.RunTenantTx(txCtx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
 		var hErr error
-		res, hErr = harvestTenant(ctx, pgxHarvestOps{tx: tx}, tenantID, now)
+		res, hErr = harvestTenant(ctx, pgxHarvestOps{tx: tx, feed: gateFeed}, tenantID, now)
 		return hErr
 	})
 	return res, err
@@ -330,80 +346,39 @@ func caseTitle(g violationGroup) string {
 
 // ── SQL (pgx) ──────────────────────────────────────────────────────────────
 
-type pgxHarvestOps struct{ tx pgx.Tx }
+type pgxHarvestOps struct {
+	tx   pgx.Tx
+	feed gateFeedClient
+}
 
 const gateHarvestLockSQL = `SELECT pg_advisory_xact_lock(hashtext('compl_gate_harvest:' || $1))`
 
-// gateHarvestInsertSQL records the tenant's new blocking decisions.
-//
-//	$1 tenant_id  $2 catch-up floor  $3 overlap (seconds)  $4 batch size
-//
-// Watermark: newest harvested decision − overlap, never before the floor.
-// Sources: BLOCK/ESC decisions since the watermark, plus decisions an
-// operator overrode since the watermark. The effective verdict is the
-// override's when present.
-var gateHarvestInsertSQL = `
-WITH wm AS (
-    SELECT GREATEST(COALESCE(max(detected_at) - $3::int * interval '1 second', $2::timestamptz),
-                    $2::timestamptz) AS since
-      FROM ` + database.TblComplPolicyViolations + `
-     WHERE tenant_id = $1 AND source_tx_id IS NOT NULL
-), cand AS (
-    SELECT d.decision_id
-      FROM ` + database.TblCoreGateDecisions + ` d, wm
-     WHERE d.tenant_id = $1 AND d.verdict IN ('BLOCK','ESC') AND d.created_at > wm.since
-    UNION
-    SELECT e.entity_id
-      FROM ` + database.TblCoreEvents + ` e, wm
-     WHERE e.tenant_id = $1 AND e.event_type = 'gate.verdict_overridden' AND e.created_at > wm.since
-       AND e.entity_id IS NOT NULL
-), src AS (
-    SELECT d.tx_id, d.agent_id, d.tool_name, NULLIF(d.policy_id, '') AS policy_id, d.action_class,
-           d.trust_score, d.anomaly_score, d.execution_id, d.hitl_decision_id, d.created_at,
-           d.verdict AS gate_verdict, d.payload->'override' AS override,
-           COALESCE(NULLIF(d.payload->'override'->>'verdict', ''), d.verdict) AS eff_verdict,
-           COALESCE(d.verdict_reason, '') AS reason
-      FROM ` + database.TblCoreGateDecisions + ` d
-      JOIN cand c ON c.decision_id = d.decision_id
-     WHERE d.tenant_id = $1
-)
+// gateHarvestWatermarkSQL: the tenant's harvest watermark — newest harvested decision minus the
+// overlap, never before the floor. $1 tenant_id  $2 catch-up floor  $3 overlap (seconds).
+const gateHarvestWatermarkSQL = `
+SELECT GREATEST(COALESCE(max(detected_at) - $3::int * interval '1 second', $2::timestamptz),
+                $2::timestamptz)
+  FROM ` + database.TblComplPolicyViolations + `
+ WHERE tenant_id = $1 AND source_tx_id IS NOT NULL`
+
+const gateHarvestRecordedSQL = `
+SELECT source_tx_id FROM ` + database.TblComplPolicyViolations + `
+ WHERE tenant_id = $1 AND source_tx_id = ANY($2::text[])`
+
+// gateHarvestPolicySQL reads the policy name and declared control_refs from the policy projection
+// (compl_core_projection), not from core's policy table.
+const gateHarvestPolicySQL = `
+SELECT COALESCE(payload->>'name', ''), payload->'metadata'->'control_refs'
+  FROM compl_core_projection
+ WHERE tenant_id = $1 AND kind = 'policy' AND entity_id = $2`
+
+// gateHarvestInsertRowSQL records one blocking decision. Unique per (tenant, source_tx_id), so
+// reruns and concurrent replicas are idempotent.
+const gateHarvestInsertRowSQL = `
 INSERT INTO ` + database.TblComplPolicyViolations + ` AS v
        (tenant_id, policy_id, policy_name, agent_id, execution_id, violation_type, severity,
         description, evidence, details, status, detected_at, source_tx_id)
-SELECT $1, s.policy_id, p.name, s.agent_id, s.execution_id,
-       CASE s.eff_verdict WHEN 'BLOCK' THEN '` + dcompliance.ViolationTypeGateBlock + `' ELSE '` + dcompliance.ViolationTypeGateEscalation + `' END,
-       CASE WHEN s.eff_verdict = 'BLOCK' AND s.action_class = 'CLASS_A' THEN 'CRITICAL'
-            WHEN s.eff_verdict = 'BLOCK' THEN 'HIGH'
-            ELSE 'MEDIUM' END,
-       format('Gate %s: agent %s, tool %s — %s',
-              CASE s.eff_verdict WHEN 'BLOCK' THEN 'blocked' ELSE 'escalated' END,
-              s.agent_id, s.tool_name, COALESCE(NULLIF(s.reason, ''), 'no reason recorded')),
-       jsonb_strip_nulls(jsonb_build_object(
-           'source', 'core_gate_decisions', 'tx_id', s.tx_id, 'gate_verdict', s.gate_verdict,
-           'override', s.override, 'trust_score', s.trust_score, 'anomaly_score', s.anomaly_score,
-           'hitl_decision_id', s.hitl_decision_id)),
-       jsonb_strip_nulls(jsonb_build_object(
-           'tool_name', s.tool_name, 'action_class', s.action_class, 'reason', NULLIF(s.reason, ''),
-           -- GX-16: controls the policy declares it enforces (policy metadata
-           -- control_refs) travel with the violation so continuous compliance
-           -- can link it, snapshotted as they were when the gate refused.
-           'control_refs', CASE WHEN jsonb_typeof(p.metadata->'control_refs') = 'array'
-                                AND jsonb_array_length(p.metadata->'control_refs') > 0
-                               THEN p.metadata->'control_refs' END)),
-       'OPEN', s.created_at, s.tx_id
-  FROM src s
-  LEFT JOIN ` + database.TblCorePolicies + ` p ON p.policy_id = s.policy_id AND p.tenant_id = $1
- WHERE s.eff_verdict IN ('BLOCK','ESC')
-   AND s.reason <> 'KILL_SWITCH_ACTIVE'
-   AND s.reason NOT LIKE 'hitl_lock_active%'
-   AND s.reason NOT LIKE 'internal pipeline error%'
-   AND s.reason NOT LIKE 'HITL case not persisted%'
-   -- Skip what is already recorded BEFORE the LIMIT: otherwise a batch of
-   -- already-harvested rows inside the overlap would stall the watermark.
-   AND NOT EXISTS (SELECT 1 FROM ` + database.TblComplPolicyViolations + ` x
-                    WHERE x.tenant_id = $1 AND x.source_tx_id = s.tx_id)
- ORDER BY s.created_at
- LIMIT $4
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, 'OPEN', $11, $12)
 ON CONFLICT (tenant_id, source_tx_id) WHERE source_tx_id IS NOT NULL DO NOTHING
 RETURNING v.violation_id, COALESCE(v.agent_id, ''), COALESCE(v.policy_id, ''), COALESCE(v.policy_name, ''),
           COALESCE(v.details->>'tool_name', ''), v.severity, v.violation_type, COALESCE(v.description, ''),
@@ -414,41 +389,237 @@ func (o pgxHarvestOps) lockTenant(ctx context.Context, tenantID string) error {
 	return err
 }
 
-func (o pgxHarvestOps) insertViolations(ctx context.Context, tenantID string, floor time.Time) ([]harvestedViolation, error) {
-	rows, err := o.tx.Query(ctx, gateHarvestInsertSQL, tenantID, floor, int(gateHarvestOverlap/time.Second), gateHarvestBatch)
-	if err != nil {
-		return nil, err
+// gateExcluded: operator holds, internal pipeline errors and no-decision verdicts are not
+// violations (the decision that opened a hold was recorded; a gate fault is already a HITL case).
+func gateExcluded(reason string) bool {
+	return reason == "KILL_SWITCH_ACTIVE" ||
+		strings.HasPrefix(reason, "hitl_lock_active") ||
+		strings.HasPrefix(reason, "internal pipeline error") ||
+		strings.HasPrefix(reason, "HITL case not persisted")
+}
+
+// gateEffectiveVerdict is the operator override's verdict when present, else the gate's.
+func gateEffectiveVerdict(d serviceclient.GateHarvestRow) string {
+	if len(d.Override) > 0 && string(d.Override) != "null" {
+		var ov struct {
+			Verdict string `json:"verdict"`
+		}
+		if json.Unmarshal(d.Override, &ov) == nil && ov.Verdict != "" {
+			return ov.Verdict
+		}
 	}
-	defer rows.Close()
-	var out []harvestedViolation
-	for rows.Next() {
-		var v harvestedViolation
-		if err := rows.Scan(&v.ViolationID, &v.AgentID, &v.PolicyID, &v.PolicyName, &v.ToolName,
-			&v.Severity, &v.Type, &v.Description, &v.DetectedAt); err != nil {
+	return d.Verdict
+}
+
+func gateSeverity(eff string, actionClass *string) string {
+	switch {
+	case eff == "BLOCK" && actionClass != nil && *actionClass == "CLASS_A":
+		return "CRITICAL"
+	case eff == "BLOCK":
+		return "HIGH"
+	}
+	return "MEDIUM"
+}
+
+// stripNil mirrors jsonb_strip_nulls for the top-level object (typed nil pointers and JSON
+// null values are dropped).
+func stripNil(m map[string]any) []byte {
+	b, _ := json.Marshal(m)
+	var kv map[string]json.RawMessage
+	if json.Unmarshal(b, &kv) != nil {
+		return b
+	}
+	for k, v := range kv {
+		if string(v) == "null" {
+			delete(kv, k)
+		}
+	}
+	out, _ := json.Marshal(kv)
+	return out
+}
+
+func (o pgxHarvestOps) insertViolations(ctx context.Context, tenantID string, floor time.Time) ([]harvestedViolation, error) {
+	if o.feed == nil {
+		return nil, errors.New("no core gate feed configured")
+	}
+	var since time.Time
+	if err := o.tx.QueryRow(ctx, gateHarvestWatermarkSQL, tenantID, floor, int(gateHarvestOverlap/time.Second)).Scan(&since); err != nil {
+		return nil, fmt.Errorf("watermark: %w", err)
+	}
+	decisions, err := o.feed.GateHarvest(ctx, tenantID, since, 0)
+	if err != nil {
+		return nil, fmt.Errorf("fetch gate decisions from core: %w", err)
+	}
+	// Decisions that may become violations; skip what is already recorded BEFORE the batch cap
+	// so a window of already-harvested rows cannot stall the watermark.
+	var cand []serviceclient.GateHarvestRow
+	var txIDs []string
+	for _, d := range decisions {
+		eff := gateEffectiveVerdict(d)
+		if (eff != "BLOCK" && eff != "ESC") || gateExcluded(d.Reason) || d.TxID == "" {
+			continue
+		}
+		cand = append(cand, d)
+		txIDs = append(txIDs, d.TxID)
+	}
+	recorded := map[string]bool{}
+	if len(txIDs) > 0 {
+		rows, qerr := o.tx.Query(ctx, gateHarvestRecordedSQL, tenantID, txIDs)
+		if qerr != nil {
+			return nil, fmt.Errorf("recorded lookup: %w", qerr)
+		}
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			recorded[id] = true
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
 			return nil, err
+		}
+	}
+	type policyInfo struct {
+		name string
+		refs json.RawMessage
+	}
+	policies := map[string]policyInfo{}
+	var out []harvestedViolation
+	for _, d := range cand {
+		if recorded[d.TxID] {
+			continue
+		}
+		if len(out) >= gateHarvestBatch {
+			break
+		}
+		detectedAt, perr := time.Parse(time.RFC3339Nano, d.CreatedAt)
+		if perr != nil {
+			return nil, fmt.Errorf("decision %s created_at: %w", d.TxID, perr)
+		}
+		var pol policyInfo
+		if d.PolicyID != nil && *d.PolicyID != "" {
+			var ok bool
+			if pol, ok = policies[*d.PolicyID]; !ok {
+				var refs []byte
+				switch qerr := o.tx.QueryRow(ctx, gateHarvestPolicySQL, tenantID, *d.PolicyID).Scan(&pol.name, &refs); {
+				case qerr == nil:
+					pol.refs = refs
+				case errors.Is(qerr, pgx.ErrNoRows):
+				default:
+					return nil, fmt.Errorf("policy lookup: %w", qerr)
+				}
+				policies[*d.PolicyID] = pol
+			}
+		}
+		eff := gateEffectiveVerdict(d)
+		vtype, verb := dcompliance.ViolationTypeGateEscalation, "escalated"
+		if eff == "BLOCK" {
+			vtype, verb = dcompliance.ViolationTypeGateBlock, "blocked"
+		}
+		reason := d.Reason
+		if reason == "" {
+			reason = "no reason recorded"
+		}
+		desc := fmt.Sprintf("Gate %s: agent %s, tool %s — %s", verb, d.AgentID, d.ToolName, reason)
+		evidence := stripNil(map[string]any{
+			"source": "core_gate_decisions", "tx_id": d.TxID, "gate_verdict": d.Verdict,
+			"override": d.Override, "trust_score": d.TrustScore, "anomaly_score": d.AnomalyScore,
+			"hitl_decision_id": d.HitlDecisionID,
+		})
+		var reasonOrNil any
+		if d.Reason != "" {
+			reasonOrNil = d.Reason
+		}
+		details := map[string]any{"tool_name": d.ToolName, "action_class": d.ActionClass, "reason": reasonOrNil}
+		// GX-16: controls the policy declares it enforces travel with the violation, snapshotted
+		// as they were when the gate refused.
+		var refs []json.RawMessage
+		if json.Unmarshal(pol.refs, &refs) == nil && len(refs) > 0 {
+			details["control_refs"] = pol.refs
+		}
+		var policyName any
+		if pol.name != "" {
+			policyName = pol.name
+		}
+		sev := gateSeverity(eff, d.ActionClass)
+		var v harvestedViolation
+		err := o.tx.QueryRow(ctx, gateHarvestInsertRowSQL, tenantID, d.PolicyID, policyName, d.AgentID,
+			d.ExecutionID, vtype, sev, desc, string(evidence), string(stripNil(details)), detectedAt, d.TxID,
+		).Scan(&v.ViolationID, &v.AgentID, &v.PolicyID, &v.PolicyName, &v.ToolName,
+			&v.Severity, &v.Type, &v.Description, &v.DetectedAt)
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue // recorded concurrently
+		}
+		if err != nil {
+			return nil, fmt.Errorf("insert violation for %s: %w", d.TxID, err)
 		}
 		out = append(out, v)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
-// gateHarvestWaiveSQL waives open gate violations whose decision an operator
-// overrode to ALLOW. $1 tenant_id.
-var gateHarvestWaiveSQL = `
+// gateHarvestOpenTxSQL lists the tenant's open gate violations (by decision tx id) whose decision
+// may since have been overridden. $1 tenant_id.
+const gateHarvestOpenTxSQL = `
+SELECT source_tx_id FROM ` + database.TblComplPolicyViolations + `
+ WHERE tenant_id = $1 AND source_tx_id IS NOT NULL AND status IN ('OPEN', 'ACKNOWLEDGED')
+ ORDER BY detected_at DESC
+ LIMIT 1000`
+
+// gateHarvestWaiveSQL waives one open gate violation whose decision an operator overrode to
+// ALLOW. $1 tenant_id  $2 source_tx_id  $3 override record.
+const gateHarvestWaiveSQL = `
 UPDATE ` + database.TblComplPolicyViolations + ` v
    SET status = 'WAIVED', resolved_at = now(), updated_at = now(),
-       details = COALESCE(v.details, '{}'::jsonb) || jsonb_build_object('waived_by_override', d.payload->'override')
-  FROM ` + database.TblCoreGateDecisions + ` d
- WHERE v.tenant_id = $1 AND v.source_tx_id IS NOT NULL AND v.status IN ('OPEN', 'ACKNOWLEDGED')
-   AND d.tenant_id = $1 AND d.tx_id = v.source_tx_id
-   AND d.payload->'override'->>'verdict' = 'ALLOW'`
+       details = COALESCE(v.details, '{}'::jsonb) || jsonb_build_object('waived_by_override', $3::jsonb)
+ WHERE v.tenant_id = $1 AND v.source_tx_id = $2 AND v.status IN ('OPEN', 'ACKNOWLEDGED')`
 
 func (o pgxHarvestOps) waiveOverridden(ctx context.Context, tenantID string) (int, error) {
-	tag, err := o.tx.Exec(ctx, gateHarvestWaiveSQL, tenantID)
+	if o.feed == nil {
+		return 0, errors.New("no core gate feed configured")
+	}
+	rows, err := o.tx.Query(ctx, gateHarvestOpenTxSQL, tenantID)
 	if err != nil {
 		return 0, err
 	}
-	return int(tag.RowsAffected()), nil
+	var txIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		txIDs = append(txIDs, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	if len(txIDs) == 0 {
+		return 0, nil
+	}
+	overrides, err := o.feed.GateOverrides(ctx, tenantID, txIDs)
+	if err != nil {
+		return 0, fmt.Errorf("fetch overrides from core: %w", err)
+	}
+	waived := 0
+	for _, id := range txIDs {
+		ov, ok := overrides[id]
+		if !ok {
+			continue
+		}
+		if len(ov) == 0 {
+			ov = json.RawMessage("null")
+		}
+		tag, err := o.tx.Exec(ctx, gateHarvestWaiveSQL, tenantID, id, string(ov))
+		if err != nil {
+			return waived, err
+		}
+		waived += int(tag.RowsAffected())
+	}
+	return waived, nil
 }
 
 var gateHarvestFindCaseSQL = `

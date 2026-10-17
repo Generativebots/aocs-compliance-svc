@@ -13,6 +13,7 @@
 package compliance
 
 import (
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -58,7 +59,7 @@ func complianceList(db database.DB, actionType string) http.HandlerFunc {
 		var err error
 		if from != "" || to != "" {
 			// Date-window query — also filter by action_type via metadata or compound
-			err = db.QueryRowsWithWindow(database.TblCoreEnforcementActions, database.ColsEnforcementActions, tenantID, from, to, &rows)
+			err = coredata.QueryRowsWithWindow(coredata.ResEnforcementActions, database.ColsEnforcementActions, tenantID, from, to, &rows)
 			if err == nil {
 				// Post-filter by action_type (date-window helper doesn't take a second column)
 				filtered := rows[:0]
@@ -71,7 +72,7 @@ func complianceList(db database.DB, actionType string) http.HandlerFunc {
 			}
 		} else {
 			// 90-day compound query: tenant_id + action_type
-			err = db.QueryRowsWithin90DaysCompound(database.TblCoreEnforcementActions, database.ColsEnforcementActions,
+			err = coredata.QueryRowsWithin90DaysCompound(coredata.ResEnforcementActions, database.ColsEnforcementActions,
 				tenantID, "action_type", actionType, &rows)
 		}
 		if err != nil {
@@ -112,7 +113,7 @@ func complianceGet(db database.DB, actionType string) http.HandlerFunc {
 		// AUDIT-was querying by "case_id" which is a FK to core_compliance_cases.
 		// This returned ALL enforcement actions for a compliance case, not the specific record.
 		// The PK of core_enforcement_actions is enforcement_action_id. Use the correct PK.
-		if err := db.QueryRowsCompound(database.TblCoreEnforcementActions, database.ColsEnforcementActions,
+		if err := coredata.QueryRowsCompound(coredata.ResEnforcementActions, database.ColsEnforcementActions,
 			"enforcement_action_id", id, "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "not found")
 			return
@@ -168,7 +169,7 @@ func complianceCreate(db database.DB, actionType string) http.HandlerFunc {
 			}
 			row["expires_at"] = req.ExpiresAt
 		}
-		if err := db.InsertRow(database.TblCoreEnforcementActions, row); err != nil {
+		if err := coredata.InsertRow(coredata.ResEnforcementActions, row); err != nil {
 			slog.Error("complianceCreate", "action_type", actionType, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "insert failed", err)
 			return
@@ -229,7 +230,7 @@ func complianceUpdate(db database.DB) http.HandlerFunc {
 		if !complianceExists(w, db, tenantID, id) {
 			return
 		}
-		if err := db.UpdateRowCompound(database.TblCoreEnforcementActions, "enforcement_action_id", id, "tenant_id", tenantID, update); err != nil {
+		if err := coredata.UpdateRowCompound(coredata.ResEnforcementActions, "enforcement_action_id", id, "tenant_id", tenantID, update); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "update failed", err)
 			return
 		}
@@ -255,7 +256,7 @@ func complianceDelete(db database.DB) http.HandlerFunc {
 		if !complianceExists(w, db, tenantID, id) {
 			return
 		}
-		if err := db.SoftDeleteRowCompound(database.TblCoreEnforcementActions, "enforcement_action_id", id, "tenant_id", tenantID); err != nil {
+		if err := coredata.SoftDeleteRowCompound(coredata.ResEnforcementActions, "enforcement_action_id", id, "tenant_id", tenantID); err != nil {
 			slog.Error("complianceDelete", "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "db operation failed", err)
 			return
@@ -269,7 +270,7 @@ func complianceDelete(db database.DB) http.HandlerFunc {
 // a bad id returned a fake 200. Writes 404/500 itself.
 func complianceExists(w http.ResponseWriter, db database.DB, tenantID, id string) bool {
 	var rows []map[string]any
-	if err := db.QueryRowsCompound(database.TblCoreEnforcementActions, "enforcement_action_id",
+	if err := coredata.QueryRowsCompound(coredata.ResEnforcementActions, "enforcement_action_id",
 		"enforcement_action_id", id, "tenant_id", tenantID, &rows); err != nil {
 		respond.InternalError(w, http.StatusInternalServerError, "lookup enforcement record", err)
 		return false
@@ -337,7 +338,7 @@ func complianceSetStatus(db database.DB, newStatus string) http.HandlerFunc {
 			return
 		}
 		var cur []map[string]any
-		if err := db.QueryRowsCompound(database.TblCoreEnforcementActions, "enforcement_action_id,status",
+		if err := coredata.QueryRowsCompound(coredata.ResEnforcementActions, "enforcement_action_id,status",
 			"enforcement_action_id", id, "tenant_id", tenantID, &cur); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "lookup enforcement record", err)
 			return
@@ -351,7 +352,7 @@ func complianceSetStatus(db database.DB, newStatus string) http.HandlerFunc {
 		} else {
 			delete(update, "previous_status")
 		}
-		if err := db.UpdateRowCompound(database.TblCoreEnforcementActions, "enforcement_action_id", id, "tenant_id", tenantID, update); err != nil {
+		if err := coredata.UpdateRowCompound(coredata.ResEnforcementActions, "enforcement_action_id", id, "tenant_id", tenantID, update); err != nil {
 			slog.Error("complianceSetStatus", "status", newStatus, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "db operation failed", err)
 			return
@@ -448,7 +449,7 @@ func HandleListViolations(db database.DB) http.HandlerFunc {
 		deptID := r.URL.Query().Get("department_id")
 
 		var rows []map[string]any
-		if err := db.QueryRowsCursor(database.TblCoreEnforcementActions, database.ColsEnforcementActions,
+		if err := coredata.QueryRowsCursor(coredata.ResEnforcementActions, database.ColsEnforcementActions,
 			"tenant_id", tenantID, cp, &rows); err != nil {
 			slog.Error("HandleListViolations: query failed", "err", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "list violations", err)
@@ -574,7 +575,7 @@ func HandleEscalateViolation(db database.DB) http.HandlerFunc {
 		if !complianceExists(w, db, tenantID, id) {
 			return
 		}
-		if err := db.UpdateRowCompound(database.TblCoreEnforcementActions, "enforcement_action_id", id, "tenant_id", tenantID, update); err != nil {
+		if err := coredata.UpdateRowCompound(coredata.ResEnforcementActions, "enforcement_action_id", id, "tenant_id", tenantID, update); err != nil {
 			slog.Error("EscalateViolation", "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "db operation failed", err)
 			return
@@ -770,8 +771,8 @@ func HandleBulkViolations(db database.DB) http.HandlerFunc {
 
 		updated := 0
 		for _, id := range body.IDs {
-			if err := db.UpdateRowCompound(
-				database.TblCoreEnforcementActions,
+			if err := coredata.UpdateRowCompound(
+				coredata.ResEnforcementActions,
 				"enforcement_action_id", id,
 				"tenant_id", tenantID,
 				update,

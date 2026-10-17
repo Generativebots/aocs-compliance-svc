@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -104,7 +105,7 @@ func HandleListEvidence(db database.DB) http.HandlerFunc {
 		}
 
 		var records []database.QCoreEvidenceRecord
-		if err := db.QueryRowsCtx(r.Context(), database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, &records); err != nil {
+		if err := coredata.QueryRowsCtx(r.Context(), coredata.ResEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, &records); err != nil {
 			slog.Error("ListEvidence DB query failed", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to list evidence records", err)
 			return
@@ -241,7 +242,7 @@ func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 			var prevRows []struct {
 				Hash string `json:"hash"`
 			}
-			if qErr := db.QueryRowsCtx(r.Context(), database.TblCoreEvidenceRecords, "hash", "tenant_id", tenantID, &prevRows); qErr == nil && len(prevRows) > 0 {
+			if qErr := coredata.QueryRowsCtx(r.Context(), coredata.ResEvidenceRecords, "hash", "tenant_id", tenantID, &prevRows); qErr == nil && len(prevRows) > 0 {
 				prevHash = prevRows[len(prevRows)-1].Hash
 			}
 		} else {
@@ -263,7 +264,7 @@ func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 		// Attempt insertion with exponential backoff retry & outbox queue fallback
 		var insertErr error
 		for attempt := 0; attempt < 3; attempt++ {
-			insertErr = db.InsertRow(database.TblCoreEvidenceRecords, record)
+			insertErr = coredata.InsertRow(coredata.ResEvidenceRecords, record)
 			if insertErr == nil {
 				break
 			}
@@ -271,7 +272,7 @@ func HandleCreateEvidence(db database.DB) http.HandlerFunc {
 		}
 		if insertErr != nil {
 			slog.Error("CreateEvidence: primary insert failed after retries, queuing to outbox", "error", insertErr, "tenant_id", tenantID, "evidence_id", record.ID)
-			QueueEvidenceOutbox(database.TblCoreEvidenceRecords, record)
+			QueueCoreEvidenceOutbox(coredata.ResEvidenceRecords, record)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to create evlt", insertErr)
 			return
 		}
@@ -356,7 +357,7 @@ func HandleGetEvidence(db database.DB) http.HandlerFunc {
 		}
 
 		var result []database.QCoreEvidenceRecord
-		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "evidence_record_id", id, "tenant_id", tenantID, &result); err != nil || len(result) == 0 {
+		if err := coredata.QueryRowsCompound(coredata.ResEvidenceRecords, database.ColsQCoreEvidenceRecord, "evidence_record_id", id, "tenant_id", tenantID, &result); err != nil || len(result) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "evlt not found")
 			return
 		}
@@ -411,7 +412,7 @@ func HandleVerifyEvidence(db database.DB, vault ...VaultSigner) http.HandlerFunc
 		// verify the hash BEFORE stamping verified=true. Attesting a tampered record
 		// would produce a false compliance claim — block it with 409.
 		var currentRows []database.QCoreEvidenceRecord
-		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "evidence_record_id", id, "tenant_id", tenantID, &currentRows); err != nil || len(currentRows) == 0 {
+		if err := coredata.QueryRowsCompound(coredata.ResEvidenceRecords, database.ColsQCoreEvidenceRecord, "evidence_record_id", id, "tenant_id", tenantID, &currentRows); err != nil || len(currentRows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "evlt not found")
 			return
 		}
@@ -435,7 +436,7 @@ func HandleVerifyEvidence(db database.DB, vault ...VaultSigner) http.HandlerFunc
 			"verified":    true,
 			"verified_at": now.Format(time.RFC3339),
 		}
-		if err := db.UpdateRowCompound(database.TblCoreEvidenceRecords, "evidence_record_id", id, "tenant_id", tenantID, update); err != nil {
+		if err := coredata.UpdateRowCompound(coredata.ResEvidenceRecords, "evidence_record_id", id, "tenant_id", tenantID, update); err != nil {
 			slog.Error("VerifyEvidence update failed", "id", id, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "verify evidence", err)
 			return
@@ -492,7 +493,7 @@ func HandleAttestEvidence(db database.DB, vault ...VaultSigner) http.HandlerFunc
 			return
 		}
 		var ownership []database.QCoreEvidenceRecord
-		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "evidence_record_id", id, "tenant_id", tenantID, &ownership); err != nil || len(ownership) == 0 {
+		if err := coredata.QueryRowsCompound(coredata.ResEvidenceRecords, database.ColsQCoreEvidenceRecord, "evidence_record_id", id, "tenant_id", tenantID, &ownership); err != nil || len(ownership) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "evidence record not found")
 			return
 		}
@@ -550,7 +551,7 @@ func HandleAttestEvidence(db database.DB, vault ...VaultSigner) http.HandlerFunc
 			"attested_at":         time.Now().UTC().Format(time.RFC3339),
 			"event_data":          string(eventData),
 		}
-		if err := db.UpdateRowCompound(database.TblCoreEvidenceRecords, "evidence_record_id", id, "tenant_id", tenantID, fullRow); err != nil {
+		if err := coredata.UpdateRowCompound(coredata.ResEvidenceRecords, "evidence_record_id", id, "tenant_id", tenantID, fullRow); err != nil {
 			// PGRST204 = column not found (migration not yet applied) — fall back to event_data only
 			if strings.Contains(err.Error(), "PGRST204") {
 				fallbackRow := map[string]any{
@@ -558,7 +559,7 @@ func HandleAttestEvidence(db database.DB, vault ...VaultSigner) http.HandlerFunc
 					"verification_status": attestationStatus,
 					"event_data":          string(eventData),
 				}
-				if err2 := db.UpdateRowCompound(database.TblCoreEvidenceRecords, "evidence_record_id", id, "tenant_id", tenantID, fallbackRow); err2 != nil {
+				if err2 := coredata.UpdateRowCompound(coredata.ResEvidenceRecords, "evidence_record_id", id, "tenant_id", tenantID, fallbackRow); err2 != nil {
 					slog.Error("AttestEvidence fallback update failed", "evidence_id", id, "error", err2)
 					respond.InternalError(w, http.StatusInternalServerError, "attest evidence", err2)
 					return
@@ -598,14 +599,14 @@ func HandleGetEvidenceAttestations(db database.DB) http.HandlerFunc {
 
 		// Verify parent evidence belongs to this tenant first
 		var evidenceRows []map[string]any
-		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, "tenant_id", "evidence_record_id", id, "tenant_id", tenantID, &evidenceRows); err != nil || len(evidenceRows) == 0 {
+		if err := coredata.QueryRowsCompound(coredata.ResEvidenceRecords, "tenant_id", "evidence_record_id", id, "tenant_id", tenantID, &evidenceRows); err != nil || len(evidenceRows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "evidence not found")
 			return
 		}
 
 		var result []database.QCoreEvidenceRecord
 		// Attestations are columns on the evidence record itself
-		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "evidence_record_id", id, "tenant_id", tenantID, &result); err != nil || len(result) == 0 {
+		if err := coredata.QueryRowsCompound(coredata.ResEvidenceRecords, database.ColsQCoreEvidenceRecord, "evidence_record_id", id, "tenant_id", tenantID, &result); err != nil || len(result) == 0 {
 			slog.Error("GetEvidenceAttestations failed", "evidence_id", id, "error", err)
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "evidence not found")
 			return
@@ -656,7 +657,7 @@ func HandleListEvidenceAttestations(db database.DB) http.HandlerFunc {
 
 		var result []database.QCoreEvidenceRecord
 		// List attested evidence records for this tenant
-		if err := db.QueryRowsCtx(r.Context(), database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, &result); err != nil {
+		if err := coredata.QueryRowsCtx(r.Context(), coredata.ResEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, &result); err != nil {
 			slog.Error("ListEvidenceAttestations failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "list evidence attestations", err)
 			return
@@ -720,14 +721,14 @@ func HandleGetEvidenceChainByID(db database.DB) http.HandlerFunc {
 
 		// Verify parent evidence belongs to this tenant first
 		var evidenceRows []map[string]any
-		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, "tenant_id", "evidence_record_id", id, "tenant_id", tenantID, &evidenceRows); err != nil || len(evidenceRows) == 0 {
+		if err := coredata.QueryRowsCompound(coredata.ResEvidenceRecords, "tenant_id", "evidence_record_id", id, "tenant_id", tenantID, &evidenceRows); err != nil || len(evidenceRows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "evidence not found")
 			return
 		}
 
 		var result []database.QCoreEvidenceRecord
 		// Chain data is columns on the evidence record itself
-		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "evidence_record_id", id, "tenant_id", tenantID, &result); err != nil || len(result) == 0 {
+		if err := coredata.QueryRowsCompound(coredata.ResEvidenceRecords, database.ColsQCoreEvidenceRecord, "evidence_record_id", id, "tenant_id", tenantID, &result); err != nil || len(result) == 0 {
 			slog.Error("GetEvidenceChainByID failed", "evidence_id", id, "error", err)
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "evidence not found")
 			return
@@ -772,7 +773,7 @@ func HandleGetEvidenceStats(db database.DB) http.HandlerFunc {
 		}
 
 		var records []database.QCoreEvidenceRecord
-		if err := db.QueryRowsCtx(r.Context(), database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, &records); err != nil {
+		if err := coredata.QueryRowsCtx(r.Context(), coredata.ResEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, &records); err != nil {
 			slog.Error("GetEvidenceStats query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "get evidence stats", err)
 			return

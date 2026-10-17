@@ -8,6 +8,7 @@ package reports
 
 import (
 	"context"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"log/slog"
 	"net/http"
 
@@ -36,7 +37,7 @@ func HandleListImportSources(db database.DB) http.HandlerFunc {
 		}
 
 		var sources []map[string]any
-		if err := db.QueryRowsCtx(r.Context(), database.TblCoreTenantDocs, database.ColsImportSource, "tenant_id", tenantID, &sources); err != nil {
+		if err := coredata.QueryRowsCtx(r.Context(), coredata.ResTenantDocs, database.ColsImportSource, "tenant_id", tenantID, &sources); err != nil {
 			slog.Error("ListImportSources failed", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to list import sources", err)
 			return

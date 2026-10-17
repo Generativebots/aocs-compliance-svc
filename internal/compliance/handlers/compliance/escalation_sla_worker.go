@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"log/slog"
 	"os"
 	"strconv"
@@ -117,7 +118,7 @@ func runEscalationSLA(ctx context.Context, db database.DB, listTenants func() ([
 			return sent
 		}
 		var rows []map[string]any
-		if err := db.QueryRowsCompoundCtx(ctx, database.TblCoreEnforcementActions,
+		if err := coredata.QueryRowsCompoundCtx(ctx, coredata.ResEnforcementActions,
 			"enforcement_action_id,status,status_changed_at,metadata", "tenant_id", tid, "status", "ESCALATED", &rows); err != nil {
 			slog.Warn("EscalationSLAWorker: query failed", "tenant_id", tid, "error", err)
 			continue
@@ -140,7 +141,7 @@ func runEscalationSLA(ctx context.Context, db database.DB, listTenants func() ([
 			meta := metaMap(v["metadata"])
 			meta[slaNotifiedKey] = true
 			meta["sla_breached_at"] = now.Format(time.RFC3339)
-			if uerr := db.UpdateRowCompound(database.TblCoreEnforcementActions, "enforcement_action_id", id, "tenant_id", tid,
+			if uerr := coredata.UpdateRowCompound(coredata.ResEnforcementActions, "enforcement_action_id", id, "tenant_id", tid,
 				map[string]any{"metadata": meta}); uerr != nil {
 				slog.Warn("EscalationSLAWorker: could not mark notified", "violation", id, "error", uerr)
 			}

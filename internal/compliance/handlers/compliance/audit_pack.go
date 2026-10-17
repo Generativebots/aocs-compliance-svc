@@ -48,13 +48,20 @@ import (
 
 var auditPackPeriod = regexp.MustCompile(`^\d{4}-(0[1-9]|1[0-2])$`)
 
-// auditPackMaxRows bounds each section so a pack cannot exhaust memory.
-const auditPackMaxRows = 10000
+// auditPackPageSize is how many rows are fetched per database round trip while a section is
+// spooled to disk (CM-05). Sections are NOT truncated: memory use is bounded by the page size,
+// not by the tenant's row count.
+const auditPackPageSize = 1000
 
-// AuditPackFile is one named file of the bundle.
+// AuditPackFile is one named file of the bundle. Either Data holds the bytes, or Path names a
+// spool file already written (its SHA-256 and size were computed while writing).
 type AuditPackFile struct {
 	Name string
 	Data []byte
+	Path string
+
+	sha  string // set for Path-backed files
+	size int
 }
 
 type manifestFile struct {
@@ -104,6 +111,10 @@ func WriteAuditPack(w io.Writer, meta map[string]any, files []AuditPackFile, key
 	sort.Slice(files, func(i, j int) bool { return files[i].Name < files[j].Name })
 	entries := make([]manifestFile, 0, len(files))
 	for _, f := range files {
+		if f.Path != "" {
+			entries = append(entries, manifestFile{Name: f.Name, SHA256: f.sha, Bytes: f.size})
+			continue
+		}
 		sum := sha256.Sum256(f.Data)
 		entries = append(entries, manifestFile{Name: f.Name, SHA256: hex.EncodeToString(sum[:]), Bytes: len(f.Data)})
 	}
@@ -134,7 +145,13 @@ func WriteAuditPack(w io.Writer, meta map[string]any, files []AuditPackFile, key
 		return err
 	}
 	for _, f := range files {
-		if err := write(f.Name, f.Data); err != nil {
+		if f.Path == "" {
+			if err := write(f.Name, f.Data); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := copySpooled(zw, f); err != nil {
 			return err
 		}
 	}
@@ -175,23 +192,6 @@ func filterRows(rows []map[string]any, prefix string, keys ...string) []map[stri
 	return out
 }
 
-func capRows(rows []map[string]any) []map[string]any {
-	if len(rows) > auditPackMaxRows {
-		return rows[:auditPackMaxRows]
-	}
-	return rows
-}
-
-// sectionCount describes one pack section for the manifest: how many rows exist, how many are
-// included, and whether the row cap truncated it.
-func sectionCount(total int) map[string]any {
-	included := total
-	if included > auditPackMaxRows {
-		included = auditPackMaxRows
-	}
-	return map[string]any{"total": total, "included": included, "truncated": total > included}
-}
-
 // HandleAuditPack — POST /api/v1/compliance/audit-pack {framework?, period?("YYYY-MM")}
 func HandleAuditPack(db *database.SupabaseClient, pgx *database.PGXPool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -225,7 +225,8 @@ func HandleAuditPack(db *database.SupabaseClient, pgx *database.PGXPool) http.Ha
 			respond.Error(w, http.StatusServiceUnavailable, "audit pack unavailable: no database pool for ledger verification")
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+		// Large tenants need minutes, not seconds: the pack is paged to disk, not held in memory.
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 		defer cancel()
 
 		key, err := security.LoadOrCreateSigningKey(ctx, db, os.Getenv("PLATFORM_MASTER_KEY"))
@@ -235,57 +236,36 @@ func HandleAuditPack(db *database.SupabaseClient, pgx *database.PGXPool) http.Ha
 			return
 		}
 
-		var evidence, obligations, ledgerRows []map[string]any
-		if err := db.QueryRowsCtx(ctx, database.TblComplEvidence, "*", "tenant_id", tenantID, &evidence); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "read evidence", err)
-			return
-		}
-		if err := db.QueryRowsCtx(ctx, database.TblComplObligations, "*", "tenant_id", tenantID, &obligations); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "read obligations", err)
-			return
-		}
-		if err := db.QueryRowsCtx(ctx, database.TblMerkleLedger,
-			"reference_id,gate_id,verdict,previous_hash,current_hash,recorded_at",
-			"tenant_id", tenantID, &ledgerRows); err != nil {
-			respond.InternalError(w, http.StatusInternalServerError, "read ledger", err)
-			return
-		}
 		report, err := ledger.NewLedgerStore(pgx.Pool()).VerifyChain(ctx, tenantID)
 		if err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "verify ledger chain", err)
 			return
 		}
-
-		if req.Framework != "" {
-			kept := obligations[:0:0]
-			for _, o := range obligations {
-				if f, _ := o["framework"].(string); strings.EqualFold(f, req.Framework) {
-					kept = append(kept, o)
-				}
-			}
-			obligations = kept
+		reportJSON, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			respond.InternalError(w, http.StatusInternalServerError, "encode ledger report", err)
+			return
 		}
-		evidence = filterRows(evidence, req.Period, "created_at", "collected_at")
-		ledgerRows = filterRows(ledgerRows, req.Period, "recorded_at")
-		// Totals are taken before capping so the signed manifest discloses any truncation.
-		sections := map[string]any{
-			"evidence":    sectionCount(len(evidence)),
-			"obligations": sectionCount(len(obligations)),
-			"ledger":      sectionCount(len(ledgerRows)),
-		}
-		evidence, ledgerRows, obligations = capRows(evidence), capRows(ledgerRows), capRows(obligations)
 
-		files := []AuditPackFile{
-			{Name: "evidence.json", Data: mustJSON(evidence)},
-			{Name: "obligations.json", Data: mustJSON(obligations)},
-			{Name: "ledger.json", Data: mustJSON(map[string]any{"entries": ledgerRows, "chain_verification": report})},
+		spoolDir, err := os.MkdirTemp("", "audit-pack-*")
+		if err != nil {
+			respond.InternalError(w, http.StatusInternalServerError, "audit pack spool", err)
+			return
+		}
+		defer func() { _ = os.RemoveAll(spoolDir) }()
+
+		files, sections, err := spoolAuditSections(ctx, pgx, spoolDir, tenantID, req.Framework, req.Period, reportJSON)
+		if err != nil {
+			logger.For("compliance/audit_pack").Error("audit pack spool failed", "tenant_id", tenantID, "error", err)
+			respond.InternalError(w, http.StatusInternalServerError, "build audit pack", err)
+			return
 		}
 		meta := map[string]any{
 			"tenant_id":    tenantID,
 			"framework":    req.Framework,
 			"period":       req.Period,
 			"generated_at": time.Now().UTC().Format(time.RFC3339),
-			"row_cap":      auditPackMaxRows,
+			"page_size":    auditPackPageSize,
 			"sections":     sections,
 		}
 		tenantPriv, cert, err := DeriveTenantKey(key.PrivateKey, tenantID)

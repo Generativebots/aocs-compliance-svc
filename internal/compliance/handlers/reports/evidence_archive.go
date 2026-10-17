@@ -6,6 +6,7 @@ package reports
 // hashed content and chain fields are never modified.
 
 import (
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"net/http"
 	"time"
 
@@ -34,7 +35,7 @@ func HandleDeleteEvidence(db database.DB) http.HandlerFunc {
 		}
 		// Verify ownership
 		var rows []database.QCoreEvidenceRecord
-		if err := db.QueryRowsCompound(database.TblCoreEvidenceRecords, "evidence_record_id,tenant_id,verification_status", "evidence_record_id", id, "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
+		if err := coredata.QueryRowsCompound(coredata.ResEvidenceRecords, "evidence_record_id,tenant_id,verification_status", "evidence_record_id", id, "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "evidence not found")
 			return
 		}
@@ -53,7 +54,7 @@ func HandleDeleteEvidence(db database.DB) http.HandlerFunc {
 		if uid := auth.GetUserID(r.Context()); uid != "" {
 			updates["archived_by"] = uid
 		}
-		if dbErr := db.UpdateRowCompound(database.TblCoreEvidenceRecords, "evidence_record_id", id, "tenant_id", tenantID, updates); dbErr != nil {
+		if dbErr := coredata.UpdateRowCompound(coredata.ResEvidenceRecords, "evidence_record_id", id, "tenant_id", tenantID, updates); dbErr != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "archive evidence", dbErr)
 			return
 		}

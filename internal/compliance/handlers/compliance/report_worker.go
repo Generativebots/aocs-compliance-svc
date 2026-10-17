@@ -20,6 +20,7 @@ import (
 	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"log/slog"
 	"math/big"
 	"os"
@@ -162,7 +163,7 @@ func generateTenantReport(ctx context.Context, db database.DB, coreClient *servi
 
 	// 2. Enforcement actions (last 24h) — read from compliance cases (local).
 	var enfRows []map[string]any
-	if _dbErr := db.QueryRowsCursor(database.TblCoreCompliance, "case_id,case_type,created_at",
+	if _dbErr := coredata.QueryRowsCursor(coredata.ResComplianceActions, "case_id,case_type,created_at",
 		"tenant_id", tenantID, database.CursorPage{Limit: 200}, &enfRows); _dbErr != nil {
 		slog.Error("db.QueryRows compliance cases failed (best-effort)", "error", _dbErr)
 	}
@@ -196,7 +197,7 @@ func generateTenantReport(ctx context.Context, db database.DB, coreClient *servi
 		}
 	} else {
 		var sopRows []map[string]any
-		if _dbErr := db.QueryRowsCursor(database.TblCoreEvents, "event_id,event_type,severity,created_at",
+		if _dbErr := coredata.QueryRowsCursor(coredata.ResEvents, "event_id,event_type,severity,created_at",
 			"tenant_id", tenantID, database.CursorPage{Limit: 200}, &sopRows); _dbErr != nil {
 			slog.Error("db.QueryRows platform events failed (best-effort)", "error", _dbErr)
 		}

@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"github.com/ocx/shared/idgen"
 	"log/slog"
 
@@ -126,7 +127,7 @@ func HandleDLPScan(store *DLPStore) http.HandlerFunc {
 			Status:   database.EnforcementStatusResolved,
 			Metadata: scanMeta,
 		}
-		if err := store.db.InsertRow(database.TblCoreCompliance, scanEA); err != nil {
+		if err := coredata.InsertRow(coredata.ResComplianceActions, scanEA); err != nil {
 			slog.Error("DLP scan: failed to persist scan result", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to persist DLP scan result", err)
 			return
@@ -314,7 +315,7 @@ func HandleDLPMonitorPID(store *DLPStore) http.HandlerFunc {
 			Severity:   database.EnforcementSeverityMedium,
 			Metadata:   pidMeta,
 		}
-		if err := store.db.InsertRow(database.TblCoreCompliance, pidEA); err != nil {
+		if err := coredata.InsertRow(coredata.ResComplianceActions, pidEA); err != nil {
 			slog.Error("DLP: PID DB persist failed", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to register PID for monitoring", err)
 			return
@@ -361,7 +362,7 @@ func HandleListDLPMonitors(store *DLPStore) http.HandlerFunc {
 			return
 		}
 		var rows []map[string]any
-		if err := store.db.QueryRowsCompoundCtx(r.Context(), database.TblCoreCompliance, "*",
+		if err := coredata.QueryRowsCompoundCtx(r.Context(), coredata.ResComplianceActions, "*",
 			"tenant_id", tenantID, "action_type", fmt.Sprint(database.EnforcementTypeDLPPIDMonitor), &rows); err != nil {
 			slog.Error("DLP: list monitors failed", "error", err, "tenant_id", tenantID)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to list DLP monitors", err)

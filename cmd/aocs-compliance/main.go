@@ -22,6 +22,7 @@ import (
 	"time"
 
 	// Handler packages
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	hcompliance "github.com/ocx/compliance/internal/compliance/handlers/compliance"
 	hevidence "github.com/ocx/compliance/internal/compliance/handlers/evidence"
 	hsecurity "github.com/ocx/compliance/internal/compliance/handlers/security"
@@ -90,6 +91,9 @@ func main() {
 			os.Getenv("SERVICE_JWT_SECRET"), &http.Client{Timeout: 15 * time.Second})
 	}
 	hcompliance.SetHITLCore(hubClient)
+	coredata.SetClient(hubClient)
+	hcompliance.SetGateStatsClient(hubClient)
+	hcompliance.SetGateFeedClient(hubClient)
 
 	// Tenant telemetry (EU AI Act card) is served by aocs-gate, not system.
 	if gateURL := os.Getenv("CORE_INTERNAL_API_URL"); gateURL != "" {

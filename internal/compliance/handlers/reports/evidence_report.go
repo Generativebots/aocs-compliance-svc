@@ -6,6 +6,7 @@ package reports
 
 import (
 	"encoding/json"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"net/http"
 	"strings"
 	"time"
@@ -241,7 +242,7 @@ func HandleGetEvidenceChain(db database.DB) http.HandlerFunc {
 		}
 
 		var records []database.QCoreEvidenceRecord
-		if err := db.QueryRowsCursor(database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, database.ParseCursorPage(r), &records); err != nil {
+		if err := coredata.QueryRowsCursor(coredata.ResEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, database.ParseCursorPage(r), &records); err != nil {
 			logger.For("compliance/handlers/reports/evidence_report").Error("HandleGetEvidenceChain query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "get evidence chain", err)
 			return
@@ -291,7 +292,7 @@ func HandleVerifyChain(db database.DB) http.HandlerFunc {
 		}
 
 		var records []database.QCoreEvidenceRecord
-		if err := db.QueryRowsCursor(database.TblCoreEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, database.ParseCursorPage(r), &records); err != nil {
+		if err := coredata.QueryRowsCursor(coredata.ResEvidenceRecords, database.ColsQCoreEvidenceRecord, "tenant_id", tenantID, database.ParseCursorPage(r), &records); err != nil {
 			logger.For("compliance/handlers/reports/evidence_report").Error("HandleVerifyChain query failed", "tenant_id", tenantID, "error", err)
 			respond.InternalError(w, http.StatusInternalServerError, "verify evidence chain", err)
 			return

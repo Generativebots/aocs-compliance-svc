@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -192,7 +193,7 @@ func HandleGetLedgerRoot(db database.DB) http.HandlerFunc {
 			RecordHash string `json:"hash"`
 		}
 
-		if err := db.QueryRowsCursor(database.TblCoreEvidenceRecords, "evidence_record_id, hash", "tenant_id", tenantID, database.CursorPage{Limit: 200}, &records); err != nil {
+		if err := coredata.QueryRowsCursor(coredata.ResEvidenceRecords, "evidence_record_id, hash", "tenant_id", tenantID, database.CursorPage{Limit: 200}, &records); err != nil {
 			slog.Debug("HandleGetLedgerRoot: evidence query failed — returning genesis hash", "tenant_id", tenantID, "error", err)
 		}
 		running := sha256.Sum256([]byte("genesis"))
@@ -396,7 +397,7 @@ func HandleCreateCaseExportJob(db database.DB) http.HandlerFunc {
 		if actor := auth.GetUserID(r.Context()); actor != "" {
 			job["created_by"] = actor
 		}
-		if err := db.InsertRow(database.TblCoreJobs, job); err != nil {
+		if err := coredata.InsertRow(coredata.ResJobs, job); err != nil {
 			respond.InternalError(w, http.StatusInternalServerError, "create export job", err)
 			return
 		}
