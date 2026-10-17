@@ -264,7 +264,13 @@ func generateTenantReport(ctx context.Context, db database.DB, coreClient *servi
 	}
 	reportID := fmt.Sprintf("%d%02d", now.Year(), int(now.Month())) + string(b)
 
-	return db.InsertRow(database.TblSharComplianceReports, map[string]any{
+	// Daily posture snapshot: one scored compl_reports row per UTC day, which the
+	// dashboard history reads. nil score = no obligations yet, so nothing is recorded.
+	score, snapErr := snapshotDailyPosture(ctx, db, tenantID, now)
+	if snapErr != nil {
+		slog.Error("daily posture snapshot failed (best-effort)", "tenant_id", tenantID, "error", snapErr)
+	}
+	row := map[string]any{
 		"compliance_report_id": reportID,
 		"tenant_id":            tenantID,
 		// core_compliance_reports CHECK: report_type IN ('SOC2','GDPR','ISO27001',
@@ -277,7 +283,12 @@ func generateTenantReport(ctx context.Context, db database.DB, coreClient *servi
 		"period_start": now.Add(-consts.DefaultLookbackWindow).Format(time.RFC3339),
 		"period_end":   now.Format(time.RFC3339),
 		"created_by":   database.SystemActor("compliance-report-worker"), // background worker — no user context
-	})
+	}
+	if score != nil {
+		// Without this the column defaults to 0, which reads as "0% compliant".
+		row["compliance_score"] = *score
+	}
+	return db.InsertRow(database.TblSharComplianceReports, row)
 }
 
 // cryptoIndex returns a uniform random index in [0, n) from crypto/rand.

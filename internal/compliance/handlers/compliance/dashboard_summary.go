@@ -192,6 +192,16 @@ func HandleGetComplianceDashboardSummary(db database.DB) http.HandlerFunc {
 			dashboardReadFailed(w, tenantID, err)
 			return
 		}
+		// DAILY posture snapshots written by the report worker (report_snapshot.go).
+		var dailyRows []map[string]any
+		if err := db.QueryRowsCompound(database.TblComplReports,
+			"report_id, framework, compliance_score, created_at",
+			"tenant_id", tenantID, "report_type", "DAILY", &dailyRows); err != nil {
+			dashboardReadFailed(w, tenantID, err)
+			return
+		}
+		historyRows = append(historyRows, dailyRows...)
+
 		var history7d, history90d []map[string]any
 		ninetyDaysAgo := now.AddDate(0, 0, -90).Format(time.RFC3339)
 		for _, h := range historyRows {
