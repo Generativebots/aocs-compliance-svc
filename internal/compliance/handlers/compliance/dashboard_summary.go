@@ -3,6 +3,7 @@ package compliance
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/ocx/shared/infra/auth"
@@ -14,12 +15,13 @@ import (
 type DashboardSummaryResponse struct {
 	TenantID     string           `json:"tenant_id"`
 	GeneratedAt  string           `json:"generated_at"`
-	OverallScore float64          `json:"overall_score"`
+	OverallScore *float64         `json:"overall_score"` // nil when the tenant has no obligations (no score earned yet)
 	Reports      []map[string]any `json:"reports"`
 	Violations   []map[string]any `json:"violations"`
 	Frameworks   []map[string]any `json:"frameworks"`
 	DLP          map[string]any   `json:"dlp"`
 	History7D    []map[string]any `json:"history_7d"`
+	History90D   []map[string]any `json:"history_90d"`
 }
 
 // HandleGetComplianceDashboardSummary — GET /compliance/dashboard-summary
@@ -115,12 +117,15 @@ func HandleGetComplianceDashboardSummary(db database.DB) http.HandlerFunc {
 			frameworks = []map[string]any{}
 		}
 
-		overallScore := 100.0
+		var overallScore *float64
 		if len(obligations) > 0 {
-			overallScore = (float64(totalPassed) / float64(len(obligations))) * 100.0
+			sc := (float64(totalPassed) / float64(len(obligations))) * 100.0
+			overallScore = &sc
 		}
 
-		// 4. DLP Scan telemetry from evidence
+		// 4. DLP telemetry. Quarantines are core_enforcement_actions rows with
+		// subtype dlp_quarantine (see security/dlp_quarantine.go); a quarantine
+		// stays open until it is released.
 		var dlpEvidence []map[string]any
 		if err := db.QueryRowsCompound(database.TblComplEvidence,
 			"evidence_id, title, framework, created_at",
@@ -129,12 +134,53 @@ func HandleGetComplianceDashboardSummary(db database.DB) http.HandlerFunc {
 			return
 		}
 		dlpCount := len(dlpEvidence)
+		var lastScanned any
+		lastScannedStr := ""
+		for _, e := range dlpEvidence {
+			if c, _ := e["created_at"].(string); c > lastScannedStr {
+				lastScannedStr = c
+			}
+		}
+		if lastScannedStr != "" {
+			lastScanned = lastScannedStr
+		}
+
+		var qRows []map[string]any
+		if err := db.QueryRows(database.TblCoreEnforcementActions,
+			"subtype,status,released_at,created_at",
+			"tenant_id", tenantID, &qRows); err != nil {
+			dashboardReadFailed(w, tenantID, err)
+			return
+		}
+		quarantined := 0
+		for _, q := range qRows {
+			if st, _ := q["subtype"].(string); st != "dlp_quarantine" {
+				continue
+			}
+			if q["released_at"] != nil {
+				continue
+			}
+			if s, _ := q["status"].(string); strings.EqualFold(s, "resolved") || strings.EqualFold(s, "released") {
+				continue
+			}
+			quarantined++
+		}
+
+		// clean_rate is only defined once something has been scanned.
+		var cleanRate any
+		if dlpCount > 0 {
+			cr := 100.0 * (1 - float64(quarantined)/float64(dlpCount))
+			if cr < 0 {
+				cr = 0
+			}
+			cleanRate = cr
+		}
 
 		dlpStats := map[string]any{
 			"total_scanned": dlpCount,
-			"quarantined":   0,
-			"clean_rate":    100.0,
-			"last_scanned":  now.Format(time.RFC3339),
+			"quarantined":   quarantined,
+			"clean_rate":    cleanRate,
+			"last_scanned":  lastScanned,
 		}
 
 		// 5. 7-Day History
@@ -146,14 +192,22 @@ func HandleGetComplianceDashboardSummary(db database.DB) http.HandlerFunc {
 			dashboardReadFailed(w, tenantID, err)
 			return
 		}
-		var history7d []map[string]any
+		var history7d, history90d []map[string]any
+		ninetyDaysAgo := now.AddDate(0, 0, -90).Format(time.RFC3339)
 		for _, h := range historyRows {
-			if cat, _ := h["created_at"].(string); cat >= sevenDaysAgo {
+			cat, _ := h["created_at"].(string)
+			if cat >= sevenDaysAgo {
 				history7d = append(history7d, h)
+			}
+			if cat >= ninetyDaysAgo {
+				history90d = append(history90d, h)
 			}
 		}
 		if history7d == nil {
 			history7d = []map[string]any{}
+		}
+		if history90d == nil {
+			history90d = []map[string]any{}
 		}
 
 		resp := DashboardSummaryResponse{
@@ -165,6 +219,7 @@ func HandleGetComplianceDashboardSummary(db database.DB) http.HandlerFunc {
 			Frameworks:   frameworks,
 			DLP:          dlpStats,
 			History7D:    history7d,
+			History90D:   history90d,
 		}
 
 		slog.Debug("HandleGetComplianceDashboardSummary served", "tenant_id", tenantID, "frameworks", len(frameworks))
