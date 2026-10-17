@@ -30,6 +30,7 @@ package evaluation
 import (
 	"context"
 	"encoding/json"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"log/slog"
 	"net/http"
 	"time"
@@ -142,7 +143,7 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 			CaseID string `json:"case_id"`
 		}
 		violationCount := 0
-		if err := db.QueryRowsCompound(database.TblCoreCompliance, "case_id",
+		if err := coredata.QueryRowsCompound(coredata.ResComplianceActions, "case_id",
 			"tenant_id", tenantID, "case_type", "VIOLATION", &violationRows); err == nil {
 			violationCount = len(violationRows)
 		}
@@ -155,7 +156,7 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 			CaseID string `json:"case_id"`
 		}
 		hitlCount := 0
-		if err := db.QueryRowsCompound(database.TblCoreCompliance, "case_id",
+		if err := coredata.QueryRowsCompound(coredata.ResComplianceActions, "case_id",
 			"tenant_id", tenantID, "case_type", "HITL", &hitlRows); err == nil {
 			hitlCount = len(hitlRows)
 		}
@@ -304,7 +305,7 @@ func HandleGenerateSOC2Package(db database.DB) http.HandlerFunc {
 
 		pkgJSON, _ := json.Marshal(pkg)
 
-		if err := db.InsertRow(database.TblCoreCompliance, map[string]any{
+		if err := coredata.InsertRow(coredata.ResComplianceActions, map[string]any{
 			"case_id":    packageID,
 			"tenant_id":  tenantID,
 			"case_type":  "SOC2_EVIDENCE_PACKAGE",
@@ -349,7 +350,7 @@ func HandleGetSOC2Package(db database.DB) http.HandlerFunc {
 			Data      json.RawMessage `json:"data"`
 			CreatedAt string          `json:"created_at"`
 		}
-		if err := db.QueryRowsCompound(database.TblCoreCompliance,
+		if err := coredata.QueryRowsCompound(coredata.ResComplianceActions,
 			"case_id,status,data,created_at",
 			"case_id", id, "tenant_id", tenantID,
 			&rows); err != nil || len(rows) == 0 {
@@ -380,7 +381,7 @@ func HandleListSOC2Packages(db database.DB) http.HandlerFunc {
 			Data      json.RawMessage `json:"data"`
 			CreatedAt string          `json:"created_at"`
 		}
-		if err := db.QueryRowsCompound(database.TblCoreCompliance,
+		if err := coredata.QueryRowsCompound(coredata.ResComplianceActions,
 			"case_id,status,data,created_at",
 			"tenant_id", tenantID, "case_type", "SOC2_EVIDENCE_PACKAGE",
 			&rows); err != nil {

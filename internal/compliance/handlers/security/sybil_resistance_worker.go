@@ -16,6 +16,7 @@ package security
 
 import (
 	"context"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"log/slog"
 	"sort"
 	"time"
@@ -40,6 +41,14 @@ const (
 type sybilStore interface {
 	QuerySystemScopeCtx(ctx context.Context, q database.SystemScopeQuery, dest interface{}) error
 	InsertRow(table string, row interface{}) error
+}
+
+// coreTelemetryStore serves the scan's cross-tenant telemetry read from ocx-core-svc (which owns
+// core_agent_telemetry) and keeps IDS-event writes on the local DB.
+type coreTelemetryStore struct{ database.DB }
+
+func (s coreTelemetryStore) QuerySystemScopeCtx(ctx context.Context, q database.SystemScopeQuery, dest interface{}) error {
+	return coredata.AgentSeenSince(ctx, q.Since, q.MaxRows, dest)
 }
 
 // agentSeenRow is one core_agent_telemetry row.
@@ -84,7 +93,7 @@ func StartSybilDetectionWorker(ctx context.Context, db database.DB) {
 				slog.Info("stopped")
 				return
 			case <-timer.C:
-				if err := runSybilScan(ctx, db, time.Now().UTC()); err != nil {
+				if err := runSybilScan(ctx, coreTelemetryStore{db}, time.Now().UTC()); err != nil {
 					slog.Error("sybil scan failed", "error", err)
 				}
 				timer.Reset(sybilScanInterval)
@@ -103,7 +112,7 @@ func runSybilScan(ctx context.Context, db sybilStore, now time.Time) error {
 	}
 	var rows []agentSeenRow
 	if err := db.QuerySystemScopeCtx(scoped, database.SystemScopeQuery{
-		Table:       database.TblCoreAgentTelemetry,
+		Table:       coredata.ResAgentTelemetry,
 		Columns:     []string{"tenant_id", "agent_id", "last_ip"},
 		NotNull:     []string{"last_ip"},
 		SinceColumn: "last_seen_at",

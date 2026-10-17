@@ -32,6 +32,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"log/slog"
 	"time"
 
@@ -329,7 +330,7 @@ func writeLifecycleEvent(
 			slog.Error("writeLifecycleEvent: ocx-core-svc PostEvent failed (non-fatal)",
 				"case_id", caseID, "from", fromStatus, "to", toStatus, "err", _err)
 		}
-	} else if err := db.InsertRowCtx(ctx, database.TblCoreEvents, row); err != nil {
+	} else if err := coredata.InsertRowCtx(ctx, coredata.ResEvents, row); err != nil {
 		slog.Error("writeLifecycleEvent: insert failed (non-fatal)",
 			"case_id", caseID, "from", fromStatus, "to", toStatus, "err", err)
 	}
@@ -356,7 +357,7 @@ func writeLifecycleEvent(
 			slog.Error("F-HITL-01: ocx-core-svc PostEvent timeline failed — SLA dashboard has gap for this transition",
 				"case_id", caseID, "from", fromStatus, "to", toStatus, "err", tlErr)
 		}
-	} else if tlErr := db.InsertRowCtx(ctx, database.TblCoreEvents, tlRow); tlErr != nil {
+	} else if tlErr := coredata.InsertRowCtx(ctx, coredata.ResEvents, tlRow); tlErr != nil {
 		slog.Error("F-HITL-01: HITL timeline event insert failed — SLA dashboard has gap for this transition",
 			"case_id", caseID, "from", fromStatus, "to", toStatus, "err", tlErr)
 	}

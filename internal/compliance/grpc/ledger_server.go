@@ -21,6 +21,7 @@ package compliancegrpc
 import (
 	"context"
 	"fmt"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"log/slog"
 	"time"
 
@@ -67,7 +68,7 @@ func (s *LedgerServer) RecordEvidence(ctx context.Context, req *pb.RecordEvidenc
 	}
 	// Writes to core_evidence.
 	// ZKP proof chains are stored with execution evidence for tamper-evident audit.
-	if err := s.DB.InsertRow(database.TblCoreEvidence, row); err != nil {
+	if err := coredata.InsertRow(coredata.ResEvidence, row); err != nil {
 		updates := map[string]any{
 			"chain_data": map[string]any{
 				"hash":    req.Hash,
@@ -76,7 +77,7 @@ func (s *LedgerServer) RecordEvidence(ctx context.Context, req *pb.RecordEvidenc
 			},
 			"updated_at": now,
 		}
-		if uerr := s.DB.UpdateRowCompoundCtx(ctx, database.TblCoreEvidence,
+		if uerr := coredata.UpdateRowCompoundCtx(ctx, coredata.ResEvidence,
 			"entity_id", req.DecisionId, "tenant_id", req.TenantId, updates); uerr != nil {
 			slog.Error("LedgerServer.RecordEvidence: upsert failed",
 				"entity_id", req.DecisionId, "tenant_id", req.TenantId, "err", uerr)
@@ -97,7 +98,7 @@ func (s *LedgerServer) VerifyEvidence(ctx context.Context, req *pb.VerifyEvidenc
 
 	// Fetch the stored evidence record — core_evidence (entity_id = decision_id FK)
 	var rows []map[string]any
-	if err := s.DB.QueryRowsCompoundCtx(ctx, database.TblCoreEvidence,
+	if err := coredata.QueryRowsCompoundCtx(ctx, coredata.ResEvidence,
 		"evidence_id, entity_id, chain_data, updated_at",
 		"entity_id", req.DecisionId,
 		"tenant_id", req.TenantId,
@@ -152,7 +153,7 @@ func (s *LedgerServer) GetEvidence(ctx context.Context, req *pb.GetEvidenceReque
 	}
 
 	var rows []map[string]any
-	if err := s.DB.QueryRowsCompoundCtx(ctx, database.TblCoreEvidence,
+	if err := coredata.QueryRowsCompoundCtx(ctx, coredata.ResEvidence,
 		"evidence_id, entity_id, chain_data, updated_at",
 		"entity_id", req.DecisionId,
 		"tenant_id", req.TenantId,

@@ -1,6 +1,7 @@
 package compliance
 
 import (
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"log/slog"
 	"net/http"
 	"time"
@@ -54,7 +55,7 @@ func HandleGetComplianceDashboardSummary(db database.DB) http.HandlerFunc {
 
 		// 2. Violations / Enforcement actions
 		var violations []map[string]any
-		if err := db.QueryRows(database.TblCoreEnforcementActions,
+		if err := coredata.QueryRows(coredata.ResEnforcementActions,
 			database.ColsEnforcementActions,
 			"tenant_id", tenantID, &violations); err != nil {
 			dashboardReadFailed(w, tenantID, err)

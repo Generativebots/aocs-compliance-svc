@@ -15,6 +15,7 @@ package security
 
 import (
 	"encoding/json"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -105,7 +106,7 @@ func HandleDLPQuarantine(store *DLPStore) http.HandlerFunc {
 			// document/data quarantine is a tenant-scoped hold, not an agent action.
 			ea.Scope = "tenant"
 		}
-		if err := store.db.InsertRow(database.TblCoreEnforcementActions, ea); err != nil {
+		if err := coredata.InsertRow(coredata.ResEnforcementActions, ea); err != nil {
 			slog.Error("dlp/quarantine: enforcement action insert failed",
 				"entity_id", req.EntityID, "err", err)
 			respond.InternalError(w, http.StatusInternalServerError, "failed to record quarantine", err)

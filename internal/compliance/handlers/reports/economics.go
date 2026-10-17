@@ -7,6 +7,7 @@ package reports
 
 import (
 	"encoding/json"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"net/http"
 
 	"github.com/ocx/shared/respond"
@@ -34,7 +35,7 @@ func HandleGetEconomicsOverview(db database.DB) http.HandlerFunc {
 			respond.InternalError(w, http.StatusServiceUnavailable, "query staking ledger", _dbErr)
 			return
 		}
-		if _dbErr := db.QueryRowsCtx(r.Context(), database.TblCoreEscrowTxns, "transaction_id,tenant_id,amount,status,created_at", "", "", &escrow); _dbErr != nil {
+		if _dbErr := coredata.QueryRowsCtx(r.Context(), coredata.ResEscrowTxns, "transaction_id,tenant_id,amount,status,created_at", "", "", &escrow); _dbErr != nil {
 			respond.InternalError(w, http.StatusServiceUnavailable, "query escrow transactions", _dbErr)
 			return
 		}

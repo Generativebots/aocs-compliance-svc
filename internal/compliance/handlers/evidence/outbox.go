@@ -2,6 +2,7 @@ package evaluation
 
 import (
 	"context"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"log/slog"
 	"sync"
 	"time"
@@ -11,6 +12,7 @@ import (
 
 type outboxItem struct {
 	Table     string
+	Resource  string // set => row is replayed through ocx-core-svc's data gateway
 	Row       any
 	Attempts  int
 	CreatedAt time.Time
@@ -23,7 +25,18 @@ var (
 )
 
 // QueueEvidenceOutbox pushes a failed evidence insertion to the outbox for async retry (GAP-BE3).
+// QueueCoreEvidenceOutbox is QueueEvidenceOutbox for rows core owns: the retry goes through
+// core's data gateway (coredata) instead of a direct table insert.
+func QueueCoreEvidenceOutbox(resource string, row any) {
+	queueOutbox(outboxItem{Table: resource, Resource: resource, Row: row})
+}
+
 func QueueEvidenceOutbox(table string, row any) {
+	queueOutbox(outboxItem{Table: table, Row: row})
+}
+
+func queueOutbox(it outboxItem) {
+	table := it.Table
 	outboxMu.Lock()
 	defer outboxMu.Unlock()
 
@@ -32,12 +45,9 @@ func QueueEvidenceOutbox(table string, row any) {
 		outboxQueue = outboxQueue[1:]
 	}
 
-	outboxQueue = append(outboxQueue, outboxItem{
-		Table:     table,
-		Row:       row,
-		Attempts:  0,
-		CreatedAt: time.Now().UTC(),
-	})
+	it.Attempts = 0
+	it.CreatedAt = time.Now().UTC()
+	outboxQueue = append(outboxQueue, it)
 	slog.Info("QueueEvidenceOutbox: event buffered for background retry", "table", table, "pending_count", len(outboxQueue))
 }
 
@@ -76,7 +86,12 @@ func drainOutbox(ctx context.Context, db database.DB) {
 			continue
 		}
 
-		err := db.InsertRow(item.Table, item.Row)
+		var err error
+		if item.Resource != "" {
+			err = coredata.InsertRowCtx(ctx, item.Resource, item.Row)
+		} else {
+			err = db.InsertRow(item.Table, item.Row)
+		}
 		if err == nil {
 			slog.Info("evidence outbox retry succeeded", "table", item.Table)
 		} else {

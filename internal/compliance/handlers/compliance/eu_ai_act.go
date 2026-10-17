@@ -31,6 +31,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -371,7 +372,7 @@ func HandleSubmitEUAIActDeclaration(db database.DB, coreClient *serviceclient.Cl
 			return
 		}
 
-		if err := db.InsertRow(database.TblCoreCompliance, map[string]any{
+		if err := coredata.InsertRow(coredata.ResComplianceActions, map[string]any{
 			"case_id":    declarationID,
 			"tenant_id":  tenantID,
 			"case_type":  "EU_AI_ACT_DECLARATION",
@@ -424,7 +425,7 @@ func HandleGetEUAIActDeclarationStatus(db database.DB) http.HandlerFunc {
 			CreatedAt string          `json:"created_at"`
 		}
 
-		if err := db.QueryRowsCompound(database.TblCoreCompliance,
+		if err := coredata.QueryRowsCompound(coredata.ResComplianceActions,
 			"case_id,status,data,created_at",
 			"tenant_id", tenantID, "case_type", "EU_AI_ACT_DECLARATION",
 			&rows); err != nil {

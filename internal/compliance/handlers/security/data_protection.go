@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"log/slog"
 	"strings"
 	"time"
@@ -76,7 +77,7 @@ func (s *DLPStore) LoadFromDB() {
 		var tRows []struct {
 			Metadata json.RawMessage `json:"metadata"`
 		}
-		if err := s.db.QueryRowsCompoundCtx(ctx, database.TblCoreEnforcementActions, "metadata",
+		if err := coredata.QueryRowsCompoundCtx(ctx, coredata.ResEnforcementActions, "metadata",
 			"tenant_id", tenantID, "action_type", "dlp_pid_monitor", &tRows); err != nil {
 			return err
 		}

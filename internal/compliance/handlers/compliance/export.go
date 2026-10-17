@@ -5,6 +5,7 @@ package compliance
 
 import (
 	"errors"
+	"github.com/ocx/compliance/internal/compliance/coredata"
 	"log/slog"
 	"net/http"
 
@@ -28,7 +29,7 @@ func HandleGetCaseExportJob(db database.DB) http.HandlerFunc {
 		}
 		var rows []map[string]any
 		// PK on aocs_bulk_import_jobs (TblCoreJobs) is job_id, not nexus_export_job_id.
-		if err := db.QueryRowsCompound(database.TblCoreJobs, database.ColsNexusExportJobs, "job_id", mux.Vars(r)["id"], "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
+		if err := coredata.QueryRowsCompound(coredata.ResJobs, database.ColsNexusExportJobs, "job_id", mux.Vars(r)["id"], "tenant_id", tenantID, &rows); err != nil || len(rows) == 0 {
 			respond.ErrorWithCode(w, http.StatusNotFound, respond.ErrCodeNotFound, "export job not found")
 			return
 		}
